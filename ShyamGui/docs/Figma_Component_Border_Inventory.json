@@ -1,0 +1,822 @@
+{
+  "meta": {
+    "sourcePage": "1669:162202",
+    "sourcePageName": "Figma Basics",
+    "figmaUrl": "https://www.figma.com/design/v3EOK18igyMMkRIC3y8gxn/Figma-basics?node-id=1669-162202",
+    "verifiedVia": "Figma Plugin API",
+    "verifiedDate": "2026-07-15",
+    "frames": {
+      "light": {
+        "id": "796:655",
+        "name": "Light Desktop-5",
+        "width": 1440,
+        "height": 1024,
+        "fill": "#ffffff",
+        "nodeCount": 178
+      },
+      "dark": {
+        "id": "797:1106",
+        "name": "Dark Desktop-6",
+        "width": 1440,
+        "height": 1024,
+        "fill": "#1c1c1c",
+        "nodeCount": 173
+      }
+    },
+    "strokeAlignNotes": {
+      "rectangles": "INSIDE",
+      "gridLines": "CENTER"
+    }
+  },
+  "borderWeightHistogramPx": {
+    "light": {
+      "0.2": 35,
+      "0.3": 30,
+      "0.5": 3,
+      "1": 11
+    },
+    "dark": {
+      "0.2": 35,
+      "0.3": 31,
+      "0.5": 3,
+      "1": 10
+    }
+  },
+  "light": {
+    "large": [
+      {
+        "name": "Sidebar Rectangle 343",
+        "x": 40,
+        "y": 136,
+        "w": 261,
+        "h": 690,
+        "borderPx": 0.5,
+        "borderColor": "#1a1919",
+        "fill": "#efe9e9",
+        "corner": 2,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Plot Group 291",
+        "x": 305,
+        "y": 134,
+        "w": 1012,
+        "h": 605,
+        "borderPx": null,
+        "borderColor": null,
+        "fill": null,
+        "corner": null,
+        "strokeAlign": null,
+        "note": "group container"
+      },
+      {
+        "name": "Plot Rectangle 317",
+        "x": 305,
+        "y": 136,
+        "w": 1012,
+        "h": 601,
+        "borderPx": 0.5,
+        "borderColor": "#1a1919",
+        "fill": "#efe9e9",
+        "corner": 2,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Legend col Rectangle 344",
+        "x": 1322,
+        "y": 135,
+        "w": 86,
+        "h": 601,
+        "borderPx": 0.3,
+        "borderColor": "#0c0c0c",
+        "fill": "#efe9e9",
+        "corner": 3,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Header strip Rectangle 336",
+        "x": -22,
+        "y": 85,
+        "w": 1484,
+        "h": 42,
+        "borderPx": 0.5,
+        "borderColor": "#0c0c0c",
+        "fill": "none",
+        "corner": 0,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Colour bar Rectangle 318",
+        "x": 1329,
+        "y": 171,
+        "w": 19,
+        "h": 529,
+        "borderPx": 1,
+        "borderColor": "#303232",
+        "fill": "GRADIENT",
+        "corner": 0,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Heatmap image",
+        "x": 579,
+        "y": 216,
+        "w": 446,
+        "h": 439,
+        "borderPx": 1,
+        "borderColor": "#000000",
+        "fill": "IMAGE",
+        "corner": 0,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Sidebar header rim Rectangle 348",
+        "x": 40,
+        "y": 136,
+        "w": 261,
+        "h": 38,
+        "borderPx": 0.3,
+        "borderColor": "#0c0c0c",
+        "fill": "none",
+        "corner": "tl/tr=2 br/bl=0",
+        "strokeAlign": "INSIDE"
+      }
+    ],
+    "small": {
+      "header": [
+        {
+          "name": "Logo",
+          "x": 39,
+          "y": 35,
+          "w": 82,
+          "h": 41,
+          "fill": "IMAGE",
+          "borderPx": null,
+          "borderColor": null
+        },
+        {
+          "name": "Stats pill Rectangle 334",
+          "x": 1223,
+          "y": 94,
+          "w": 72,
+          "h": 24,
+          "fill": "#333131",
+          "corner": 4,
+          "borderPx": null,
+          "borderColor": null,
+          "note": "NO border"
+        },
+        {
+          "name": "Help",
+          "x": 1310,
+          "y": 93,
+          "w": 26,
+          "h": 26
+        },
+        {
+          "name": "Settings",
+          "x": 1350,
+          "y": 93,
+          "w": 26,
+          "h": 26
+        },
+        {
+          "name": "Menu",
+          "x": 1390,
+          "y": 93,
+          "w": 26,
+          "h": 26
+        }
+      ],
+      "plot_toolbar": [
+        {
+          "name": "Tool well",
+          "x": 1013,
+          "y": 141,
+          "w": 38,
+          "h": 24,
+          "corner": 2,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#1f1e1e",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Tool well",
+          "x": 1057,
+          "y": 141,
+          "w": 38,
+          "h": 24,
+          "corner": 2,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#1f1e1e",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Tool well",
+          "x": 1101,
+          "y": 141,
+          "w": 38,
+          "h": 24,
+          "corner": 2,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#1f1e1e",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Tool well",
+          "x": 1145,
+          "y": 141,
+          "w": 38,
+          "h": 24,
+          "corner": 2,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#1f1e1e",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Tool well",
+          "x": 1189,
+          "y": 141,
+          "w": 38,
+          "h": 24,
+          "corner": 2,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#1f1e1e",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Fit View",
+          "x": 1233,
+          "y": 141,
+          "w": 80,
+          "h": 24,
+          "corner": 4,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#383636",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Icon Email Send / Zoom In / Zoom Out / Refresh",
+          "w": 16,
+          "h": 16
+        },
+        {
+          "name": "Stop square",
+          "w": 10,
+          "h": 10,
+          "fill": "#4d4b4b"
+        }
+      ],
+      "sidebar": [
+        {
+          "name": "Freq combo",
+          "x": 51,
+          "y": 206,
+          "w": 229,
+          "h": 32,
+          "corner": 4,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Unit combo",
+          "x": 50,
+          "y": 289,
+          "w": 107,
+          "h": 32,
+          "corner": 4,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "+Add",
+          "x": 164,
+          "y": 289,
+          "w": 54,
+          "h": 32
+        },
+        {
+          "name": "Delete",
+          "x": 226,
+          "y": 289,
+          "w": 54,
+          "h": 32
+        },
+        {
+          "name": "Device btn",
+          "x": 51,
+          "y": 350,
+          "w": 71,
+          "h": 32,
+          "corner": 4
+        },
+        {
+          "name": "Device btn",
+          "x": 130,
+          "y": 350,
+          "w": 71,
+          "h": 32,
+          "corner": 4
+        },
+        {
+          "name": "Device btn",
+          "x": 208,
+          "y": 350,
+          "w": 71,
+          "h": 32,
+          "corner": 4
+        },
+        {
+          "name": "Slider value box",
+          "x": 211,
+          "y": 436,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider value box",
+          "x": 211,
+          "y": 475,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider value box",
+          "x": 211,
+          "y": 515,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider value box",
+          "x": 211,
+          "y": 555,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider value box",
+          "x": 209,
+          "y": 751,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider value box",
+          "x": 209,
+          "y": 791,
+          "w": 68,
+          "h": 26,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider thumb Ellipse",
+          "w": 10,
+          "h": 10,
+          "fill": "#d81f1f"
+        },
+        {
+          "name": "Slider track filled",
+          "fill": "#313131",
+          "corner": 5,
+          "h": 2
+        },
+        {
+          "name": "Slider track empty",
+          "borderPx": 0.2,
+          "borderColor": "#000000",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Checkbox Square",
+          "x": 50,
+          "y": 598,
+          "w": 18,
+          "h": 18
+        },
+        {
+          "name": "Checkbox Checked",
+          "x": 50,
+          "y": 637,
+          "w": 18,
+          "h": 18
+        },
+        {
+          "name": "Checkbox",
+          "x": 50,
+          "y": 677,
+          "w": 18,
+          "h": 18
+        },
+        {
+          "name": "Chevron Sort Down",
+          "w": 10,
+          "h": 10
+        }
+      ],
+      "legend": [
+        {
+          "name": "Colour bar Rectangle 318",
+          "note": "see large regions table"
+        }
+      ],
+      "bottom": [
+        {
+          "name": "Export",
+          "x": 314,
+          "y": 765,
+          "w": 160,
+          "h": 18,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Export",
+          "x": 314,
+          "y": 786,
+          "w": 160,
+          "h": 18,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Export",
+          "x": 314,
+          "y": 808,
+          "w": 160,
+          "h": 18,
+          "corner": 3,
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View active",
+          "x": 483,
+          "y": 766,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#ed2227",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "x": 901,
+          "y": 766,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "x": 483,
+          "y": 787,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "x": 901,
+          "y": 787,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "x": 483,
+          "y": 809,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "x": 901,
+          "y": 809,
+          "w": 409,
+          "h": 18,
+          "corner": 3,
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        }
+      ],
+      "gridLines": [
+        {
+          "type": "major",
+          "borderPx": 1,
+          "borderColor": "#454242",
+          "strokeAlign": "CENTER"
+        },
+        {
+          "type": "minor",
+          "borderPx": 0.2,
+          "borderColor": "#454242",
+          "strokeAlign": "CENTER"
+        }
+      ]
+    },
+    "borderedRects": {
+      "histogramFromPluginApi": {
+        "0.2": 35,
+        "0.3": 30,
+        "0.5": 3,
+        "1": 11
+      },
+      "largeRegionCount": 8,
+      "largeWithBorder": 7,
+      "smallSections": [
+        "header",
+        "plot_toolbar",
+        "sidebar",
+        "legend",
+        "bottom",
+        "gridLines"
+      ],
+      "borderedRectsListedInInventory": 33
+    }
+  },
+  "dark": {
+    "large": [
+      {
+        "name": "Sidebar Rectangle 343",
+        "x": 40,
+        "y": 137,
+        "w": 261,
+        "h": 690,
+        "borderPx": 0.3,
+        "borderColor": "#ffffff",
+        "fill": "#1c1c1c",
+        "corner": 2,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Plot Rectangle 317",
+        "x": 306,
+        "y": 135,
+        "w": 1012,
+        "h": 601,
+        "borderPx": 0.5,
+        "borderColor": "#ffffff",
+        "fill": "#1c1c1c",
+        "corner": 2,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Legend col Rectangle 344",
+        "x": 1322,
+        "y": 135,
+        "w": 86,
+        "h": 601,
+        "borderPx": 0.3,
+        "borderColor": "#fdfdfd",
+        "fill": "#1c1c1c",
+        "corner": 3,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Header strip Rectangle 336",
+        "x": -22,
+        "y": 85,
+        "w": 1484,
+        "h": 42,
+        "borderPx": 0.5,
+        "borderColor": "#ffffff",
+        "fill": "none",
+        "corner": 0,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Colour bar Rectangle 318",
+        "x": 1329,
+        "y": 171,
+        "w": 19,
+        "h": 529,
+        "borderPx": 0.5,
+        "borderColor": "#ffffff",
+        "fill": "GRADIENT",
+        "corner": 0,
+        "strokeAlign": "INSIDE"
+      },
+      {
+        "name": "Sidebar header rim Rectangle 348",
+        "x": 40,
+        "y": 137,
+        "w": 261,
+        "h": 38,
+        "borderPx": 0.3,
+        "borderColor": "#ffffff",
+        "fill": "none",
+        "corner": "tl/tr=2",
+        "strokeAlign": "INSIDE"
+      }
+    ],
+    "small": {
+      "header": [
+        {
+          "name": "Logo white",
+          "x": 39,
+          "y": 35,
+          "w": 83,
+          "h": 42
+        },
+        {
+          "name": "Stats pill",
+          "w": 72,
+          "h": 24,
+          "fill": "#ffffff",
+          "borderPx": null,
+          "borderColor": null,
+          "note": "no border"
+        },
+        {
+          "name": "Help / Settings / Menu",
+          "note": "26x26 at x 1310/1350/1390 y 93 same as light"
+        }
+      ],
+      "plot_toolbar": [
+        {
+          "name": "Tool well",
+          "w": 38,
+          "h": 24,
+          "fill": "#201f1f",
+          "borderPx": 0.3,
+          "borderColor": "#ffffff",
+          "strokeAlign": "INSIDE",
+          "note": "same geometry as light"
+        },
+        {
+          "name": "Fit View",
+          "fill": "#201f1f",
+          "borderPx": 0.3,
+          "borderColor": "#ffffff",
+          "strokeAlign": "INSIDE",
+          "note": "same geometry as light"
+        }
+      ],
+      "sidebar": [
+        {
+          "name": "Combo / value boxes",
+          "fill": "#ffffff",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE",
+          "note": "same geometry as light"
+        },
+        {
+          "name": "Slider thumb Ellipse",
+          "w": 10,
+          "h": 10,
+          "fill": "#d81f1f"
+        },
+        {
+          "name": "Slider track empty",
+          "borderPx": 0.2,
+          "borderColor": "#ffffff",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "Slider track filled",
+          "fill": "#ffffff"
+        },
+        {
+          "name": "Checkbox",
+          "w": 16,
+          "h": 16,
+          "note": "dark"
+        },
+        {
+          "name": "Chevron",
+          "w": 12,
+          "h": 12,
+          "note": "often"
+        }
+      ],
+      "legend": [],
+      "bottom": [
+        {
+          "name": "Export",
+          "fill": "#dfdede",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View idle",
+          "fill": "#efe9e9",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "name": "View active",
+          "fill": "#ed2227",
+          "borderPx": 0.3,
+          "borderColor": "#0c0c0c",
+          "strokeAlign": "INSIDE"
+        }
+      ],
+      "gridLines": [
+        {
+          "type": "major",
+          "borderPx": 1,
+          "borderColor": "#454242",
+          "strokeAlign": "CENTER"
+        },
+        {
+          "type": "minor",
+          "borderPx": 0.2,
+          "borderColor": "#454242",
+          "strokeAlign": "CENTER"
+        }
+      ]
+    },
+    "borderedRects": {
+      "histogramFromPluginApi": {
+        "0.2": 35,
+        "0.3": 31,
+        "0.5": 3,
+        "1": 10
+      },
+      "largeRegionCount": 6,
+      "largeWithBorder": 6,
+      "smallSections": [
+        "header",
+        "plot_toolbar",
+        "sidebar",
+        "legend",
+        "bottom",
+        "gridLines"
+      ],
+      "borderedRectsListedInInventory": 15
+    }
+  }
+}

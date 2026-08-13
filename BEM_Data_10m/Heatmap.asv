@@ -1,0 +1,25 @@
+clc;
+clear;close all;
+data=readtable('20Hz.xlsx');
+X=data{:,2};
+Z=data{:,4};
+Pr=data{:,6};
+Pi=data{:,7};
+Pm=sqrt(Pr.^2 + Pi.^2);
+Pref=20e-6;
+SPL=20*log10(Pm/Pref);
+
+
+
+
+figure;
+
+pcolor(Xm,Zm,SPLm);
+shading interp;
+axis equal tight;
+xlabel('X (m)');
+ylabel('Z (m)');
+title('BEM SPL Heatmap — 20 Hz');
+
+colorbar;
+colormap(jet);

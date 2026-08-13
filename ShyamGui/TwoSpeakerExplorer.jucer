@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="TwoSpeakerExplorer"
+              name="TwoSpeakerExplorer"
+              projectType="guiapp"
+              version="1.1.0"
+              bundleIdentifier="com.shayam.twospeaker"
+              jucerVersion="7.0.9"
+              companyName="Shayam"
+              companyCopyright="2025"
+              displaySplashScreen="0"
+              reportAppUsage="0"
+              splashScreenColour="Dark"
+              projectLineFeed="&#10;">
+  <MAINGROUP id="MainGrp" name="TwoSpeakerExplorer">
+    <GROUP id="SourceGrp" name="Source">
+      <FILE id="f001" name="Main.cpp"                        compile="1" resource="0" file="Source/Main.cpp"/>
+      <FILE id="f002" name="MainComponent.h"                 compile="0" resource="0" file="Source/MainComponent.h"/>
+      <FILE id="f003" name="MainComponent.cpp"               compile="1" resource="0" file="Source/MainComponent.cpp"/>
+      <FILE id="f004" name="AcousticEngine.h"                compile="0" resource="0" file="Source/AcousticEngine.h"/>
+      <FILE id="f005" name="AcousticEngine.cpp"              compile="1" resource="0" file="Source/AcousticEngine.cpp"/>
+      <FILE id="f006" name="ColourMaps.h"                    compile="0" resource="0" file="Source/ColourMaps.h"/>
+      <FILE id="f007" name="RadiationPatternComponent.h"     compile="0" resource="0" file="Source/RadiationPatternComponent.h"/>
+      <FILE id="f008" name="RadiationPatternComponent.cpp"   compile="1" resource="0" file="Source/RadiationPatternComponent.cpp"/>
+      <FILE id="f009" name="ControlPanel.h"                  compile="0" resource="0" file="Source/ControlPanel.h"/>
+      <FILE id="f010" name="ControlPanel.cpp"                compile="1" resource="0" file="Source/ControlPanel.cpp"/>
+      <FILE id="f011" name="InfoPanel.h"                     compile="0" resource="0" file="Source/InfoPanel.h"/>
+      <FILE id="f012" name="InfoPanel.cpp"                   compile="1" resource="0" file="Source/InfoPanel.cpp"/>
+      <FILE id="f013" name="AppSettings.h"                   compile="0" resource="0" file="Source/AppSettings.h"/>
+      <FILE id="f014" name="PreferencesComponent.h"          compile="0" resource="0" file="Source/PreferencesComponent.h"/>
+      <FILE id="f015" name="PreferencesComponent.cpp"        compile="1" resource="0" file="Source/PreferencesComponent.cpp"/>
+      <FILE id="f016" name="ProjectData.h"                   compile="0" resource="0" file="Source/ProjectData.h"/>
+      <FILE id="f017" name="DashboardComponent.h"            compile="0" resource="0" file="Source/DashboardComponent.h"/>
+      <FILE id="f018" name="DashboardComponent.cpp"          compile="1" resource="0" file="Source/DashboardComponent.cpp"/>
+      <FILE id="f019" name="ReportExport.h"                  compile="0" resource="0" file="Source/ReportExport.h"/>
+      <FILE id="f020" name="PdfDocument.h"                   compile="0" resource="0" file="Source/PdfDocument.h"/>
+      <FILE id="f021" name="AcousticAnalysis.h"             compile="0" resource="0" file="Source/AcousticAnalysis.h"/>
+      <FILE id="f022" name="GraphRender.h"                  compile="0" resource="0" file="Source/GraphRender.h"/>
+      <FILE id="f023" name="ReportBuilder.h"                compile="0" resource="0" file="Source/ReportBuilder.h"/>
+      <FILE id="f024" name="LayoutLayer.h"                 compile="0" resource="0" file="Source/LayoutLayer.h"/>
+      <FILE id="f025" name="DxfImport.h"                   compile="0" resource="0" file="Source/DxfImport.h"/>
+    </GROUP>
+  </MAINGROUP>
+
+  <MODULES>
+    <MODULE id="juce_core"          showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events"        showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics"      showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics"    showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra"     showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug"
+                       isDebug="1"
+                       optimisation="1"
+                       targetName="TwoSpeakerExplorer"
+                       headerPath=""
+                       libraryPath=""
+                       defines=""
+                       cppLanguageStandard="17"/>
+        <CONFIGURATION name="Release"
+                       isDebug="0"
+                       optimisation="3"
+                       targetName="TwoSpeakerExplorer"
+                       headerPath=""
+                       libraryPath=""
+                       defines="NDEBUG=1"
+                       cppLanguageStandard="17"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core"            path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_events"          path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics"        path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics"      path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra"       path="C:/JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+  </EXPORTFORMATS>
+
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"
+               JUCE_VST3_CAN_REPLACE_VST2="0"/>
+</JUCERPROJECT>

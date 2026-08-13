@@ -1,0 +1,4 @@
+// Embeds the Atomik application icon into the executable. Windows uses the
+// icon resource with the lowest numeric ID as the file / taskbar / shortcut
+// icon, so this single entry is all that is required.
+101 ICON "..\\Assets\\atomik_icon.ico"

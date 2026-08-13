@@ -1,0 +1,38 @@
+# Build / IDE
+Builds/**/build/
+.vs/
+x64/
+Debug/
+Release/
+**/build/
+dist/
+*.user
+*.suo
+*.sdf
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.ipch
+*.aps
+*.VC.db
+*.VC.opendb
+*.tlog
+*.code-workspace
+
+# Secrets / local junk
+access.txt
+*accesstoken*
+*access_token*
+*github_pat*
+ghp_*
+Gitub*
+.gitub*
+.cursor/
+
+# Office lock / temp files
+~$*
+*.tmp

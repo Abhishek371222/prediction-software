@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- ======================================================================
+       Configurations
+  ====================================================================== -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <!-- ======================================================================
+       Globals
+  ====================================================================== -->
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{3F8A1C2D-B4E7-4F91-8ACD-A1B2C3D4E5F6}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>TwoSpeakerExplorer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>TwoSpeakerExplorer</ProjectName>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <!-- ======================================================================
+       Configuration properties
+  ====================================================================== -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <!-- Soft-debug: release CRT so Smart App Control allows the exe; PDB kept for F5. -->
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+
+  <!-- ======================================================================
+       Output directories
+  ====================================================================== -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(ProjectDir)Builds\Debug\</OutDir>
+    <IntDir>$(ProjectDir)Builds\obj\Debug\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(ProjectDir)Builds\Release\</OutDir>
+    <IntDir>$(ProjectDir)Builds\obj\Release\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+
+  <!-- ======================================================================
+       Compiler + Linker — Debug
+  ====================================================================== -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>false</SDLCheck>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)JuceLibraryCode;C:\JUCE\modules;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        NDEBUG;_WINDOWS;JUCE_DEBUG=0;%(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>
+        kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;
+        advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;
+        winmm.lib;imm32.lib;shlwapi.lib;version.lib;ws2_32.lib;
+        opengl32.lib;glu32.lib;dbghelp.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)Tools\SignLocal.ps1" -ExePath "$(TargetPath)"
+if errorlevel 1 exit /B 0</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+
+  <!-- ======================================================================
+       Compiler + Linker — Release
+  ====================================================================== -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Full</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)JuceLibraryCode;C:\JUCE\modules;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        NDEBUG;_WINDOWS;%(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalDependencies>
+        kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;
+        advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;
+        winmm.lib;imm32.lib;shlwapi.lib;version.lib;ws2_32.lib;
+        opengl32.lib;glu32.lib;dbghelp.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)Tools\SignLocal.ps1" -ExePath "$(TargetPath)"
+copy /Y "$(TargetPath)" "$(ProjectDir)Builds\Release\Acoustic Simulation Engine beta_1.2.4.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)Tools\SignLocal.ps1" -ExePath "$(ProjectDir)Builds\Release\Acoustic Simulation Engine beta_1.2.4.exe"
+if errorlevel 1 exit /B 0</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+
+  <!-- ======================================================================
+       Source files
+  ====================================================================== -->
+  <ItemGroup>
+    <!-- JUCE module translation units -->
+    <ClCompile Include="JuceLibraryCode\include_juce_core.cpp" />
+    <ClCompile Include="JuceLibraryCode\include_juce_data_structures.cpp" />
+    <ClCompile Include="JuceLibraryCode\include_juce_events.cpp" />
+    <ClCompile Include="JuceLibraryCode\include_juce_graphics.cpp" />
+    <ClCompile Include="JuceLibraryCode\include_juce_gui_basics.cpp" />
+    <ClCompile Include="JuceLibraryCode\include_juce_gui_extra.cpp" />
+    <!-- Application source -->
+    <ClCompile Include="Source\Main.cpp" />
+    <ClCompile Include="Source\MainComponent.cpp" />
+    <ClCompile Include="Source\AcousticEngine.cpp" />
+    <ClCompile Include="Source\RadiationPatternComponent.cpp" />
+    <ClCompile Include="Source\ControlPanel.cpp" />
+    <ClCompile Include="Source\InfoPanel.cpp" />
+    <ClCompile Include="Source\PreferencesComponent.cpp" />
+    <ClCompile Include="Source\DashboardComponent.cpp" />
+  </ItemGroup>
+
+  <!-- ======================================================================
+       Header files
+  ====================================================================== -->
+  <ItemGroup>
+    <ClInclude Include="JuceLibraryCode\AppConfig.h" />
+    <ClInclude Include="JuceLibraryCode\JuceHeader.h" />
+    <ClInclude Include="Source\MainComponent.h" />
+    <ClInclude Include="Source\AcousticEngine.h" />
+    <ClInclude Include="Source\ColourMaps.h" />
+    <ClInclude Include="Source\MeasurementData.h" />
+    <ClInclude Include="Source\UiTextConfig.h" />
+    <ClInclude Include="Source\BrandTheme.h" />
+    <ClInclude Include="Source\RadiationPatternComponent.h" />
+    <ClInclude Include="Source\ControlPanel.h" />
+    <ClInclude Include="Source\InfoPanel.h" />
+    <ClInclude Include="Source\PreferencesComponent.h" />
+    <ClInclude Include="Source\AppSettings.h" />
+    <ClInclude Include="Source\ProjectData.h" />
+    <ClInclude Include="Source\DashboardComponent.h" />
+    <ClInclude Include="Source\ReportExport.h" />
+    <ClInclude Include="Source\PdfDocument.h" />
+    <ClInclude Include="Source\AcousticAnalysis.h" />
+    <ClInclude Include="Source\GraphRender.h" />
+    <ClInclude Include="Source\ReportBuilder.h" />
+    <ClInclude Include="Source\LayoutLayer.h" />
+    <ClInclude Include="Source\DxfImport.h" />
+  </ItemGroup>
+
+  <!-- ======================================================================
+       Resources (application icon embedded into the .exe)
+  ====================================================================== -->
+  <ItemGroup>
+    <ResourceCompile Include="Source\AppIcon.rc" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+
+</Project>

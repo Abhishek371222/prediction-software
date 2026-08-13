@@ -1,0 +1,149 @@
+// ===========================================================================
+// Atomik brand theme — central palette, fonts (Montserrat + Space Mono) and a
+// LookAndFeel that applies them app-wide.
+//
+// Brand / chrome tokens (product spec):
+//   Primary Red #ED2227 | Pure White #FFFFFF | Soft White #FAFAFA
+//   Light Grey  #EFE9E9 | Mid Grey   #DFDEDE | Dark Surface #1C1C1C
+//   Dark Button #333131 | Tool Bg    #201F1F
+// Theme flips chrome only; SPL heatmap colour stops stay identical.
+ // ===========================================================================
+namespace Brand
+{
+    // --- Theme palette ----------------------------------------------------
+    struct Palette
+    {
+        juce::Colour base;          // app background
+        juce::Colour panel;         // sidebar
+        juce::Colour panelDark;     // plot header strip
+        juce::Colour btnIn;         // sidebar controls / value boxes
+        juce::Colour exportPill;    // SAVE / EXPORT buttons
+        juce::Colour idleViewPill;  // inactive VIEW MODE pills
+        juce::Colour statsBtn;      // header Stats pill fill
+        juce::Colour statsText;     // ink on Stats pill
+        juce::Colour plotToolbar;   // plot tool button fills
+        juce::Colour border;        // control outline base
+        juce::Colour sidebarBorder;
+        juce::Colour plotBorder;
+        juce::Colour toolbarBorder;
+        juce::Colour fitViewBorder;
+        juce::Colour text;          // primary chrome text
+        juce::Colour heading;       // section headers
+        juce::Colour ash;           // body labels
+        juce::Colour muted;         // secondary / helper
+        juce::Colour onBtn;         // ink on btnIn / control fills
+        juce::Colour plotBg;        // plot canvas
+        juce::Colour plotGrid;      // major grid
+        juce::Colour plotTitle;     // plot title text
+        juce::Colour axisLabel;     // 0 m / 10 m ticks
+        juce::Colour activeLabel;   // on-accent / active chrome text
+    };
+
+    inline Palette darkPalette()
+    {
+        Palette p;
+        p.base          = juce::Colour (0xff1c1c1c);
+        p.panel         = juce::Colour (0xff1c1c1c);
+        p.panelDark     = juce::Colour (0xff201f1f);
+        p.btnIn         = juce::Colour (0xffffffff);
+        p.exportPill    = juce::Colour (0xffdfdede);
+        p.idleViewPill  = juce::Colour (0xffefe9e9);
+        p.statsBtn      = juce::Colour (0xffffffff);
+        p.statsText     = juce::Colour (0xff000000);
+        p.plotToolbar   = juce::Colour (0xff201f1f);
+        p.border        = juce::Colour (0x4dffffff);
+        p.sidebarBorder = juce::Colour (0x4dffffff);
+        p.plotBorder    = juce::Colour (0x80ffffff);
+        p.toolbarBorder = juce::Colour (0xff1f1e1e);
+        p.fitViewBorder = juce::Colour (0xff383636);
+        p.text          = juce::Colour (0xffffffff);
+        p.heading       = juce::Colour (0xffffffff);
+        p.ash           = juce::Colour (0xfffafafa);
+        p.muted         = juce::Colour (0xffb8b8bc);
+        p.onBtn         = juce::Colour (0xff000000);
+        p.plotBg        = juce::Colour (0xff1c1c1c);
+        p.plotGrid      = juce::Colour (0x80ffffff);
+        p.plotTitle     = juce::Colour (0xfffafafa);
+        p.axisLabel     = juce::Colour (0xfff9f9f9);
+        p.activeLabel   = juce::Colour (0xfffffafa);
+        return p;
+    }
+
+    inline Palette lightPalette()
+    {
+        Palette p;
+        p.base          = juce::Colour (0xffffffff);
+        p.panel         = juce::Colour (0xffefe9e9);
+        p.panelDark     = juce::Colour (0xffefe9e9);
+        p.btnIn         = juce::Colour (0xffdfdede);
+        p.exportPill    = juce::Colour (0xffdfdede);
+        p.idleViewPill  = juce::Colour (0xffefe9e9);
+        p.statsBtn      = juce::Colour (0xff333131);
+        p.statsText     = juce::Colour (0xfffef8f8);
+        p.plotToolbar   = juce::Colour (0xffdfdede);
+        p.border        = juce::Colour (0x4d0c0c0c);
+        p.sidebarBorder = juce::Colour (0x801a1919);
+        p.plotBorder    = juce::Colour (0x801a1919);
+        p.toolbarBorder = juce::Colour (0xff1f1e1e);
+        p.fitViewBorder = juce::Colour (0xff383636);
+        p.text          = juce::Colour (0xff000000);
+        p.heading       = juce::Colour (0xff000000);
+        p.ash           = juce::Colour (0xff000000);
+        p.muted         = juce::Colour (0xff333131);
+        p.onBtn         = juce::Colour (0xff000000);
+        p.plotBg        = juce::Colour (0xffefe9e9);
+        p.plotGrid      = juce::Colour (0x66231f20);
+        p.plotTitle     = juce::Colour (0xffed2227);
+        p.axisLabel     = juce::Colour (0xff000000);
+        p.activeLabel   = juce::Colour (0xfffffafa);
+        return p;
+    }
+
+    inline Palette& palette()
+    {
+        static Palette current = darkPalette();
+        return current;
+    }
+
+    inline void refreshPalette()
+    {
+        palette() = AppSettings::get().isDark() ? darkPalette() : lightPalette();
+    }
+
+    inline juce::Colour charcoal()  { return juce::Colour (0xff231f20); }
+    inline juce::Colour white()     { return juce::Colour (0xffffffff); }
+    inline juce::Colour red()       { return juce::Colour (0xffed2227); }
+    inline juce::Colour accent()    { return red(); }
+    inline juce::Colour onAccent()  { return juce::Colour (0xfffffafa); }
+    inline juce::Colour success()   { return juce::Colour (0xff46c37b); }
+    inline juce::Colour warning()   { return juce::Colour (0xfff0b04f); }
+    inline juce::Colour danger()    { return juce::Colour (0xffe95b5b); }
+    inline juce::Colour onPlotDim() { return juce::Colour (0xffb8b8bc); }
+
+    inline juce::Colour base()          { return palette().base; }
+    inline juce::Colour panel()         { return palette().panel; }
+    inline juce::Colour panelDark()     { return palette().panelDark; }
+    inline juce::Colour btnIn()         { return palette().btnIn; }
+    inline juce::Colour exportPill()    { return palette().exportPill; }
+    inline juce::Colour idleViewPill()  { return palette().idleViewPill; }
+    inline juce::Colour statsBtn()      { return palette().statsBtn; }
+    inline juce::Colour statsText()     { return palette().statsText; }
+    inline juce::Colour plotToolbar()   { return palette().plotToolbar; }
+    inline juce::Colour onBtnIn()       { return palette().onBtn; }
+    inline juce::Colour border()        { return palette().border; }
+    inline juce::Colour sidebarBorder() { return palette().sidebarBorder; }
+    inline juce::Colour plotBorder()    { return palette().plotBorder; }
+    inline juce::Colour toolbarBorder() { return palette().toolbarBorder; }
+    inline juce::Colour fitViewBorder() { return palette().fitViewBorder; }
+    inline juce::Colour ash()           { return palette().ash; }
+    inline juce::Colour muted()         { return palette().muted; }
+    inline juce::Colour text()          { return palette().text; }
+    inline juce::Colour heading()       { return palette().heading; }
+    inline juce::Colour plotBg()        { return palette().plotBg; }
+    inline juce::Colour plotGrid()      { return palette().plotGrid; }
+    inline juce::Colour plotTitle()     { return palette().plotTitle; }
+    inline juce::Colour axisLabel()     { return palette().axisLabel; }
+    inline juce::Colour activeLabel()   { return palette().activeLabel; }
+    inline juce::Colour textDim()       { return ash(); }
+    inline juce::Colour card()          { return btnIn(); }
+    inline juce::Colour disabled()      { return muted(); }
