@@ -1,4 +1,4 @@
-Atomik Acoustic Simulation Engine v1.0
+Atomik Simulation Engine v1.3.0
 ======================================
 
 2D XN18 placement & directivity visualiser.

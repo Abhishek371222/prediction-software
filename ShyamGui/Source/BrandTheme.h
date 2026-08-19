@@ -462,7 +462,87 @@ namespace Brand
     }
 
     // ATOMIK-only wordmark aspect (from cropped brand assets).
-    constexpr float logoAspect = 1926.0f / 308.0f;
+    constexpr float logoAspect = 1942.0f / 323.0f;
+
+    // Drop the stacked "AUDIO" line from the historic two-line mark.
+    inline juce::Image cropToAtomikOnly (juce::Image img)
+    {
+        if (! img.isValid())
+            return {};
+
+        const int w = img.getWidth();
+        const int h = img.getHeight();
+        if (w < 16 || h < 16)
+            return img;
+
+        // Already a wide single-line wordmark.
+        if ((float) w / (float) h >= 4.2f)
+            return img;
+
+        const auto bg = img.getPixelAt (0, 0);
+        const float bgB = bg.getPerceivedBrightness();
+        const bool darkBg = bg.getAlpha() < 24 || bgB < 0.5f;
+
+        auto isInk = [&] (int x, int y)
+        {
+            const auto c = img.getPixelAt (x, y);
+            if (c.getAlpha() < 24)
+                return false;
+            const float b = c.getPerceivedBrightness();
+            return darkBg ? (b > bgB + 0.18f) : (b < bgB - 0.18f);
+        };
+
+        auto rowInk = [&] (int y) -> int
+        {
+            int n = 0;
+            for (int x = 0; x < w; ++x)
+                if (isInk (x, y)) ++n;
+            return n;
+        };
+
+        const int minInk = juce::jmax (4, w / 400);
+        int y0 = -1, y1 = -1;
+        for (int y = 0; y < h; ++y)
+        {
+            if (rowInk (y) > minInk)
+            {
+                if (y0 < 0) y0 = y;
+                y1 = y;
+            }
+        }
+        if (y0 < 0)
+            return img;
+
+        int gap = -1;
+        for (int y = y0; y <= y1; ++y)
+        {
+            if (rowInk (y) <= minInk)
+            {
+                gap = y;
+                break;
+            }
+        }
+        if (gap < 0)
+            return img;
+
+        int x0 = w, x1 = 0;
+        for (int y = y0; y < gap; ++y)
+            for (int x = 0; x < w; ++x)
+                if (isInk (x, y))
+                {
+                    x0 = juce::jmin (x0, x);
+                    x1 = juce::jmax (x1, x);
+                }
+
+        if (x1 <= x0)
+            return img;
+
+        const int pad = 8;
+        return img.getClippedImage ({ juce::jmax (0, x0 - pad),
+                                      juce::jmax (0, y0 - pad),
+                                      juce::jmin (w, x1 + 1 + pad) - juce::jmax (0, x0 - pad),
+                                      juce::jmin (h, gap + pad) - juce::jmax (0, y0 - pad) });
+    }
 
     // whiteVariant: dark-mode / dark-tile logo. Otherwise light-mode logo.
     inline juce::Image loadBrandLogoImage (bool whiteVariant)
@@ -475,21 +555,21 @@ namespace Brand
             : "Atomik_Logo_Light.png";
         if (auto img = juce::ImageFileFormat::loadFrom (assets.getChildFile (atomikOnly));
             img.isValid())
-            return img;
+            return cropToAtomikOnly (img);
 
         const juce::String svgName = whiteVariant
             ? "Atomik Audio - Horizontal logo ( White) 3.svg"
             : "Atomik Audio - Horizontal logo 1.svg";
 
         if (auto img = decodeEmbeddedPngFromSvg (assets.getChildFile (svgName)); img.isValid())
-            return img;
+            return cropToAtomikOnly (img);
 
         const juce::String pngName = whiteVariant
             ? "Atomik_Audio_Logo_Dark.png"
             : "Atomik_Audio_Logo_Light.png";
         const auto png = assets.getChildFile (pngName);
         if (png.existsAsFile())
-            return juce::ImageFileFormat::loadFrom (png);
+            return cropToAtomikOnly (juce::ImageFileFormat::loadFrom (png));
 
         return {};
     }
@@ -881,9 +961,14 @@ namespace Brand
                 g.setColour (label.findColour (juce::Label::textColourId));
                 g.setFont (getLabelFont (label));
                 const auto textArea = getLabelBorderSize (label).subtractedFrom (label.getLocalBounds());
-                g.drawFittedText (label.getText(), textArea, label.getJustificationType(),
-                                  juce::jmax (1, (int) (textArea.getHeight() / 12.0f)),
-                                  label.getMinimumHorizontalScale());
+                // Labels that opt out of shrinking (scale == 1) must never ellipsize —
+                // header version "v1.3.0" was clipping to "v1..." inside JUCE padding.
+                if (label.getMinimumHorizontalScale() >= 0.999f)
+                    g.drawText (label.getText(), textArea, label.getJustificationType(), false);
+                else
+                    g.drawFittedText (label.getText(), textArea, label.getJustificationType(),
+                                      juce::jmax (1, (int) (textArea.getHeight() / 12.0f)),
+                                      label.getMinimumHorizontalScale());
             }
 
             if (boxed)

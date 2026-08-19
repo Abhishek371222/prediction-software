@@ -20,6 +20,7 @@ public:
     ControlPanel();
     ~ControlPanel() override;
 
+    std::function<void()> onWillEdit;          // before a user-visible mutation
     std::function<void()>    onChanged;            // any parameter changed
     std::function<void()>    onRunClicked;         // explicit recompute
     std::function<void(int)> onSelectionChanged;   // selected speaker index
@@ -75,6 +76,7 @@ private:
     void applyDeviceLayout (int count);   // 1/2/3 devices, same plane, 3 m apart
     void pushEdit();          // commit editor values into selected speaker
     void notifyChanged();
+    void willEdit();
 
     enum class PresetKind { Cardioid, EndFired };
     void applyArrayPreset (PresetKind kind, int count);

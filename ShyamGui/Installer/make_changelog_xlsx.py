@@ -1,5 +1,5 @@
 """Generate a styled Excel changelog (CHANGELOG.xlsx) for the
-Atomik Acoustic Simulation Engine, mirroring CHANGELOG.md."""
+Atomik Simulation Engine, mirroring CHANGELOG.md."""
 
 import os
 from openpyxl import Workbook
@@ -105,10 +105,13 @@ wb = Workbook()
 ws = wb.active
 ws.title = "Overview"
 ws.sheet_view.showGridLines = False
-banner(ws, "Atomik Acoustic Simulation Engine - Changelog",
+banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.3.0", "2026-08-19", "Windows product + drawing tools",
+     "ATOMIK-only branding, v1.3.0 exe, plot pencil/line/ruler/eraser, "
+     "BEM/directivity math, Ctrl+Z/Y undo-redo, Statistics button, header version fix"],
     ["1.1.0", "2026-06-29", "Major feature + UX release",
      "Theming, project dashboard/.atmk, heatmap + PDF export, grid/CAD-DXF, "
      "array presets, dual datasets, responsive window, branded installer"],
@@ -121,14 +124,57 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.1.0 detailed changes
+# Sheet 2: v1.3.0 detailed changes
+# ===========================================================================
+ws13 = wb.create_sheet("v1.3.0 Changes")
+ws13.sheet_view.showGridLines = False
+banner(ws13, "v1.3.0  -  Detailed Changes",
+       "Development window 2026-08-12 -> 2026-08-19", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v13 = [
+    ["Plot tools", A, "Heatmap drawing tools",
+     "Select, Pan, Pencil, Eraser, Ruler, Line + colour swatch; annotations in world metres", "2026-08-19"],
+    ["Plot tools", A, "BEM / directivity field math",
+     "Tightened BEM and measured-directivity field formation (commit 633fc36)", "2026-08-19"],
+    ["Editing", A, "Undo / redo",
+     "Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z; letter is lowercased so Caps Lock still works; drawings, cabinets, layouts, control-panel edits", "2026-08-19"],
+    ["Packaging", A, "Windows Release exe",
+     "Builds\\Release\\Atomik Simulation Engine.exe; installer/README at v1.3.0", "2026-08-19"],
+    ["DSP / UI (PS batch)", A, "IEC 1/3-octave frequencies",
+     "20, 25, 31, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500 Hz", "2026-08-12"],
+    ["Branding", C, "Product name",
+     "Atomik Acoustic Simulation Engine -> Atomik Simulation Engine; UI/PDF/CSV/installer/file version = v1.3.0", "2026-08-19"],
+    ["Branding", C, "ATOMIK-only wordmark",
+     "AUDIO line removed; Atomik_Logo_Dark.png / Atomik_Logo_Light.png", "2026-08-19"],
+    ["Header", C, "Statistics button",
+     "Stats pill renamed Statistics; width sized to the full label", "2026-08-19"],
+    ["Measurement", C, "Ground Plane only",
+     "Measurement UI is Ground Plane (no Room set in live UI)", "2026-08-12"],
+    ["DSP", C, "Legend / dB floor -6 dB steps",
+     "Colourbar ticks and floor slider on -6 dB; dBfloor is display range only", "2026-08-12"],
+    ["UI", C, "XN18-n labels + Set to Default",
+     "Cabinet labels use hyphen; Reset renamed Set to Default", "2026-08-12"],
+    ["Header", F, "Version no longer clips",
+     "Was showing v1... instead of v1.3.0; layout uses real logo width", "2026-08-19"],
+    ["UI", F, "Small-screen logo",
+     "Header/dashboard wordmark -20%; Scale minFactor 0.78", "2026-08-12"],
+]
+type_colors = {A: SUCCESS, C: ACCENT, F: WARNING}
+write_table(ws13, 4, ["Section", "Type", "Item", "Details", "Date"],
+            v13, [22, 10, 34, 78, 13],
+            type_colors=type_colors, type_col=2)
+ws13.freeze_panes = "A5"
+ws13.auto_filter.ref = f"A4:E{4 + len(v13)}"
+
+# ===========================================================================
+# Sheet 3: v1.1.0 detailed changes
 # ===========================================================================
 ws2 = wb.create_sheet("v1.1.0 Changes")
 ws2.sheet_view.showGridLines = False
 banner(ws2, "v1.1.0  -  Detailed Changes",
        "Development window 2026-06-25 -> 2026-06-29", 5)
 
-A, C, F = "Added", "Changed", "Fixed"
 changes = [
     # Section, Type, Item, Details, Date
     ["Theming & Preferences", A, "Dark / Light themes",
@@ -257,12 +303,16 @@ timeline = [
     ["2026-06-26", "Preferences/settings, .atmk projects + dashboard, enhanced heatmap export, PDF pipeline, grid + CAD/DXF, array presets, app icon + installer, header responsiveness, version bump, red->cyan overhaul"],
     ["2026-06-27", "Window scaling (min size, fixed aspect ratio, clamps); fresh-install guarantee; Recent Projects hygiene"],
     ["2026-06-29", "Dual measurement datasets (Ground Plane / Room), selectable + separate; final naming"],
+    ["2026-08-12", "PS-001…PS-019: 1/3-octave freqs, Ground Plane-only UI, XN18-n, -6 dB legend, PDF/CSV/PNG polish, Set to Default"],
+    ["2026-08-13", "prediction-software repo initial commit (Q21S / XN18 tree)"],
+    ["2026-08-19", "Plot drawing tools + BEM/directivity math (633fc36)"],
+    ["2026-08-19", "v1.3.0 Windows build: Atomik Simulation Engine rename, ATOMIK-only logo, header v1.3.0 fix, Ctrl+Z/Y, Statistics button, single Release exe"],
 ]
 write_table(ws4, 4, ["Date", "Work landed"], timeline, [14, 110])
 ws4.freeze_panes = "A5"
 
 # paint remaining backgrounds for a clean dark look
-for sheet in (ws, ws2, ws3, ws4):
+for sheet in (ws, ws13, ws2, ws3, ws4):
     paint_bg(sheet, sheet.max_row + 2, sheet.max_column)
 
 out = os.path.join(os.path.dirname(__file__), "..", "CHANGELOG.xlsx")

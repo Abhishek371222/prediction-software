@@ -70,11 +70,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(ProjectDir)Builds\Debug\</OutDir>
     <IntDir>$(ProjectDir)Builds\obj\Debug\</IntDir>
+    <TargetName>Atomik Simulation Engine</TargetName>
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)Builds\Release\</OutDir>
     <IntDir>$(ProjectDir)Builds\obj\Release\</IntDir>
+    <TargetName>Atomik Simulation Engine</TargetName>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
 
@@ -152,8 +154,6 @@ if errorlevel 1 exit /B 0</Command>
     </Link>
     <PostBuildEvent>
       <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)Tools\SignLocal.ps1" -ExePath "$(TargetPath)"
-copy /Y "$(TargetPath)" "$(ProjectDir)Builds\Release\Acoustic Simulation Engine beta_1.2.4.exe"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)Tools\SignLocal.ps1" -ExePath "$(ProjectDir)Builds\Release\Acoustic Simulation Engine beta_1.2.4.exe"
 if errorlevel 1 exit /B 0</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>

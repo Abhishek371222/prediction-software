@@ -20,7 +20,8 @@
 class MainComponent : public juce::Component,
                       private juce::Thread,
                       private juce::Timer,
-                      private juce::ChangeListener
+                      private juce::ChangeListener,
+                      private juce::KeyListener
 {
 public:
     explicit MainComponent (ProjectData project = {});
@@ -30,6 +31,8 @@ public:
     void paintOverChildren  (juce::Graphics&) override;
     void resized () override;
     void lookAndFeelChanged() override;                       // re-apply theme colours
+    void parentHierarchyChanged() override;
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override;
 
 private:
     void run() override;            // juce::Thread
@@ -54,6 +57,19 @@ private:
     void syncRenderer();
     void showDrawColourPicker();
     void applyPlotTool (RadiationPatternComponent::Tool tool, bool openColourPicker = false);
+
+    struct EditSnapshot
+    {
+        ProjectData scene;
+        std::vector<RadiationPatternComponent::Annotation> drawings;
+    };
+    void willEdit();
+    void commitEdit();
+    void undoEdit();
+    void redoEdit();
+    EditSnapshot takeEditSnapshot() const;
+    void applyEditSnapshot (const EditSnapshot&);
+    static juce::juce_wchar shortcutLetter (const juce::KeyPress&);
 
     void exportPNG();
     void exportCSV();
@@ -89,7 +105,7 @@ private:
 
     juce::Label exportHeader_, viewHeader_;
 
-    juce::TextButton     btnStats_ { "Stats" };
+    juce::TextButton     btnStats_ { "Statistics" };
     juce::DrawableButton btnHelp_  { "help", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnPrefsIcon_ { "prefs", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnMore_  { "more", juce::DrawableButton::ImageFitted };
@@ -144,6 +160,11 @@ private:
     LambdaTimer measPoll_;
 
     static juce::Colour kBg() { return Brand::base(); }
+
+    std::vector<EditSnapshot> undoStack_, redoStack_;
+    EditSnapshot              editBaseline_;
+    bool                      restoringEdit_ = false;
+    juce::Component*          keyHost_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

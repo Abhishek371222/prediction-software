@@ -46,7 +46,7 @@ namespace UiConfig
     namespace FontSize
     {
         // --- Top header bar --------------------------------------------------
-        // "Atomik Acoustic Simulation Engine" centred title
+        // "Atomik Simulation Engine" centred title
         constexpr float appTitle            = 13.0f;
         // Small version / build label beside the title (also used for subtitle ratio)
         constexpr float appVersion          = 9.0f;
@@ -136,7 +136,7 @@ namespace UiConfig
         // --- Plot toolbar ----------------------------------------------------
         // "Fit" button above the heatmap (bold)
         constexpr float plotFitButton         = 10.0f;
-        // Header "Stats" dropdown button (Montserrat SemiBold)
+        // Header "Statistics" dropdown button (Montserrat SemiBold)
         constexpr float headerStatsButton     = 12.0f;
 
         // --- Preferences dialog ----------------------------------------------

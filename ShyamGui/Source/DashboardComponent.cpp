@@ -31,12 +31,16 @@ DashboardComponent::DashboardComponent()
     title_.setFont (Brand::tech (26.0f, true));
     title_.setColour (juce::Label::textColourId, Brand::text());
     title_.setJustificationType (juce::Justification::centredLeft);
+    title_.setMinimumHorizontalScale (1.0f);
+    title_.setBorderSize ({});
     addAndMakeVisible (title_);
 
     subtitle_.setText ("Project Dashboard", juce::dontSendNotification);
     subtitle_.setFont (Brand::tech (Brand::Type::dashSubtitle));
     subtitle_.setColour (juce::Label::textColourId, Brand::ash());
     subtitle_.setJustificationType (juce::Justification::centredLeft);
+    subtitle_.setMinimumHorizontalScale (1.0f);
+    subtitle_.setBorderSize ({});
     addAndMakeVisible (subtitle_);
 
     newBtn_.setButtonText ("NEW PROJECT");

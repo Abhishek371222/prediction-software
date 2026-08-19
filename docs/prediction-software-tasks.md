@@ -140,3 +140,10 @@ Atomik Acoustic Simulation Engine predicts low-frequency coverage for subwoofer 
 - **PS-017:** SVG export button remains hidden / unwired.
 - **PS-018:** Reset label → **Set to Default**.
 - **PS-019:** Confirmed CLIO map: 0° top, **90° right** (`sin`/`cos` in `ClioFrame::toXY`) — no change needed.
+
+### 2026-08-19 — v1.3.0 Windows product
+- Plot drawing tools + BEM/directivity field math (origin `633fc36`).
+- Product name **Atomik Simulation Engine**; ATOMIK-only logo; header **v1.3.0** no longer clips.
+- Ctrl+Z / Ctrl+Y undo-redo (Caps Lock safe); header button **Statistics**.
+- Release folder: `Atomik Simulation Engine.exe` only.
+- Changelog: `ShyamGui/CHANGELOG.md` + `ShyamGui/CHANGELOG.xlsx`.

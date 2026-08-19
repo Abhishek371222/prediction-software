@@ -26,15 +26,18 @@ MainComponent::MainComponent (ProjectData project)
 {
     logo_ = Brand::createLogo (Brand::text());
 
-    titleLabel_.setText ("Atomik Acoustic Simulation Engine",
+    titleLabel_.setText ("Atomik Simulation Engine",
                          juce::dontSendNotification);
-    titleLabel_.setMinimumHorizontalScale (0.7f);
+    titleLabel_.setMinimumHorizontalScale (1.0f);
+    titleLabel_.setBorderSize ({});
     titleLabel_.setFont (Brand::techSemi (Brand::Type::appTitle));
     titleLabel_.setColour (juce::Label::textColourId, Brand::text());
     titleLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("beta_v1.3.0", juce::dontSendNotification);
+    versionLabel_.setText ("v1.3.0", juce::dontSendNotification);
+    versionLabel_.setMinimumHorizontalScale (1.0f);
+    versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
     versionLabel_.setColour (juce::Label::textColourId, Brand::text().darker (0.10f));
     versionLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -99,7 +102,7 @@ MainComponent::MainComponent (ProjectData project)
     addChildComponent (comingSoonOverlay_);
 
     btnStats_.setComponentID ("headerStats");
-    btnStats_.setButtonText ("Stats");
+    btnStats_.setButtonText ("Statistics");
     btnStats_.setTooltip ("Scene Summary & Selected Speaker");
     btnStats_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
     btnStats_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
@@ -181,8 +184,10 @@ MainComponent::MainComponent (ProjectData project)
     statusStrip_.setStatus ("Ready", true);
 
     // Wire panels -----------------------------------------------------------
+    controlPanel_.onWillEdit = [this] { willEdit(); };
     controlPanel_.onChanged     = [this]
     {
+        commitEdit();
         // Always push the live speaker list (delete / enable / layout) so markers
         // and active counts update immediately, then recompute field views.
         syncRenderer();
@@ -223,6 +228,8 @@ MainComponent::MainComponent (ProjectData project)
         controlPanel_.setSpeakerPosition (idx, x, y);
         scheduleRecompute();
     };
+    patternComp_.onWillEdit = [this] { willEdit(); };
+    patternComp_.onEditCommitted = [this] { commitEdit(); };
     patternComp_.onLayoutMoved = [this] { patternComp_.repaint(); };
 
     // Workspace / layout wiring --------------------------------------------
@@ -258,12 +265,17 @@ MainComponent::MainComponent (ProjectData project)
     applyGridPref();
 
     setSize (1340, 820);   // after all child components exist (setSize calls resized)
+    setWantsKeyboardFocus (true);
+    grabKeyboardFocus();
+    editBaseline_ = takeEditSnapshot();
 
     runSimulation();   // first compute already has the measured directivity tables
 }
 
 MainComponent::~MainComponent()
 {
+    if (keyHost_ != nullptr)
+        keyHost_->removeKeyListener (this);
     AppSettings::get().removeChangeListener (this);
     measPoll_.stopTimer();
     stopTimer();
@@ -307,6 +319,113 @@ ProjectData MainComponent::currentProject() const
     p.octaveSmoothing       = sp.octaveSmoothing;
     p.useMeasuredDirectivity = sp.useMeasuredDirectivity;
     return p;
+}
+
+juce::juce_wchar MainComponent::shortcutLetter (const juce::KeyPress& key)
+{
+    // Ctrl/Cmd shortcuts must ignore Caps Lock: use the key code when it is a
+    // letter, otherwise fall back to the text character, then lowercase.
+    const int raw = key.getKeyCode();
+    juce::juce_wchar ch = 0;
+    if ((raw >= 'A' && raw <= 'Z') || (raw >= 'a' && raw <= 'z'))
+        ch = (juce::juce_wchar) raw;
+    else
+    {
+        const auto t = key.getTextCharacter();
+        if (t >= 32)
+            ch = t;
+    }
+    return juce::CharacterFunctions::toLowerCase (ch);
+}
+
+MainComponent::EditSnapshot MainComponent::takeEditSnapshot() const
+{
+    EditSnapshot s;
+    s.scene = currentProject();
+    s.drawings = patternComp_.getAnnotations();
+    return s;
+}
+
+void MainComponent::applyEditSnapshot (const EditSnapshot& s)
+{
+    restoringEdit_ = true;
+    controlPanel_.applyProject (s.scene);
+    patternComp_.setAnnotations (s.drawings);
+    patternComp_.setSpeakers (controlPanel_.getSpeakers(),
+                              controlPanel_.getSelectedIndex());
+    restoringEdit_ = false;
+    editBaseline_ = s;
+}
+
+void MainComponent::willEdit()
+{
+    if (restoringEdit_) return;
+    undoStack_.push_back (editBaseline_);
+    constexpr int kMax = 80;
+    if ((int) undoStack_.size() > kMax)
+        undoStack_.erase (undoStack_.begin(),
+                          undoStack_.begin() + ((int) undoStack_.size() - kMax));
+    redoStack_.clear();
+}
+
+void MainComponent::commitEdit()
+{
+    if (restoringEdit_) return;
+    editBaseline_ = takeEditSnapshot();
+}
+
+void MainComponent::undoEdit()
+{
+    if (undoStack_.empty()) return;
+    redoStack_.push_back (takeEditSnapshot());
+    auto s = undoStack_.back();
+    undoStack_.pop_back();
+    applyEditSnapshot (s);
+}
+
+void MainComponent::redoEdit()
+{
+    if (redoStack_.empty()) return;
+    undoStack_.push_back (takeEditSnapshot());
+    auto s = redoStack_.back();
+    redoStack_.pop_back();
+    applyEditSnapshot (s);
+}
+
+void MainComponent::parentHierarchyChanged()
+{
+    if (keyHost_ != nullptr)
+        keyHost_->removeKeyListener (this);
+    keyHost_ = getTopLevelComponent();
+    if (keyHost_ != nullptr)
+        keyHost_->addKeyListener (this);
+}
+
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
+{
+    const auto mods = key.getModifiers();
+    if (! mods.isCommandDown() || mods.isAltDown())
+        return false;
+
+    if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+        if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
+            return false;
+
+    const auto letter = shortcutLetter (key);
+    if (letter == 'z')
+    {
+        if (mods.isShiftDown())
+            redoEdit();
+        else
+            undoEdit();
+        return true;
+    }
+    if (letter == 'y')
+    {
+        redoEdit();
+        return true;
+    }
+    return false;
 }
 
 void MainComponent::saveProject()
@@ -503,15 +622,8 @@ void MainComponent::paint (juce::Graphics& g)
                                 (float) centreW, (float) bottomH, rad);
     }
 
-    // Atomik wordmark, top-left of the header band.
-    if (logo_ != nullptr)
-    {
-        juce::Rectangle<float> logoBox (16.0f, 8.0f, 180.0f, 44.0f);
-        logo_->drawWithin (g, logoBox,
-                           juce::RectanglePlacement::xLeft
-                         | juce::RectanglePlacement::yMid
-                         | juce::RectanglePlacement::onlyReduceInSize, 1.0f);
-    }
+    // Atomik wordmark, top-left of the header band (ATOMIK only).
+    Brand::drawLogo (g, logo_.get(), Brand::headerLogoBounds ((float) headerH));
 }
 
 void MainComponent::paintOverChildren (juce::Graphics& g)
@@ -600,33 +712,57 @@ void MainComponent::resized()
     btnPrefsIcon_.setBounds  (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
     btnHelp_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap * 2;
 
-    const int statsW = UiConfig::Scale::px (78);
+    const auto statsFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::headerStatsButton));
+    const int statsW = juce::jmax (UiConfig::Scale::px (96),
+                                   juce::roundToInt (statsFont.getStringWidthFloat (btnStats_.getButtonText()) + 20.0f));
     btnStats_.setBounds      (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH); rx -= statsW;
 
     {
-        const int logoRight = UiConfig::Scale::px (200);
+        // Logo | title + version | flexible space | header buttons.
+        // Version is never ellipsized: it keeps its full glyph width at every scale.
+        const int logoRight = Brand::headerLogoRightReserve();
         const int regionR   = rx - UiConfig::Scale::px (12);
-        const int regionW   = juce::jmax (80, regionR - logoRight);
-        juce::Font f = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::appTitle));
-        float fontH  = Brand::UI::scaledFont (Brand::Type::appTitle);
-        while (fontH > UiConfig::Laf::titleShrinkMin
-               && f.withHeight (fontH).getStringWidthFloat (titleLabel_.getText()) > (float) regionW - 40.0f)
-            fontH -= 0.5f;
-        f = f.withHeight (fontH);
-        titleLabel_.setFont (f);
-        versionLabel_.setFont (Brand::techSemi (juce::jmax (UiConfig::Laf::versionMin,
-                                                       fontH * UiConfig::Laf::versionFromTitle)));
+        const int regionW   = juce::jmax (1, regionR - logoRight);
+        const int pairGap   = UiConfig::Scale::px (10);
 
-        const float tw = f.getStringWidthFloat (titleLabel_.getText());
-        const float vw = versionLabel_.getFont().getStringWidthFloat (versionLabel_.getText());
-        const float pairW = tw + UiConfig::Scale::px (8) + vw;
-        float pairX = W * 0.5f - pairW * 0.5f;
-        pairX = juce::jlimit ((float) logoRight, (float) regionR - pairW, pairX);
+        auto glyphW = [] (const juce::Font& font, const juce::String& text) -> int
+        {
+            return juce::roundToInt (font.getStringWidthFloat (text) + 8.0f);
+        };
+
+        juce::Font titleFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::appTitle));
+        float fontH = titleFont.getHeight();
+        juce::Font versionFont = Brand::techSemi (juce::jmax (UiConfig::Laf::versionMin,
+                                                              fontH * UiConfig::Laf::versionFromTitle));
+        versionLabel_.setFont (versionFont);
+
+        const juce::String titleText = titleLabel_.getText();
+        const juce::String verText   = versionLabel_.getText();
+        int vw = glyphW (versionFont, verText);
+        int tw = glyphW (titleFont, titleText);
+
+        while (fontH > UiConfig::Laf::titleShrinkMin
+               && tw + pairGap + vw > regionW)
+        {
+            fontH -= 0.5f;
+            titleFont = titleFont.withHeight (fontH);
+            tw = glyphW (titleFont, titleText);
+        }
+        titleLabel_.setFont (titleFont);
+
+        if (tw + pairGap + vw > regionW)
+            tw = juce::jmax (48, regionW - pairGap - vw);
+
+        const int pairW = tw + pairGap + vw;
+        float pairX = 0.5f * (float) W - 0.5f * (float) pairW;
+        pairX = juce::jlimit ((float) logoRight,
+                              (float) juce::jmax (logoRight, regionR - pairW),
+                              pairX);
 
         const int titleTop = UiConfig::Scale::px (6);
-        titleLabel_.setBounds ((int) pairX, titleTop, (int) tw + 2, titleH - UiConfig::Scale::px (8));
-        versionLabel_.setBounds ((int) (pairX + tw + UiConfig::Scale::px (8)), titleTop,
-                                 (int) vw + 4, titleH - UiConfig::Scale::px (8));
+        const int labelH   = juce::jmax (16, titleH - UiConfig::Scale::px (8));
+        titleLabel_.setBounds ((int) pairX, titleTop, tw, labelH);
+        versionLabel_.setBounds ((int) pairX + tw + pairGap, titleTop, vw, labelH);
     }
 
     // Param stats live in Help; keep bar out of the layout.
@@ -1379,7 +1515,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Acoustic Simulation Engine v1.3.0");
+            line ("# Atomik Simulation Engine v1.3.0");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

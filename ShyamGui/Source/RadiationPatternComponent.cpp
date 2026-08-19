@@ -39,6 +39,14 @@ void RadiationPatternComponent::clearAnnotations()
     repaint();
 }
 
+void RadiationPatternComponent::setAnnotations (std::vector<Annotation> a)
+{
+    annotations_ = std::move (a);
+    pendingAnchor_ = false;
+    drag_ = Drag::None;
+    repaint();
+}
+
 bool RadiationPatternComponent::canAnnotate() const noexcept
 {
     // Annotations only render on the SPL field plot (not polar views).
@@ -1350,6 +1358,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
     if (tool_ == Tool::Pencil)
     {
+        if (onWillEdit) onWillEdit();
         Annotation stroke;
         stroke.kind = Annotation::Kind::Freehand;
         stroke.colour = drawColour_;
@@ -1363,6 +1372,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
     if (tool_ == Tool::Eraser)
     {
+        if (onWillEdit) onWillEdit();
         const float radiusM = 8.0f / juce::jmax (1.0f, worldScale());
         eraseNear (world, radiusM);
         drag_ = Drag::Erase;
@@ -1381,6 +1391,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         }
         else
         {
+            if (onWillEdit) onWillEdit();
             Annotation a;
             a.kind = (tool_ == Tool::Ruler) ? Annotation::Kind::Measure
                                             : Annotation::Kind::Line;
@@ -1389,6 +1400,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             a.worldPts = { pendingStartWorld_, world };
             annotations_.push_back (std::move (a));
             pendingAnchor_ = false;
+            if (onEditCommitted) onEditCommitted();
         }
         repaint();
         return;
@@ -1398,6 +1410,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     const int hit = (tool_ == Tool::Select) ? speakerHitTest (e.position) : -1;
     if (hit >= 0)
     {
+        if (onWillEdit) onWillEdit();
         drag_ = Drag::Speaker;
         draggedSpeaker_ = hit;
         selected_ = hit;
@@ -1407,6 +1420,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     else if (tool_ == Tool::Select && layoutEditMode_ && layout_ != nullptr
              && layout_->valid() && layout_->visible && ! layout_->locked)
     {
+        if (onWillEdit) onWillEdit();
         drag_ = Drag::Layer;
     }
     else if (tool_ == Tool::Pan || tool_ == Tool::Select)
@@ -1480,8 +1494,12 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseUp (const juce::MouseEvent&)
 {
+    const bool committed = (drag_ == Drag::Pencil || drag_ == Drag::Erase
+                            || drag_ == Drag::Speaker || drag_ == Drag::Layer);
     drag_ = Drag::None;
     draggedSpeaker_ = -1;
+    if (committed && onEditCommitted)
+        onEditCommitted();
 }
 
 void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,

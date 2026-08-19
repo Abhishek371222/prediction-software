@@ -110,6 +110,8 @@ public:
         title_.setFont (Brand::tech (Brand::Type::panelTitle));
         title_.setColour (juce::Label::textColourId, Brand::plotTitle());
         title_.setJustificationType (juce::Justification::centredLeft);
+        title_.setMinimumHorizontalScale (1.0f);
+        title_.setBorderSize ({});
         addAndMakeVisible (title_);
 
         auto mk = [] (const char* svg, juce::Colour c) -> std::unique_ptr<juce::Drawable>
@@ -298,9 +300,11 @@ public:
         placeRight (btnSelect_, tool);
         b.removeFromRight (UiConfig::Scale::px (8));
 
-        // Title takes whatever is left; ellipsize if tools need the space.
+        // Title uses leftover width; keep full text unless the bar is genuinely cramped.
+        const int titleNeed = juce::roundToInt (
+            title_.getFont().getStringWidthFloat (title_.getText()) + 8.0f);
+        title_.setMinimumHorizontalScale (b.getWidth() >= titleNeed ? 1.0f : 0.85f);
         title_.setBounds (b);
-        title_.setMinimumHorizontalScale (0.55f);
     }
 
     void lookAndFeelChanged() override

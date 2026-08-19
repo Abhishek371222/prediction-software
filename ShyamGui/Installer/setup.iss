@@ -1,10 +1,10 @@
 ; Inno Setup script for the Acoustic Simulation Engine
 ; Builds a single shareable Setup.exe that installs the app + measurement data.
 
-#define MyAppName "Atomik Acoustic Simulation Engine"
-#define MyAppVersion "1.1"
+#define MyAppName "Atomik Simulation Engine"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Atomik"
-#define MyAppExeName "AtomikAcousticSimulationEngine.exe"
+#define MyAppExeName "Atomik Simulation Engine.exe"
 #define MyAppIcon "D:\shayam gui\Assets\atomik_icon.ico"
 
 [Setup]
@@ -37,7 +37,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Main executable (built with static CRT -> no runtime redistributable needed)
-Source: "D:\shayam gui\Builds\Release\TwoSpeakerExplorer.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
+Source: "D:\PredictionSoftware(MAC_Version)\ShyamGui\Builds\Release\Atomik Simulation Engine.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 ; Measurement data — real readings only (no CLIO PNG dependency).
 ;   Ground Plane -> Factory Readings (open-field .xlsx)
 ;   Room         -> shyamGuildMeasurements (room .xlsx)

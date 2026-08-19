@@ -1,11 +1,61 @@
-# Changelog - Atomik Acoustic Simulation Engine
+# Changelog - Atomik Simulation Engine
 
 All notable changes to this product are documented here.
 This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-Dates are derived from the project's source history (file creation/modification
-timestamps), as the project is not under version control.
+Dates follow the work that shipped in source history and the Windows builds of
+this tree (including 2026-08-19 updates in this workspace).
+
+---
+
+## [1.3.0] - 2026-08-19
+*Development window: 2026-08-12 -> 2026-08-19.*
+
+Windows product build of **Atomik Simulation Engine v1.3.0**. Ships Q21S / XN18
+coverage prediction, Ground Plane measurements, plot drawing tools, and the
+branded Release executable.
+
+### Development timeline (what landed when)
+
+- **2026-08-12** - Prediction-software task batch (PS-001…PS-019): smaller-screen
+  logo, IEC 1/3-octave frequencies, XN18-n labels, Ground Plane-only measurement
+  wording, legend −6 dB steps, CSV/PDF/PNG polish, Set to Default, polar 90° right.
+- **2026-08-13** - Repository published (`prediction-software` initial commit).
+- **2026-08-19** - Plot drawing tools (select/pan/pencil/eraser/ruler/line) and
+  tighter BEM / directivity field math (`633fc36`).
+- **2026-08-19** - Windows Release packaging and UI polish in this workspace:
+  product rename, ATOMIK-only wordmark, header version no longer clips,
+  Ctrl+Z / Ctrl+Y undo-redo, Statistics header button, single Release exe.
+
+### Added
+
+- **Plot drawing tools** on the SPL heatmap: Select, Pan, Pencil, Eraser, Ruler,
+  Line, plus a colour swatch. Annotations stay locked in world metres.
+- **Undo / redo** (`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`). Shortcut letter is
+  lowercased so Caps Lock does not block it. Covers drawings, cabinet moves,
+  add/delete/layout/presets, and control-panel edits. Text fields keep their own undo.
+- **Windows Release exe** `Builds\Release\Atomik Simulation Engine.exe` (static
+  CRT, signed locally). Installer script and README updated to v1.3.0.
+
+### Changed
+
+- **Product name** `Atomik Acoustic Simulation Engine` -> **Atomik Simulation Engine**.
+  Window title, header, PDF/CSV branding, installer, and Windows file version
+  resource all show **v1.3.0**.
+- **Wordmark** is **ATOMIK** only (AUDIO line stripped). Header uses cropped
+  `Atomik_Logo_Dark.png` / `Atomik_Logo_Light.png`.
+- Header **Stats** pill renamed **Statistics**, width sized to the full label.
+- Measurement UI remains **Ground Plane** only (no Room set in the live UI).
+- Colourbar / dB floor use **−6 dB** steps; `dBfloor` is display range only.
+- Frequency list is IEC **1/3-octave** centres.
+
+### Fixed
+
+- Header version no longer ellipsizes to `v1...`; `v1.3.0` stays fully visible
+  across the window scale range.
+- Header title + version layout uses the real logo width instead of a leftover
+  200 px reserve.
 
 ---
 

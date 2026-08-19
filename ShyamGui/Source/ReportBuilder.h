@@ -64,7 +64,7 @@ namespace ReportBuilder
         const auto& meta = in.project.meta;
         const juce::String len = Units::lengthUnit();
 
-        const juce::String softwareName = "Atomik Acoustic Simulation Engine";
+        const juce::String softwareName = "Atomik Simulation Engine";
 
         // Clean client report: cover, info, inputs, results, heatmaps, summary.
         // FR / RT60 / AC / TL graph pages removed.
@@ -119,7 +119,7 @@ namespace ReportBuilder
         pdf.drawImage (logoTile (430, 70, Brand::white(), Brand::charcoal()),
                        M, 40, 215, 52);
         pdf.textRight (W - M, 64, 13, softwareName.toUpperCase(), juce::Colour (0xffd7d9de), false);
-        pdf.textRight (W - M, 84, 10, "v1.3  -  Q21S Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
+        pdf.textRight (W - M, 84, 10, "v1.3.0  -  Q21S Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
 
         pdf.text (M, 300, 14, "ACOUSTIC SIMULATION REPORT", Brand::accent(), true);
         pdf.text (M, 322, 36, S (meta.projectName), ink, true);

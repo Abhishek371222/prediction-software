@@ -54,9 +54,23 @@ public:
     juce::Colour getDrawColour() const noexcept { return drawColour_; }
     void clearAnnotations();
 
+    struct Annotation
+    {
+        enum class Kind { Freehand, Line, Measure };
+        Kind kind = Kind::Freehand;
+        juce::Colour colour { 0xffffcc00 };
+        float thicknessPx = 2.2f;
+        std::vector<juce::Point<float>> worldPts;   // metres; locked to map
+    };
+
+    std::vector<Annotation> getAnnotations() const { return annotations_; }
+    void setAnnotations (std::vector<Annotation> a);
+
     std::function<void(int)>               onSpeakerSelected;   // index (-1 = none)
     std::function<void(int, float, float)> onSpeakerMoved;      // index, x, y (m)
     std::function<void(Tool)>              onToolChanged;       // toolbar sync
+    std::function<void()>                  onWillEdit;          // before draw / erase / drag
+    std::function<void()>                  onEditCommitted;     // after gesture completes
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -100,15 +114,6 @@ private:
     void drawAnnotations (juce::Graphics&, juce::Rectangle<int> bounds);
     const MeasuredFreq* measuredForHz (int hz) const;
     bool showingBemHeatmap() const noexcept;
-
-    struct Annotation
-    {
-        enum class Kind { Freehand, Line, Measure };
-        Kind kind = Kind::Freehand;
-        juce::Colour colour { 0xffffcc00 };
-        float thicknessPx = 2.2f;
-        std::vector<juce::Point<float>> worldPts;   // metres; locked to map
-    };
 
     SimResult           result_;
     SimParams           params_;

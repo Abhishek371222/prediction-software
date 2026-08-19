@@ -89,7 +89,7 @@ ControlPanel::ControlPanel()
     }
     freqBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
     freqBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
-    freqBox_.onChange = [this] { notifyChanged(); };
+    freqBox_.onChange = [this] { willEdit(); notifyChanged(); };
     addAndMakeVisible (freqBox_);
 
     // Frequency stepping via < > removed — v1.1 uses a full-width dropdown only.
@@ -111,8 +111,8 @@ ControlPanel::ControlPanel()
     addAndMakeVisible (speakerBox_);
     styleBtn (addBtn_,    "+ Add");
     styleBtn (deleteBtn_, "Delete");
-    addBtn_.onClick    = [this] { addSpeaker(); };
-    deleteBtn_.onClick = [this] { deleteSpeaker(); };
+    addBtn_.onClick    = [this] { willEdit(); addSpeaker(); };
+    deleteBtn_.onClick = [this] { willEdit(); deleteSpeaker(); };
 
     // --- Device-layout presets (same plane) -------------------------------
     configTxt (layoutLabel_, "Quick Layout (same plane)");
@@ -120,9 +120,9 @@ ControlPanel::ControlPanel()
     styleBtn (layout1Btn_, "1 Device");
     styleBtn (layout2Btn_, "2 Devices");
     styleBtn (layout3Btn_, "3 Devices");
-    layout1Btn_.onClick = [this] { applyDeviceLayout (1); };
-    layout2Btn_.onClick = [this] { applyDeviceLayout (2); };
-    layout3Btn_.onClick = [this] { applyDeviceLayout (3); };
+    layout1Btn_.onClick = [this] { willEdit(); applyDeviceLayout (1); };
+    layout2Btn_.onClick = [this] { willEdit(); applyDeviceLayout (2); };
+    layout3Btn_.onClick = [this] { willEdit(); applyDeviceLayout (3); };
 
     // --- Per-speaker editors ----------------------------------------------
     addSection (editHdr_, secEditOpen_);
@@ -138,13 +138,17 @@ ControlPanel::ControlPanel()
     ySlider_.onValueChange     = [this] { pushEdit(); };
     gainSlider_.onValueChange  = [this] { pushEdit(); };
     delaySlider_.onValueChange = [this] { pushEdit(); };
+    xSlider_.onDragStart       = [this] { willEdit(); };
+    ySlider_.onDragStart       = [this] { willEdit(); };
+    gainSlider_.onDragStart    = [this] { willEdit(); };
+    delaySlider_.onDragStart   = [this] { willEdit(); };
 
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
     styleToggle (enabledToggle_,     "Enabled");
-    polarityToggle_.onClick    = [this] { pushEdit(); };
-    orientationToggle_.onClick = [this] { pushEdit(); };
-    enabledToggle_.onClick     = [this] { pushEdit(); };
+    polarityToggle_.onClick    = [this] { willEdit(); pushEdit(); };
+    orientationToggle_.onClick = [this] { willEdit(); pushEdit(); };
+    enabledToggle_.onClick     = [this] { willEdit(); pushEdit(); };
 
     // --- Global settings ---------------------------------------------------
     addSection (globalHdr_, secSimOpen_);
@@ -154,12 +158,14 @@ ControlPanel::ControlPanel()
     styleSlider (floorSlider_, -54.0, -12.0, 6.0, -36.0);
     resSlider_.onValueChange   = [this] { notifyChanged(); };
     floorSlider_.onValueChange = [this] { notifyChanged(); };
+    resSlider_.onDragStart     = [this] { willEdit(); };
+    floorSlider_.onDragStart   = [this] { willEdit(); };
     styleToggle (bandsToggle_, "3 dB contour bands (spec)");
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
-    bandsToggle_.onClick = [this] { notifyChanged(); };
+    bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
     styleToggle (measuredDirToggle_, "Use measured directivity");
     measuredDirToggle_.setToggleState (true, juce::dontSendNotification);
-    measuredDirToggle_.onClick = [this] { notifyChanged(); };
+    measuredDirToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
     configTxt (measSetLabel_, "Measurement set");
     measSetBox_.addItem ("Ground Plane", 1);
@@ -184,6 +190,7 @@ ControlPanel::ControlPanel()
     measDistBox_.onChange = [this]
     {
         if (updatingUI_) return;
+        willEdit();
         if (onMeasurementDistanceChanged)
             onMeasurementDistanceChanged (getMeasurementDistance());
     };
@@ -250,6 +257,7 @@ ControlPanel::ControlPanel()
         const int id = presetBox_.getSelectedId();
         const PresetKind kind = (id <= 3) ? PresetKind::Cardioid : PresetKind::EndFired;
         const int count = (id <= 3) ? (id + 1) : (id - 2);   // 2,3,4
+        willEdit();
         applyArrayPreset (kind, count);
     };
 
@@ -260,7 +268,7 @@ ControlPanel::ControlPanel()
     resetBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     resetBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
     resetBtn_.setColour (juce::TextButton::textColourOnId,   Brand::text());
-    resetBtn_.onClick = [this] { resetToDefaults(); };
+    resetBtn_.onClick = [this] { willEdit(); resetToDefaults(); };
     addAndMakeVisible (resetBtn_);
 
     rebuildSpeakerBox();
@@ -480,6 +488,12 @@ void ControlPanel::pushEdit()
     s.reverseOrientation = orientationToggle_.getToggleState();
     s.enabled            = enabledToggle_.getToggleState();
     notifyChanged();
+}
+
+void ControlPanel::willEdit()
+{
+    if (updatingUI_) return;
+    if (onWillEdit) onWillEdit();
 }
 
 void ControlPanel::notifyChanged()
