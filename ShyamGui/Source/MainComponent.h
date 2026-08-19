@@ -52,6 +52,8 @@ private:
     void setViewMode (ViewMode mode);
     void highlightViewBtn (ViewMode mode);
     void syncRenderer();
+    void showDrawColourPicker();
+    void applyPlotTool (RadiationPatternComponent::Tool tool, bool openColourPicker = false);
 
     void exportPNG();
     void exportCSV();

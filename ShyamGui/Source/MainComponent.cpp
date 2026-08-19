@@ -131,8 +131,51 @@ MainComponent::MainComponent (ProjectData project)
     };
     plotHeader_.btnZoomIn_.onClick   = [this] { patternComp_.zoomIn(); };
     plotHeader_.btnZoomOut_.onClick  = [this] { patternComp_.zoomOut(); };
-    plotHeader_.btnSelect_.onClick   = [this] { patternComp_.refreshView(); };
-    plotHeader_.btnPan_.onClick      = [this] { patternComp_.refreshView(); };
+    plotHeader_.btnSelect_.onClick   = [this]
+    {
+        if (plotHeader_.btnSelect_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Select);
+    };
+    plotHeader_.btnPan_.onClick      = [this]
+    {
+        if (plotHeader_.btnPan_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Pan);
+    };
+    plotHeader_.btnPencil_.onClick   = [this]
+    {
+        // Radio-group untoggles also fire onClick — only act when Pencil turns ON.
+        if (! plotHeader_.btnPencil_.getToggleState())
+            return;
+        applyPlotTool (RadiationPatternComponent::Tool::Pencil, true);
+    };
+    plotHeader_.btnEraser_.onClick   = [this]
+    {
+        if (plotHeader_.btnEraser_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Eraser);
+    };
+    plotHeader_.btnRuler_.onClick    = [this]
+    {
+        if (plotHeader_.btnRuler_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Ruler);
+    };
+    plotHeader_.btnLine_.onClick     = [this]
+    {
+        if (plotHeader_.btnLine_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Line);
+    };
+    plotHeader_.colourSwatch_.onClick = [this] { showDrawColourPicker(); };
+    plotHeader_.setDrawColour (patternComp_.getDrawColour());
+    patternComp_.onToolChanged = [this] (RadiationPatternComponent::Tool t)
+    {
+        using T = RadiationPatternComponent::Tool;
+        using A = PlotHeaderBar::ActiveTool;
+        plotHeader_.setActiveTool (t == T::Select ? A::Select
+                                  : t == T::Pan    ? A::Pan
+                                  : t == T::Pencil ? A::Pencil
+                                  : t == T::Eraser ? A::Eraser
+                                  : t == T::Ruler  ? A::Ruler
+                                                   : A::Line);
+    };
 
     addAndMakeVisible (statusStrip_);
     statusStrip_.setStatus ("Ready", true);
@@ -766,6 +809,106 @@ void MainComponent::updatePlotChrome()
         title += "  |  Measured @ " + juce::String (simDist, 1) + " m";
     }
     plotHeader_.setTitle (title);
+}
+
+void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool, bool openColourPicker)
+{
+    patternComp_.setTool (tool);
+    using T = RadiationPatternComponent::Tool;
+    using A = PlotHeaderBar::ActiveTool;
+    plotHeader_.setActiveTool (tool == T::Select ? A::Select
+                              : tool == T::Pan    ? A::Pan
+                              : tool == T::Pencil ? A::Pencil
+                              : tool == T::Eraser ? A::Eraser
+                              : tool == T::Ruler  ? A::Ruler
+                                                   : A::Line);
+    if (openColourPicker)
+        showDrawColourPicker();
+}
+
+void MainComponent::showDrawColourPicker()
+{
+    struct ColourPicker : public juce::Component
+    {
+        std::function<void (juce::Colour)> onPick;
+        juce::Colour selected;
+
+        explicit ColourPicker (juce::Colour current) : selected (current)
+        {
+            setSize (188, 96);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (Brand::panel());
+            g.setColour (Brand::border());
+            g.drawRect (getLocalBounds(), 1);
+
+            static const juce::uint32 kCols[] = {
+                0xffffcc00, 0xffffffff, 0xffff3b30, 0xffff9500,
+                0xff34c759, 0xff007aff, 0xffaf52de, 0xff000000
+            };
+
+            const int pad = 10, gap = 8, cell = 34;
+            for (int i = 0; i < 8; ++i)
+            {
+                const int col = i % 4;
+                const int row = i / 4;
+                auto r = juce::Rectangle<float> ((float) (pad + col * (cell + gap)),
+                                                 (float) (pad + row * (cell + gap)),
+                                                 (float) cell, (float) cell);
+                const auto c = juce::Colour (kCols[i]);
+                g.setColour (c);
+                g.fillRoundedRectangle (r, 5.0f);
+                if (c == selected || (c.getARGB() == selected.getARGB()))
+                {
+                    g.setColour (Brand::accent());
+                    g.drawRoundedRectangle (r.expanded (1.5f), 6.0f, 2.0f);
+                }
+                else
+                {
+                    g.setColour (Brand::border());
+                    g.drawRoundedRectangle (r, 5.0f, 1.0f);
+                }
+            }
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            static const juce::uint32 kCols[] = {
+                0xffffcc00, 0xffffffff, 0xffff3b30, 0xffff9500,
+                0xff34c759, 0xff007aff, 0xffaf52de, 0xff000000
+            };
+            const int pad = 10, gap = 8, cell = 34;
+            for (int i = 0; i < 8; ++i)
+            {
+                const int col = i % 4;
+                const int row = i / 4;
+                auto r = juce::Rectangle<int> (pad + col * (cell + gap),
+                                               pad + row * (cell + gap),
+                                               cell, cell);
+                if (r.contains (e.getPosition()))
+                {
+                    selected = juce::Colour (kCols[i]);
+                    if (onPick) onPick (selected);
+                    if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
+                        box->dismiss();
+                    return;
+                }
+            }
+        }
+    };
+
+    auto* picker = new ColourPicker (patternComp_.getDrawColour());
+    picker->onPick = [this] (juce::Colour c)
+    {
+        patternComp_.setDrawColour (c);
+        plotHeader_.setDrawColour (c);
+    };
+
+    juce::CallOutBox::launchAsynchronously (std::unique_ptr<juce::Component> (picker),
+                                            plotHeader_.colourSwatch_.getScreenBounds(),
+                                            nullptr);
 }
 
 void MainComponent::updateSettingsBar()

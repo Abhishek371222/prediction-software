@@ -96,7 +96,13 @@ namespace AcousticAnalysis
                                 (int) std::round (cx / base.worldW * (r.width - 1)));
             const int row = juce::jlimit (0, r.height - 1,
                                 (int) std::round (ly / base.worldH * (r.height - 1)));
-            raw.push_back ((double) r.splDB[(size_t) row * r.width + col]);
+            const size_t idx = (size_t) row * r.width + col;
+            if (r.hasAbsoluteSpl && idx < r.splAbsDB.size())
+                raw.push_back ((double) r.splAbsDB[idx]);
+            else if (idx < r.splRelDB.size())
+                raw.push_back ((double) r.splRelDB[idx]);
+            else
+                raw.push_back ((double) r.splDB[idx]);
             outFreq.push_back (f);
         }
 
@@ -108,11 +114,12 @@ namespace AcousticAnalysis
     // Coverage uniformity: fraction of the field within `windowDb` of the peak.
     inline double coverageWithin (const SimResult& r, double windowDb = 6.0)
     {
-        if (r.splDB.empty()) return 0.0;
+        const auto& field = r.splRelDB.empty() ? r.splDB : r.splRelDB;
+        if (field.empty()) return 0.0;
         double mx = -1.0e9;
-        for (float v : r.splDB) mx = juce::jmax (mx, (double) v);
+        for (float v : field) mx = juce::jmax (mx, (double) v);
         size_t inside = 0;
-        for (float v : r.splDB) if ((double) v >= mx - windowDb) ++inside;
-        return 100.0 * (double) inside / (double) r.splDB.size();
+        for (float v : field) if ((double) v >= mx - windowDb) ++inside;
+        return 100.0 * (double) inside / (double) field.size();
     }
 }

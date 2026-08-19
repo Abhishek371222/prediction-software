@@ -134,7 +134,9 @@ public:
             b.setColour (juce::DrawableButton::backgroundColourId,   Brand::plotToolbar());
             b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::accent().withAlpha (0.28f));
             b.setImages (mk (svg, iconCol).get(), mk (svg, iconHi).get(), mk (svg, iconHi).get());
-            b.setEdgeIndent (7);
+            b.setEdgeIndent (4);
+            b.setOpaque (false);
+            b.setVisible (true);
             if (toggle)
             {
                 b.setClickingTogglesState (true);
@@ -145,10 +147,21 @@ public:
 
         styleTool (btnSelect_,  kSelectSVG,  "Select — click / drag speakers", true);
         styleTool (btnPan_,     kPanSVG,     "Pan — drag to move the view", true);
+        styleTool (btnPencil_,  kPencilSVG,  "Pencil — choose colour, then draw freehand", true);
+        styleTool (btnEraser_,  kEraserSVG,  "Eraser — scrub to remove drawings", true);
+        styleTool (btnRuler_,   kRulerSVG,   "Ruler — click two points to measure distance", true);
+        styleTool (btnLine_,    kLineSVG,    "Line — click start, click end to draw", true);
         styleTool (btnZoomIn_,  kZoomInSVG,  "Zoom in");
         styleTool (btnZoomOut_, kZoomOutSVG, "Zoom out");
 
         btnSelect_.setToggleState (true, juce::dontSendNotification);
+
+        colourSwatch_.setTooltip ("Pencil colour");
+        colourSwatch_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+        colourSwatch_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        colourSwatch_.setColour (juce::TextButton::textColourOffId,  juce::Colours::transparentBlack);
+        colourSwatch_.setButtonText ({});
+        addAndMakeVisible (colourSwatch_);
 
         fitBtn_.setButtonText ("Fit View");
         fitBtn_.setComponentID ("plotFit");
@@ -170,20 +183,47 @@ public:
         rangeBtn_.setColour (juce::TextButton::textColourOnId,   AppSettings::get().isDark() ? Brand::white()
                                                                                              : Brand::onBtnIn());
         addAndMakeVisible (rangeBtn_);
+
+        // Keep tool icons above the title so they never get covered.
+        for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
+                          &btnRuler_, &btnLine_, &btnZoomIn_, &btnZoomOut_ })
+            tb->toFront (false);
+        colourSwatch_.toFront (false);
+        rangeBtn_.toFront (false);
+        fitBtn_.toFront (false);
     }
 
     void setTitle (const juce::String& t) { title_.setText (t, juce::dontSendNotification); }
 
-    void setActiveTool (bool selectActive)
+    void setDrawColour (juce::Colour c)
     {
-        btnSelect_.setToggleState (selectActive, juce::dontSendNotification);
-        btnPan_.setToggleState (! selectActive, juce::dontSendNotification);
+        drawColour_ = c;
+        colourSwatch_.setColour (juce::TextButton::buttonColourId, c);
+        colourSwatch_.repaint();
+    }
+
+    juce::Colour getDrawColour() const noexcept { return drawColour_; }
+
+    enum class ActiveTool { Select, Pan, Pencil, Eraser, Ruler, Line };
+    void setActiveTool (ActiveTool t)
+    {
+        btnSelect_.setToggleState (t == ActiveTool::Select, juce::dontSendNotification);
+        btnPan_.setToggleState    (t == ActiveTool::Pan,    juce::dontSendNotification);
+        btnPencil_.setToggleState (t == ActiveTool::Pencil, juce::dontSendNotification);
+        btnEraser_.setToggleState (t == ActiveTool::Eraser, juce::dontSendNotification);
+        btnRuler_.setToggleState  (t == ActiveTool::Ruler,  juce::dontSendNotification);
+        btnLine_.setToggleState   (t == ActiveTool::Line,   juce::dontSendNotification);
     }
 
     juce::DrawableButton btnSelect_ { "sel", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnPan_    { "pan", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnPencil_ { "pen", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnEraser_ { "ers", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnRuler_  { "rul", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnLine_   { "lin", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
+    juce::TextButton     colourSwatch_;
     juce::TextButton     fitBtn_;
     juce::TextButton     rangeBtn_;
 
@@ -194,31 +234,73 @@ public:
         g.fillAll (Brand::panelDark());
     }
 
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        auto sw = colourSwatch_.getBounds().toFloat();
+        if (sw.isEmpty()) return;
+        g.setColour (drawColour_);
+        g.fillRoundedRectangle (sw, 4.0f);
+        g.setColour (Brand::border());
+        g.drawRoundedRectangle (sw, 4.0f, 1.0f);
+    }
+
     void resized() override
     {
         title_.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::panelTitle)));
 
-        auto b = getLocalBounds().reduced (UiConfig::Scale::px (8), UiConfig::Scale::px (4));
-        const int tool = UiConfig::Scale::px (40);
-        const int gap  = UiConfig::Scale::px (6);
-        const int fitW = UiConfig::Scale::px (84);
-        const int rangeW = UiConfig::Scale::px (72);
-        const int edgeIndent = UiConfig::Scale::px (7);
+        auto b = getLocalBounds().reduced (UiConfig::Scale::px (6), UiConfig::Scale::px (4));
+        // Keep tools smaller than the header so they never clip vertically.
+        const int tool = juce::jlimit (22, b.getHeight(), UiConfig::Scale::px (28));
+        const int gap  = UiConfig::Scale::px (4);
+        const int fitW = UiConfig::Scale::px (72);
+        const int rangeW = UiConfig::Scale::px (60);
+        const int swatch = juce::jlimit (14, tool - 4, UiConfig::Scale::px (18));
+        const int edgeIndent = juce::jmax (3, tool / 6);
+        const int sep = UiConfig::Scale::px (8);
 
-        for (auto* tb : { &btnSelect_, &btnPan_, &btnZoomIn_, &btnZoomOut_ })
+        for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
+                          &btnRuler_, &btnLine_, &btnZoomIn_, &btnZoomOut_ })
             tb->setEdgeIndent (edgeIndent);
 
-        fitBtn_.setBounds (b.removeFromRight (fitW));
+        auto placeRight = [&] (juce::Component& c, int w)
+        {
+            auto r = b.removeFromRight (w);
+            c.setBounds (r.withSizeKeepingCentre (w, tool));
+        };
+
+        // Right cluster: Fit / Range / Zoom (navigation)
+        placeRight (fitBtn_, fitW);
         b.removeFromRight (gap);
-        rangeBtn_.setBounds (b.removeFromRight (rangeW));
-        b.removeFromRight (UiConfig::Scale::px (10));
+        placeRight (rangeBtn_, rangeW);
+        b.removeFromRight (sep);
+        placeRight (btnZoomOut_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnZoomIn_, tool);
+        b.removeFromRight (sep);
 
-        btnZoomOut_.setBounds (b.removeFromRight (tool)); b.removeFromRight (gap);
-        btnZoomIn_.setBounds  (b.removeFromRight (tool)); b.removeFromRight (gap);
-        btnPan_.setBounds     (b.removeFromRight (tool)); b.removeFromRight (gap);
-        btnSelect_.setBounds  (b.removeFromRight (tool)); b.removeFromRight (UiConfig::Scale::px (12));
+        // Drawing tools (beside select/pan, as requested)
+        placeRight (btnLine_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnRuler_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnEraser_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnPencil_, tool);
+        b.removeFromRight (gap);
+        {
+            auto sw = b.removeFromRight (swatch + 2);
+            colourSwatch_.setBounds (sw.withSizeKeepingCentre (swatch, swatch));
+        }
+        b.removeFromRight (sep);
 
+        placeRight (btnPan_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnSelect_, tool);
+        b.removeFromRight (UiConfig::Scale::px (8));
+
+        // Title takes whatever is left; ellipsize if tools need the space.
         title_.setBounds (b);
+        title_.setMinimumHorizontalScale (0.55f);
     }
 
     void lookAndFeelChanged() override
@@ -234,6 +316,7 @@ public:
                              AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
         rangeBtn_.setColour (juce::TextButton::textColourOnId,
                              AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
+        colourSwatch_.setColour (juce::TextButton::buttonColourId, drawColour_);
 
         auto mk = [] (const char* svg, juce::Colour c) -> std::unique_ptr<juce::Drawable>
         {
@@ -255,17 +338,31 @@ public:
         };
         restyle (btnSelect_,  kSelectSVG);
         restyle (btnPan_,     kPanSVG);
+        restyle (btnPencil_,  kPencilSVG);
+        restyle (btnEraser_,  kEraserSVG);
+        restyle (btnRuler_,   kRulerSVG);
+        restyle (btnLine_,    kLineSVG);
         restyle (btnZoomIn_,  kZoomInSVG);
         restyle (btnZoomOut_, kZoomOutSVG);
     }
 
 private:
     juce::Label title_;
+    juce::Colour drawColour_ { 0xffffcc00 };
 
     static constexpr const char* kSelectSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M5 3l14 9.5-6.2 1.4L16.5 21l-2.2 1.2-3.6-7.2L5 19.5V3z"/></svg>)SVG";
     static constexpr const char* kPanSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M12 2l3.2 3.2h-2.2v4.1h4.1V7.3L20 10.5l-3.2 3.2v-2.2h-4.1v4.1h2.2L12 19l-3.2-3.2h2.2v-4.1H7.1v2.2L4 10.5l3.1-3.2v2.2h4.1V5.2H9L12 2z"/></svg>)SVG";
+    // Simple filled glyphs — avoid SVG arcs (JUCE parser is picky).
+    static constexpr const char* kPencilSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M3 21l3.8-.1L19.5 8.2l-3.7-3.7L3 17.3V21zm15.2-15.9l1.7 1.7 1.5-1.5-1.7-1.7-1.5 1.5z"/></svg>)SVG";
+    static constexpr const char* kEraserSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M16.1 3.5l4.4 4.4c.8.8.8 2 0 2.8l-8.5 8.5H5.9L2.5 16c-.8-.8-.8-2 0-2.8L13.3 3.5c.8-.8 2-.8 2.8 0zM4 20h16v2H4z"/></svg>)SVG";
+    static constexpr const char* kRulerSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M2.8 17.6L17.6 2.8l3.6 3.6L6.4 21.2l-3.6-3.6zm3.9-.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9z"/></svg>)SVG";
+    static constexpr const char* kLineSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M4 17.6L17.6 4l2.4 2.4L6.4 20 4 17.6z"/><path fill="#fff" d="M3 19h4v2H3zM17 3h4v2h-4z"/></svg>)SVG";
     static constexpr const char* kZoomInSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle fill="none" stroke="#fff" stroke-width="2" cx="10.5" cy="10.5" r="6.5"/><path fill="#fff" d="M15.2 15.2l5.3 5.3-1.4 1.4-5.3-5.3z"/><path fill="#fff" d="M9.5 7.5h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/></svg>)SVG";
     static constexpr const char* kZoomOutSVG =

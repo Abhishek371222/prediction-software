@@ -73,15 +73,18 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
     setRowVal (kWaveNo, juce::String (r.k, 3) + " rad/m");
     setRowVal (kActive, juce::String (r.activeSpeakers) + " / " + juce::String ((int) p.speakers.size()));
 
-    // Coverage within 6 dB of peak + peak relative SPL (always 0 dB by definition).
-    if (! r.splDB.empty())
+    const auto& rel = r.splRelDB.empty() ? r.splDB : r.splRelDB;
+    if (! rel.empty())
     {
         int within = 0;
-        for (float v : r.splDB)
+        for (float v : rel)
             if (v >= -6.0f) ++within;
-        const double pct = 100.0 * (double) within / (double) r.splDB.size();
+        const double pct = 100.0 * (double) within / (double) rel.size();
         setRowVal (kCoverage, juce::String (pct, 1) + " %");
-        setRowVal (kPeak, "0 dB (rel.)");
+        if (r.hasAbsoluteSpl)
+            setRowVal (kPeak, juce::String (r.peakAbsDb, 1) + " dB SPL");
+        else
+            setRowVal (kPeak, "0 dB (rel.)");
     }
     else
     {

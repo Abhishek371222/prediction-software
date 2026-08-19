@@ -99,7 +99,7 @@ struct SimResult
     double k         = 0;
 
     // Field grids (row-major [height x width]) ----------------------------
-    std::vector<float> splDB;        // relative SPL in dB (<= 0, floored at dBfloor)
+    std::vector<float> splDB;        // relative SPL, colour-clipped at dBfloor only
     std::vector<float> splRelDB;     // relative SPL unfloored (max = 0 dB)
     std::vector<float> splAbsDB;     // absolute dB SPL (unfloored, measured-calibrated)
     std::vector<float> pressure;     // normalised real pressure in [-1, 1]
@@ -123,12 +123,11 @@ struct SimResult
 };
 
 // ---------------------------------------------------------------------------
-// AcousticEngine — pure C++ acoustic field solver.
+// AcousticEngine — BEM polar × 1/r over the full world, coherent array sum.
 //
-// Each enabled speaker is modelled as an omnidirectional monopole with a mild
-// orientation-dependent front/back bias. For every grid point the complex
-// pressure contributions of all speakers are summed, then SPL / pressure /
-// interference grids and a far-field polar pattern are derived.
+// Each enabled Q21S uses the measured BEM directivity D(θ) and on-axis dB SPL
+// at R_ref. Pressure spreads as 1/r (inverse-square intensity). Pressures add
+// as complex numbers (superposition). The ±5 m BEM field is never stamped.
 // ---------------------------------------------------------------------------
 class AcousticEngine
 {

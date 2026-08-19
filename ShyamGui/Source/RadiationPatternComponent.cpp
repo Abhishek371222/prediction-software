@@ -3,6 +3,7 @@
 #include "BrandTheme.h"
 #include "AppSettings.h"
 #include <cmath>
+#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -12,6 +13,80 @@ RadiationPatternComponent::RadiationPatternComponent()
 {
     setOpaque (true);
     setWantsKeyboardFocus (false);
+    updateMouseCursorForTool();
+}
+
+void RadiationPatternComponent::setTool (Tool t)
+{
+    if (tool_ == t) return;
+    tool_ = t;
+    pendingAnchor_ = false;
+    drag_ = Drag::None;
+    updateMouseCursorForTool();
+    if (onToolChanged) onToolChanged (tool_);
+    repaint();
+}
+
+void RadiationPatternComponent::setDrawColour (juce::Colour c)
+{
+    drawColour_ = c;
+}
+
+void RadiationPatternComponent::clearAnnotations()
+{
+    annotations_.clear();
+    pendingAnchor_ = false;
+    repaint();
+}
+
+bool RadiationPatternComponent::canAnnotate() const noexcept
+{
+    // Annotations only render on the SPL field plot (not polar views).
+    return hasData_
+        && params_.viewMode != ViewMode::Directivity
+        && params_.viewMode != ViewMode::MeasuredPolar;
+}
+
+float RadiationPatternComponent::distPointToSegment (juce::Point<float> p,
+                                                     juce::Point<float> a,
+                                                     juce::Point<float> b) noexcept
+{
+    const auto ab = b - a;
+    const float len2 = ab.x * ab.x + ab.y * ab.y;
+    if (len2 < 1.0e-12f)
+        return p.getDistanceFrom (a);
+    float t = ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / len2;
+    t = juce::jlimit (0.0f, 1.0f, t);
+    return p.getDistanceFrom (a + ab * t);
+}
+
+void RadiationPatternComponent::eraseNear (juce::Point<float> worldPt, float radiusM)
+{
+    annotations_.erase (std::remove_if (annotations_.begin(), annotations_.end(),
+        [&] (const Annotation& a)
+        {
+            if (a.worldPts.empty()) return true;
+            if (a.worldPts.size() == 1)
+                return worldPt.getDistanceFrom (a.worldPts.front()) <= radiusM;
+
+            for (size_t i = 1; i < a.worldPts.size(); ++i)
+                if (distPointToSegment (worldPt, a.worldPts[i - 1], a.worldPts[i]) <= radiusM)
+                    return true;
+            return false;
+        }), annotations_.end());
+}
+
+void RadiationPatternComponent::updateMouseCursorForTool()
+{
+    switch (tool_)
+    {
+        case Tool::Select:  setMouseCursor (juce::MouseCursor::NormalCursor); break;
+        case Tool::Pan:     setMouseCursor (juce::MouseCursor::DraggingHandCursor); break;
+        case Tool::Pencil:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+        case Tool::Eraser:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+        case Tool::Ruler:   setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+        case Tool::Line:    setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +326,9 @@ void RadiationPatternComponent::buildImage()
 
             // SPL heatmap — 7-color scale (black→blue→cyan→green→yellow→orange→red).
             {
-                const float dB = result_.splDB[idx];
+                const float dB = (result_.splRelDB.size() == (size_t) W * (size_t) H)
+                                    ? result_.splRelDB[idx]
+                                    : result_.splDB[idx];
                 if (params_.bandedSPL)
                 {
                     c = ColourMaps::splBand (dB, (float) AcousticEngine::kColourStepDB);
@@ -306,6 +383,7 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         drawLayout   (g, pb);
         drawGrid     (g, pb);
         drawSpeakers (g, pb);
+        drawAnnotations (g, pb);
     }
 
     drawColourbar (g, getLocalBounds().withTrimmedLeft (pb.getWidth() + 8));
@@ -1151,6 +1229,100 @@ void RadiationPatternComponent::drawMeasuredPolar (juce::Graphics& g,
 }
 
 // ---------------------------------------------------------------------------
+void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectangle<int>)
+{
+    auto strokePath = [&] (const Annotation& a, float alpha = 1.0f)
+    {
+        if (a.worldPts.size() < 2) return;
+        juce::Path path;
+        auto p0 = worldToScreen (a.worldPts[0].x, a.worldPts[0].y);
+        path.startNewSubPath (p0);
+        for (size_t i = 1; i < a.worldPts.size(); ++i)
+        {
+            auto p = worldToScreen (a.worldPts[i].x, a.worldPts[i].y);
+            path.lineTo (p);
+        }
+        g.setColour (a.colour.withMultipliedAlpha (alpha));
+        g.strokePath (path, juce::PathStrokeType (a.thicknessPx,
+                                                   juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    };
+
+    for (const auto& a : annotations_)
+    {
+        strokePath (a);
+
+        if (a.kind == Annotation::Kind::Measure && a.worldPts.size() >= 2)
+        {
+            const auto& w0 = a.worldPts.front();
+            const auto& w1 = a.worldPts.back();
+            const float distM = w0.getDistanceFrom (w1);
+            auto s0 = worldToScreen (w0.x, w0.y);
+            auto s1 = worldToScreen (w1.x, w1.y);
+            const auto mid = (s0 + s1) * 0.5f;
+
+            g.setColour (a.colour);
+            g.fillEllipse (s0.x - 3.5f, s0.y - 3.5f, 7.0f, 7.0f);
+            g.fillEllipse (s1.x - 3.5f, s1.y - 3.5f, 7.0f, 7.0f);
+
+            const juce::String label = (distM < 1.0f)
+                ? juce::String (distM * 100.0f, 0) + " cm"
+                : juce::String (distM, 2) + " m";
+            g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+            const int tw = 64, th = 18;
+            auto labelBox = juce::Rectangle<float> (mid.x - tw * 0.5f, mid.y - th - 6.0f,
+                                                    (float) tw, (float) th);
+            g.setColour (Brand::panelDark().withAlpha (0.85f));
+            g.fillRoundedRectangle (labelBox, 4.0f);
+            g.setColour (a.colour);
+            g.drawText (label, labelBox.toNearestInt(), juce::Justification::centred, false);
+        }
+        else if (a.kind == Annotation::Kind::Line && a.worldPts.size() >= 2)
+        {
+            auto s0 = worldToScreen (a.worldPts.front().x, a.worldPts.front().y);
+            auto s1 = worldToScreen (a.worldPts.back().x, a.worldPts.back().y);
+            g.setColour (a.colour);
+            g.fillEllipse (s0.x - 3.0f, s0.y - 3.0f, 6.0f, 6.0f);
+            g.fillEllipse (s1.x - 3.0f, s1.y - 3.0f, 6.0f, 6.0f);
+        }
+    }
+
+    // Rubber-band preview for line / ruler second click.
+    if (pendingAnchor_ && hoverValid_
+        && (tool_ == Tool::Line || tool_ == Tool::Ruler))
+    {
+        Annotation preview;
+        preview.kind = (tool_ == Tool::Ruler) ? Annotation::Kind::Measure
+                                              : Annotation::Kind::Line;
+        preview.colour = drawColour_;
+        preview.thicknessPx = (tool_ == Tool::Ruler) ? 1.8f : 2.2f;
+        preview.worldPts = { pendingStartWorld_, hoverWorld_ };
+        strokePath (preview, 0.75f);
+
+        auto s0 = worldToScreen (pendingStartWorld_.x, pendingStartWorld_.y);
+        auto s1 = worldToScreen (hoverWorld_.x, hoverWorld_.y);
+        g.setColour (drawColour_.withAlpha (0.9f));
+        g.fillEllipse (s0.x - 3.5f, s0.y - 3.5f, 7.0f, 7.0f);
+        g.drawEllipse (s1.x - 3.5f, s1.y - 3.5f, 7.0f, 7.0f, 1.2f);
+
+        if (tool_ == Tool::Ruler)
+        {
+            const float distM = pendingStartWorld_.getDistanceFrom (hoverWorld_);
+            const auto mid = (s0 + s1) * 0.5f;
+            const juce::String label = (distM < 1.0f)
+                ? juce::String (distM * 100.0f, 0) + " cm"
+                : juce::String (distM, 2) + " m";
+            g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+            g.setColour (Brand::panelDark().withAlpha (0.85f));
+            auto box = juce::Rectangle<float> (mid.x - 32.0f, mid.y - 24.0f, 64.0f, 18.0f);
+            g.fillRoundedRectangle (box, 4.0f);
+            g.setColour (drawColour_);
+            g.drawText (label, box.toNearestInt(), juce::Justification::centred, false);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 {
     const float tile = juce::jlimit (18.0f, 28.0f, 22.0f * Brand::UI::scale);
@@ -1166,11 +1338,64 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 
 void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 {
-    if (! hasData_ || params_.viewMode == ViewMode::Directivity
-                   || (params_.viewMode == ViewMode::MeasuredPolar && ! showingBemHeatmap())) return;
+    if (! canAnnotate()) return;
 
     lastMouse_ = e.position;
-    const int hit = speakerHitTest (e.position);
+    const auto pb = plotArea();
+    if (! pb.contains (e.getPosition())) return;
+
+    auto world = screenToWorld (e.position.x, e.position.y);
+    world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
+    world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
+
+    if (tool_ == Tool::Pencil)
+    {
+        Annotation stroke;
+        stroke.kind = Annotation::Kind::Freehand;
+        stroke.colour = drawColour_;
+        stroke.thicknessPx = 2.4f;
+        stroke.worldPts.push_back (world);
+        annotations_.push_back (std::move (stroke));
+        drag_ = Drag::Pencil;
+        repaint();
+        return;
+    }
+
+    if (tool_ == Tool::Eraser)
+    {
+        const float radiusM = 8.0f / juce::jmax (1.0f, worldScale());
+        eraseNear (world, radiusM);
+        drag_ = Drag::Erase;
+        repaint();
+        return;
+    }
+
+    if (tool_ == Tool::Line || tool_ == Tool::Ruler)
+    {
+        if (! pendingAnchor_)
+        {
+            pendingAnchor_ = true;
+            pendingStartWorld_ = world;
+            hoverWorld_ = world;
+            hoverValid_ = true;
+        }
+        else
+        {
+            Annotation a;
+            a.kind = (tool_ == Tool::Ruler) ? Annotation::Kind::Measure
+                                            : Annotation::Kind::Line;
+            a.colour = drawColour_;
+            a.thicknessPx = (tool_ == Tool::Ruler) ? 1.8f : 2.2f;
+            a.worldPts = { pendingStartWorld_, world };
+            annotations_.push_back (std::move (a));
+            pendingAnchor_ = false;
+        }
+        repaint();
+        return;
+    }
+
+    // Select / Pan
+    const int hit = (tool_ == Tool::Select) ? speakerHitTest (e.position) : -1;
     if (hit >= 0)
     {
         drag_ = Drag::Speaker;
@@ -1179,19 +1404,44 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         if (onSpeakerSelected) onSpeakerSelected (hit);
         repaint();
     }
-    else if (layoutEditMode_ && layout_ != nullptr && layout_->valid()
-             && layout_->visible && ! layout_->locked)
+    else if (tool_ == Tool::Select && layoutEditMode_ && layout_ != nullptr
+             && layout_->valid() && layout_->visible && ! layout_->locked)
     {
-        drag_ = Drag::Layer;   // in edit mode, a non-speaker drag moves the layout
+        drag_ = Drag::Layer;
     }
-    else
+    else if (tool_ == Tool::Pan || tool_ == Tool::Select)
     {
+        // Empty-space click pans in both Select and Pan (Select still picks speakers first).
         drag_ = Drag::Pan;
     }
 }
 
 void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
+    if (drag_ == Drag::Pencil && ! annotations_.empty())
+    {
+        auto world = screenToWorld (e.position.x, e.position.y);
+        world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
+        world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
+        auto& stroke = annotations_.back();
+        if (stroke.worldPts.empty()
+            || stroke.worldPts.back().getDistanceFrom (world) * worldScale() > 1.5f)
+            stroke.worldPts.push_back (world);
+        lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::Erase)
+    {
+        auto world = screenToWorld (e.position.x, e.position.y);
+        const float radiusM = 8.0f / juce::jmax (1.0f, worldScale());
+        eraseNear (world, radiusM);
+        lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
     if (drag_ == Drag::Pan)
     {
         origin_ += (e.position - lastMouse_);
@@ -1255,5 +1505,29 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
     repaint();
 }
 
-void RadiationPatternComponent::mouseMove (const juce::MouseEvent&) {}
-void RadiationPatternComponent::mouseExit (const juce::MouseEvent&) {}
+void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
+{
+    if (! pendingAnchor_ || ! (tool_ == Tool::Line || tool_ == Tool::Ruler))
+    {
+        hoverValid_ = false;
+        return;
+    }
+    if (! canAnnotate() || ! plotArea().contains (e.getPosition()))
+    {
+        hoverValid_ = false;
+        repaint();
+        return;
+    }
+    hoverWorld_ = screenToWorld (e.position.x, e.position.y);
+    hoverWorld_.x = juce::jlimit (0.0f, (float) result_.worldW, hoverWorld_.x);
+    hoverWorld_.y = juce::jlimit (0.0f, (float) result_.worldH, hoverWorld_.y);
+    hoverValid_ = true;
+    repaint();
+}
+
+void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
+{
+    hoverValid_ = false;
+    if (pendingAnchor_)
+        repaint();
+}

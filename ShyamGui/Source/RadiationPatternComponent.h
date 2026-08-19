@@ -45,10 +45,14 @@ public:
     void zoomOut();
     void refreshView() { repaint(); }
 
-    // Plot toolbar tools — Select = pick/move speakers; Pan = drag the view.
-    enum class Tool { Select, Pan };
+    // Plot toolbar tools.
+    enum class Tool { Select, Pan, Pencil, Eraser, Ruler, Line };
     void setTool (Tool t);
     Tool getTool() const noexcept { return tool_; }
+
+    void setDrawColour (juce::Colour c);
+    juce::Colour getDrawColour() const noexcept { return drawColour_; }
+    void clearAnnotations();
 
     std::function<void(int)>               onSpeakerSelected;   // index (-1 = none)
     std::function<void(int, float, float)> onSpeakerMoved;      // index, x, y (m)
@@ -76,6 +80,11 @@ private:
     juce::Point<float> worldToScreen (float wx, float wy) const;
     juce::Point<float> screenToWorld (float sx, float sy) const;
     int  speakerHitTest (juce::Point<float> screenPt) const;
+    bool canAnnotate() const noexcept;
+    void eraseNear (juce::Point<float> worldPt, float radiusM);
+    static float distPointToSegment (juce::Point<float> p,
+                                     juce::Point<float> a,
+                                     juce::Point<float> b) noexcept;
 
     void drawField     (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawLayout    (juce::Graphics&, juce::Rectangle<int> bounds);
@@ -88,8 +97,18 @@ private:
     void drawColourbar (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawPolarPlot (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawMeasuredPolar (juce::Graphics&, juce::Rectangle<int> bounds);
+    void drawAnnotations (juce::Graphics&, juce::Rectangle<int> bounds);
     const MeasuredFreq* measuredForHz (int hz) const;
     bool showingBemHeatmap() const noexcept;
+
+    struct Annotation
+    {
+        enum class Kind { Freehand, Line, Measure };
+        Kind kind = Kind::Freehand;
+        juce::Colour colour { 0xffffcc00 };
+        float thicknessPx = 2.2f;
+        std::vector<juce::Point<float>> worldPts;   // metres; locked to map
+    };
 
     SimResult           result_;
     SimParams           params_;
@@ -115,11 +134,19 @@ private:
     bool               viewInit_   = false;
 
     // Interaction state
-    enum class Drag { None, Pan, Speaker, Layer } drag_ = Drag::None;
+    enum class Drag { None, Pan, Speaker, Layer, Pencil, Erase } drag_ = Drag::None;
     Tool               tool_ = Tool::Select;
     int                draggedSpeaker_ = -1;
     juce::Point<float> lastMouse_;
     void updateMouseCursorForTool();
+
+    // User annotations (pencil / line / ruler) in world metres.
+    std::vector<Annotation> annotations_;
+    juce::Colour            drawColour_ { 0xffffcc00 };
+    bool                    pendingAnchor_ = false;   // line/ruler: waiting for 2nd click
+    juce::Point<float>      pendingStartWorld_ { 0, 0 };
+    juce::Point<float>      hoverWorld_ { 0, 0 };
+    bool                    hoverValid_ = false;
 
     static constexpr int   kColourbarW = 86;
     static constexpr float kCabW = 0.738f;   // cabinet width  (m)
