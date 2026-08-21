@@ -8,7 +8,7 @@
 
 version-archive/.env
 version-archive/node_modules/
-version-archive/artifacts/
+version-archive/artifacts/**
 version-archive/.cache/
 *.user
 *.suo
@@ -28,6 +28,13 @@ version-archive/.cache/
 *.code-workspace
 *.tmp
 ~$*
+
+# Allow version-archive release binaries (must come after *.exe / artifacts/**)
+!version-archive/artifacts/
+!version-archive/artifacts/*/
+!version-archive/artifacts/**/*.exe
+!version-archive/artifacts/**/*.zip
+!version-archive/artifacts/**/*.dmg
 
 .git_local_backup
 **/.git_local_backup
