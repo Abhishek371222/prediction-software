@@ -4,17 +4,17 @@ All notable changes to this product are documented here.
 This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-Dates follow the work that shipped in source history and the Windows builds of
-this tree (including 2026-08-19 updates in this workspace).
+Dates follow the work that shipped in source history and the Windows/mac builds of
+this tree (including 2026-08-21 Q21S physics and version-archive updates).
 
 ---
 
-## [1.3.0] - 2026-08-19
-*Development window: 2026-08-12 -> 2026-08-19.*
+## [1.3.0] - 2026-08-21
+*Development window: 2026-08-12 -> 2026-08-21.*
 
-Windows product build of **Atomik Simulation Engine v1.3.0**. Ships Q21S / XN18
-coverage prediction, Ground Plane measurements, plot drawing tools, and the
-branded Release executable.
+**Atomik Simulation Engine v1.3.0** — Q21S coverage prediction on a **100×100 m**
+world using BEM polars × spherical spreading, Ground Plane measurements, plot
+drawing tools, branded Windows/mac builds, and a standalone version archive.
 
 ### Development timeline (what landed when)
 
@@ -27,6 +27,10 @@ branded Release executable.
 - **2026-08-19** - Windows Release packaging and UI polish in this workspace:
   product rename, ATOMIK-only wordmark, header version no longer clips,
   Ctrl+Z / Ctrl+Y undo-redo, Statistics header button, single Release exe.
+- **2026-08-20…21** - Q21S product physics: coherent BEM polar × 1/r over the
+  full grid (no ±5 m stamp), absolute SPL, MATLAB-style cardioid preset, true
+  cabinet footprint (750×784×917 mm), single-sub heatmap docs/figures, portable
+  pack zip, and MongoDB-backed version archive (source + DMG/EXE downloads).
 
 ### Added
 
@@ -37,6 +41,17 @@ branded Release executable.
   add/delete/layout/presets, and control-panel edits. Text fields keep their own undo.
 - **Windows Release exe** `Builds\Release\Atomik Simulation Engine.exe` (static
   CRT, signed locally). Installer script and README updated to v1.3.0.
+- **Q21S BEM SPL engine**: measured far-field (≈2 m) directivity D(θ) with
+  coherent complex superposition and inverse-square spreading (`r_spread` floored
+  at cabinet half-depth). Absolute dB SPL calibrated from on-axis BEM level.
+- **MATLAB-style cardioid preset** (rear 180°, polarity −1, −6 dB, 3.5 ms,
+  ~0.01 m spacing) with coherent sum in the engine.
+- **Single-sub heatmap documentation** (`docs/SINGLE_SUB_HEATMAP.md`) plus
+  native-Hz figures and generator script; portable
+  `dist_packages/Q21S_SingleSub_SPL_Heatmap.zip`.
+- **Version archive** (`version-archive/`): standalone HTML + MongoDB GridFS
+  listing releases from **v1.3.0** with Download source zip / macOS DMG /
+  Windows EXE (not wired into the JUCE app).
 
 ### Changed
 
@@ -48,7 +63,11 @@ branded Release executable.
 - Header **Stats** pill renamed **Statistics**, width sized to the full label.
 - Measurement UI remains **Ground Plane** only (no Room set in the live UI).
 - Colourbar / dB floor use **−6 dB** steps; `dBfloor` is display range only.
-- Frequency list is IEC **1/3-octave** centres.
+- Frequency list is IEC **1/3-octave** centres (UI catalogue = native BEM bands
+  where Q21S CSVs exist).
+- **Cabinet geometry** uses Q21S W **750** / H **784** / D **917** mm for plan
+  drawing, hit-test, and 1/r singularity floor (depth/2).
+- Heatmap / array prediction uses the **2 m** BEM arc (not 0.5 m near-field).
 
 ### Fixed
 
@@ -56,6 +75,7 @@ branded Release executable.
   across the window scale range.
 - Header title + version layout uses the real logo width instead of a leftover
   200 px reserve.
+- SPL field no longer stamps a ±5 m BEM island; full-world map follows polar × 1/r.
 
 ---
 

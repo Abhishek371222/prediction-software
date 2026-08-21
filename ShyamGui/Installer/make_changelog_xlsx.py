@@ -109,9 +109,9 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
-    ["1.3.0", "2026-08-19", "Windows product + drawing tools",
-     "ATOMIK-only branding, v1.3.0 exe, plot pencil/line/ruler/eraser, "
-     "BEM/directivity math, Ctrl+Z/Y undo-redo, Statistics button, header version fix"],
+    ["1.3.0", "2026-08-21", "Q21S BEM heatmap + Windows/mac product",
+     "BEM polar×1/r full-grid SPL, cardioid preset, Q21S 750×784×917 mm, "
+     "plot tools, undo/redo, ATOMIK branding, heatmap docs/zip, version archive"],
     ["1.1.0", "2026-06-29", "Major feature + UX release",
      "Theming, project dashboard/.atmk, heatmap + PDF export, grid/CAD-DXF, "
      "array presets, dual datasets, responsive window, branded installer"],
@@ -129,10 +129,18 @@ ws.freeze_panes = "A5"
 ws13 = wb.create_sheet("v1.3.0 Changes")
 ws13.sheet_view.showGridLines = False
 banner(ws13, "v1.3.0  -  Detailed Changes",
-       "Development window 2026-08-12 -> 2026-08-19", 5)
+       "Development window 2026-08-12 -> 2026-08-21", 5)
 
 A, C, F = "Added", "Changed", "Fixed"
 v13 = [
+    ["Engine", A, "Q21S BEM polar × 1/r SPL",
+     "Far-field (~2 m) D(θ) coherent complex sum; r_spread floored at cabinet half-depth; absolute dB SPL from on-axis BEM; no ±5 m field stamp", "2026-08-21"],
+    ["Array presets", A, "MATLAB-style cardioid",
+     "Rear 180°, polarity −1, −6 dB, 3.5 ms, ~0.01 m spacing; coherent engine sum", "2026-08-21"],
+    ["Docs / pack", A, "Single-sub heatmap pack",
+     "docs/SINGLE_SUB_HEATMAP.md, native-Hz figures, generator script, dist_packages zip", "2026-08-21"],
+    ["Archive", A, "Version archive (HTML + MongoDB)",
+     "version-archive/: list releases from v1.3.0; download source zip / macOS DMG / Windows EXE (standalone, not in-app)", "2026-08-21"],
     ["Plot tools", A, "Heatmap drawing tools",
      "Select, Pan, Pencil, Eraser, Ruler, Line + colour swatch; annotations in world metres", "2026-08-19"],
     ["Plot tools", A, "BEM / directivity field math",
@@ -143,6 +151,10 @@ v13 = [
      "Builds\\Release\\Atomik Simulation Engine.exe; installer/README at v1.3.0", "2026-08-19"],
     ["DSP / UI (PS batch)", A, "IEC 1/3-octave frequencies",
      "20, 25, 31, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500 Hz", "2026-08-12"],
+    ["Cabinet", C, "Q21S footprint 750×784×917 mm",
+     "Plan drawing + hit-test use true W×D; 1/r singularity floor = depth/2", "2026-08-21"],
+    ["Engine", C, "Heatmap uses 2 m BEM arc",
+     "Array/SPL prediction keeps far-field arc; Measured Polar can still show nearer distances", "2026-08-21"],
     ["Branding", C, "Product name",
      "Atomik Acoustic Simulation Engine -> Atomik Simulation Engine; UI/PDF/CSV/installer/file version = v1.3.0", "2026-08-19"],
     ["Branding", C, "ATOMIK-only wordmark",
@@ -155,6 +167,8 @@ v13 = [
      "Colourbar ticks and floor slider on -6 dB; dBfloor is display range only", "2026-08-12"],
     ["UI", C, "XN18-n labels + Set to Default",
      "Cabinet labels use hyphen; Reset renamed Set to Default", "2026-08-12"],
+    ["Engine", F, "No ±5 m BEM stamp on live map",
+     "Full 100×100 m map follows polar × inverse-square instead of a near-field island", "2026-08-21"],
     ["Header", F, "Version no longer clips",
      "Was showing v1... instead of v1.3.0; layout uses real logo width", "2026-08-19"],
     ["UI", F, "Small-screen logo",
@@ -307,6 +321,7 @@ timeline = [
     ["2026-08-13", "prediction-software repo initial commit (Q21S / XN18 tree)"],
     ["2026-08-19", "Plot drawing tools + BEM/directivity math (633fc36)"],
     ["2026-08-19", "v1.3.0 Windows build: Atomik Simulation Engine rename, ATOMIK-only logo, header v1.3.0 fix, Ctrl+Z/Y, Statistics button, single Release exe"],
+    ["2026-08-21", "Q21S BEM polar×1/r, cardioid preset, cabinet size, heatmap docs/zip, version archive; CHANGELOG date → 2026-08-21"],
 ]
 write_table(ws4, 4, ["Date", "Work landed"], timeline, [14, 110])
 ws4.freeze_panes = "A5"

@@ -1,0 +1,15 @@
+{
+  "name": "atomik-version-archive",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "publish": "node publish-version.mjs",
+    "start": "node serve.mjs",
+    "sync": "node sync-versions-json.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "mongodb": "^6.12.0"
+  }
+}

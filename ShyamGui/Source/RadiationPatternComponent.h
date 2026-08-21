@@ -46,19 +46,22 @@ public:
     void refreshView() { repaint(); }
 
     // Plot toolbar tools.
-    enum class Tool { Select, Pan, Pencil, Eraser, Ruler, Line };
+    enum class Tool { Select, Pan, Pencil, Eraser, Ruler, Line, Rectangle, Square, Circle };
     void setTool (Tool t);
     Tool getTool() const noexcept { return tool_; }
 
     void setDrawColour (juce::Colour c);
     juce::Colour getDrawColour() const noexcept { return drawColour_; }
+    void setDrawFillAlpha (float a01);   // 0 = invisible fill … 1 = opaque
+    float getDrawFillAlpha() const noexcept { return drawFillAlpha_; }
     void clearAnnotations();
 
     struct Annotation
     {
-        enum class Kind { Freehand, Line, Measure };
+        enum class Kind { Freehand, Line, Measure, Rectangle, Square, Circle };
         Kind kind = Kind::Freehand;
         juce::Colour colour { 0xffffcc00 };
+        float fillAlpha = 0.35f;          // shape fill opacity (0…1)
         float thicknessPx = 2.2f;
         std::vector<juce::Point<float>> worldPts;   // metres; locked to map
     };
@@ -71,9 +74,11 @@ public:
     std::function<void(Tool)>              onToolChanged;       // toolbar sync
     std::function<void()>                  onWillEdit;          // before draw / erase / drag
     std::function<void()>                  onEditCommitted;     // after gesture completes
+    std::function<bool(const juce::KeyPress&)> onKeyPressed;    // forward shortcuts (undo/redo)
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
 
     void mouseDown      (const juce::MouseEvent&) override;
     void mouseDrag      (const juce::MouseEvent&) override;
@@ -139,19 +144,31 @@ private:
     bool               viewInit_   = false;
 
     // Interaction state
-    enum class Drag { None, Pan, Speaker, Layer, Pencil, Erase } drag_ = Drag::None;
+    enum class Drag { None, Pan, Speaker, Layer, Pencil, Erase, Shape } drag_ = Drag::None;
     Tool               tool_ = Tool::Select;
     int                draggedSpeaker_ = -1;
     juce::Point<float> lastMouse_;
     void updateMouseCursorForTool();
 
-    // User annotations (pencil / line / ruler) in world metres.
+    // User annotations (pencil / line / ruler / shapes) in world metres.
     std::vector<Annotation> annotations_;
     juce::Colour            drawColour_ { 0xffffcc00 };
+    float                   drawFillAlpha_ = 0.35f;
     bool                    pendingAnchor_ = false;   // line/ruler: waiting for 2nd click
     juce::Point<float>      pendingStartWorld_ { 0, 0 };
     juce::Point<float>      hoverWorld_ { 0, 0 };
     bool                    hoverValid_ = false;
+    juce::Point<float>      shapeStartWorld_ { 0, 0 };
+    juce::Point<float>      shapeEndWorld_ { 0, 0 };
+    bool                    shapeDragging_ = false;
+
+    static juce::Rectangle<float> normalisedShapeRect (juce::Point<float> a,
+                                                       juce::Point<float> b,
+                                                       Annotation::Kind kind) noexcept;
+    static bool pointHitsShape (juce::Point<float> worldPt,
+                                const Annotation& a,
+                                float radiusM) noexcept;
+    void drawShapeAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
 
     static constexpr int   kColourbarW = 86;
     static constexpr float kMaxZoom = 2000.0f;     // enough to resolve 1 mm cells

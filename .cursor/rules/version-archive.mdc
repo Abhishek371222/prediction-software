@@ -1,0 +1,35 @@
+---
+description: Version backup archive (HTML + MongoDB) for Atomik app releases — use ONLY when the user explicitly asks to bump/buff the version; also covers CHANGELOG.md / CHANGELOG.xlsx and DMG/EXE/zip packaging
+globs: version-archive/**,**/CHANGELOG*,**/setup.iss,**/build_macos15.sh,**/make_changelog_xlsx.py
+alwaysApply: false
+---
+
+# Version archive (v1.3.0 onward)
+
+Standalone archive (not wired into the JUCE app). Lists releases with download buttons for **source zip** and **mac DMG / Windows EXE**.
+
+## Hard rule — when to touch the HTML / MongoDB
+
+**Only** add or publish a version to `version-archive/` (HTML list, `versions.json`, MongoDB GridFS) when the user **explicitly** says to bump/buff the version (e.g. “bump to 1.3.1”, “buff the version”).
+
+Do **not** auto-add archive entries after normal features, fixes, docs, or changelog edits.
+
+## When the user does ask to bump
+
+1. Bump version in `ShyamGui/Builds/MacManual/build_macos15.sh`, `ShyamGui/Installer/setup.iss`.
+2. Update changelogs:
+   - `ShyamGui/CHANGELOG.md`
+   - `ShyamGui/Installer/make_changelog_xlsx.py` → run `python3 ShyamGui/Installer/make_changelog_xlsx.py` → `CHANGELOG.xlsx`
+3. Build mac app (and Windows EXE when available).
+4. Publish archive entry:
+   ```bash
+   cd version-archive && node publish-version.mjs <version> ["notes"]
+   ```
+5. Serve with `npm start` if they want to download.
+
+## MongoDB
+
+- DB `atomik_releases`, collection `versions`, GridFS `release_files`
+- URI in `version-archive/.env` — never commit secrets
+
+First archived version: **1.3.0**.

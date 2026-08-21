@@ -2,7 +2,14 @@
 **/.DS_Store
 .AppleDouble
 .LSOverride
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
+version-archive/.env
+version-archive/node_modules/
+version-archive/artifacts/
+version-archive/.cache/
 *.user
 *.suo
 *.sdf

@@ -153,17 +153,37 @@ public:
         styleTool (btnEraser_,  kEraserSVG,  "Eraser — scrub to remove drawings", true);
         styleTool (btnRuler_,   kRulerSVG,   "Ruler — click two points to measure distance", true);
         styleTool (btnLine_,    kLineSVG,    "Line — click start, click end to draw", true);
+        styleTool (btnRect_,    kRectSVG,    "Rectangle — drag to place a filled rectangle", true);
+        styleTool (btnSquare_,  kSquareSVG,  "Square — drag to place a filled square", true);
+        styleTool (btnCircle_,  kCircleSVG,  "Circle — drag to place a filled circle", true);
         styleTool (btnZoomIn_,  kZoomInSVG,  "Zoom in");
         styleTool (btnZoomOut_, kZoomOutSVG, "Zoom out");
 
         btnSelect_.setToggleState (true, juce::dontSendNotification);
 
-        colourSwatch_.setTooltip ("Pencil colour");
+        colourSwatch_.setTooltip ("Fill / stroke colour");
         colourSwatch_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
         colourSwatch_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
         colourSwatch_.setColour (juce::TextButton::textColourOffId,  juce::Colours::transparentBlack);
         colourSwatch_.setButtonText ({});
         addAndMakeVisible (colourSwatch_);
+
+        alphaLabel_.setText ("Opacity", juce::dontSendNotification);
+        alphaLabel_.setFont (Brand::tech (10.0f));
+        alphaLabel_.setColour (juce::Label::textColourId, Brand::muted());
+        alphaLabel_.setJustificationType (juce::Justification::centredRight);
+        alphaLabel_.setBorderSize ({});
+        addAndMakeVisible (alphaLabel_);
+
+        fillAlpha_.setRange (0.0, 100.0, 1.0);
+        fillAlpha_.setValue (35.0, juce::dontSendNotification);
+        fillAlpha_.setSliderStyle (juce::Slider::LinearHorizontal);
+        fillAlpha_.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+        fillAlpha_.setTooltip ("Shape fill transparency (0% = clear … 100% = solid)");
+        fillAlpha_.setColour (juce::Slider::trackColourId, Brand::border());
+        fillAlpha_.setColour (juce::Slider::thumbColourId, Brand::accent());
+        fillAlpha_.setColour (juce::Slider::backgroundColourId, Brand::plotToolbar());
+        addAndMakeVisible (fillAlpha_);
 
         fitBtn_.setButtonText ("Fit View");
         fitBtn_.setComponentID ("plotFit");
@@ -188,9 +208,12 @@ public:
 
         // Keep tool icons above the title so they never get covered.
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
-                          &btnRuler_, &btnLine_, &btnZoomIn_, &btnZoomOut_ })
+                          &btnRuler_, &btnLine_, &btnRect_, &btnSquare_, &btnCircle_,
+                          &btnZoomIn_, &btnZoomOut_ })
             tb->toFront (false);
         colourSwatch_.toFront (false);
+        alphaLabel_.toFront (false);
+        fillAlpha_.toFront (false);
         rangeBtn_.toFront (false);
         fitBtn_.toFront (false);
     }
@@ -206,7 +229,17 @@ public:
 
     juce::Colour getDrawColour() const noexcept { return drawColour_; }
 
-    enum class ActiveTool { Select, Pan, Pencil, Eraser, Ruler, Line };
+    void setFillAlpha01 (float a)
+    {
+        fillAlpha_.setValue ((double) juce::jlimit (0.0f, 1.0f, a) * 100.0, juce::dontSendNotification);
+    }
+
+    float getFillAlpha01() const noexcept
+    {
+        return (float) (fillAlpha_.getValue() / 100.0);
+    }
+
+    enum class ActiveTool { Select, Pan, Pencil, Eraser, Ruler, Line, Rectangle, Square, Circle };
     void setActiveTool (ActiveTool t)
     {
         btnSelect_.setToggleState (t == ActiveTool::Select, juce::dontSendNotification);
@@ -215,6 +248,9 @@ public:
         btnEraser_.setToggleState (t == ActiveTool::Eraser, juce::dontSendNotification);
         btnRuler_.setToggleState  (t == ActiveTool::Ruler,  juce::dontSendNotification);
         btnLine_.setToggleState   (t == ActiveTool::Line,   juce::dontSendNotification);
+        btnRect_.setToggleState   (t == ActiveTool::Rectangle, juce::dontSendNotification);
+        btnSquare_.setToggleState (t == ActiveTool::Square, juce::dontSendNotification);
+        btnCircle_.setToggleState (t == ActiveTool::Circle, juce::dontSendNotification);
     }
 
     juce::DrawableButton btnSelect_ { "sel", juce::DrawableButton::ImageFitted };
@@ -223,9 +259,14 @@ public:
     juce::DrawableButton btnEraser_ { "ers", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnRuler_  { "rul", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnLine_   { "lin", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnRect_   { "rect", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnSquare_ { "sq", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnCircle_ { "cir", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
     juce::TextButton     colourSwatch_;
+    juce::Label          alphaLabel_;
+    juce::Slider         fillAlpha_;
     juce::TextButton     fitBtn_;
     juce::TextButton     rangeBtn_;
 
@@ -261,7 +302,8 @@ public:
         const int sep = UiConfig::Scale::px (8);
 
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
-                          &btnRuler_, &btnLine_, &btnZoomIn_, &btnZoomOut_ })
+                          &btnRuler_, &btnLine_, &btnRect_, &btnSquare_, &btnCircle_,
+                          &btnZoomIn_, &btnZoomOut_ })
             tb->setEdgeIndent (edgeIndent);
 
         auto placeRight = [&] (juce::Component& c, int w)
@@ -280,7 +322,25 @@ public:
         placeRight (btnZoomIn_, tool);
         b.removeFromRight (sep);
 
-        // Drawing tools (beside select/pan, as requested)
+        // Shape tools + opacity
+        placeRight (btnCircle_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnSquare_, tool);
+        b.removeFromRight (gap);
+        placeRight (btnRect_, tool);
+        b.removeFromRight (gap);
+        {
+            const int alphaW = UiConfig::Scale::px (72);
+            const int labW = UiConfig::Scale::px (44);
+            auto ar = b.removeFromRight (alphaW);
+            fillAlpha_.setBounds (ar.withSizeKeepingCentre (alphaW, juce::jmax (14, tool - 8)));
+            b.removeFromRight (gap);
+            auto lr = b.removeFromRight (labW);
+            alphaLabel_.setBounds (lr.withSizeKeepingCentre (labW, tool));
+        }
+        b.removeFromRight (sep);
+
+        // Drawing tools (beside select/pan)
         placeRight (btnLine_, tool);
         b.removeFromRight (gap);
         placeRight (btnRuler_, tool);
@@ -346,8 +406,15 @@ public:
         restyle (btnEraser_,  kEraserSVG);
         restyle (btnRuler_,   kRulerSVG);
         restyle (btnLine_,    kLineSVG);
+        restyle (btnRect_,    kRectSVG);
+        restyle (btnSquare_,  kSquareSVG);
+        restyle (btnCircle_,  kCircleSVG);
         restyle (btnZoomIn_,  kZoomInSVG);
         restyle (btnZoomOut_, kZoomOutSVG);
+        alphaLabel_.setColour (juce::Label::textColourId, Brand::muted());
+        fillAlpha_.setColour (juce::Slider::trackColourId, Brand::border());
+        fillAlpha_.setColour (juce::Slider::thumbColourId, Brand::accent());
+        fillAlpha_.setColour (juce::Slider::backgroundColourId, Brand::plotToolbar());
     }
 
 private:
@@ -367,6 +434,12 @@ private:
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M2.8 17.6L17.6 2.8l3.6 3.6L6.4 21.2l-3.6-3.6zm3.9-.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9zm2.4-2.4l1.2 1.2.9-.9-1.2-1.2-.9.9z"/></svg>)SVG";
     static constexpr const char* kLineSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M4 17.6L17.6 4l2.4 2.4L6.4 20 4 17.6z"/><path fill="#fff" d="M3 19h4v2H3zM17 3h4v2h-4z"/></svg>)SVG";
+    static constexpr const char* kRectSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M2 8h20v8H2z" opacity=".4"/><path fill="#fff" d="M2 8h20v2H2zm0 6h20v2H2zM2 8h2v8H2zm18 0h2v8h-2z"/></svg>)SVG";
+    static constexpr const char* kSquareSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M5 5h14v14H5z" opacity=".4"/><path fill="#fff" d="M5 5h14v2H5zm0 12h14v2H5zM5 5h2v14H5zm12 0h2v14h-2z"/></svg>)SVG";
+    static constexpr const char* kCircleSVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#fff" opacity=".4"/><circle cx="12" cy="12" r="8" fill="none" stroke="#fff" stroke-width="2"/></svg>)SVG";
     static constexpr const char* kZoomInSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle fill="none" stroke="#fff" stroke-width="2" cx="10.5" cy="10.5" r="6.5"/><path fill="#fff" d="M15.2 15.2l5.3 5.3-1.4 1.4-5.3-5.3z"/><path fill="#fff" d="M9.5 7.5h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/></svg>)SVG";
     static constexpr const char* kZoomOutSVG =

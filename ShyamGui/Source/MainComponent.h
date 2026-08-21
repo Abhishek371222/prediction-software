@@ -32,7 +32,8 @@ public:
     void resized () override;
     void lookAndFeelChanged() override;                       // re-apply theme colours
     void parentHierarchyChanged() override;
-    bool keyPressed (const juce::KeyPress&, juce::Component*) override;
+    bool keyPressed (const juce::KeyPress&) override;                 // Component
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override; // KeyListener
 
 private:
     void run() override;            // juce::Thread
@@ -67,6 +68,7 @@ private:
     void commitEdit();
     void undoEdit();
     void redoEdit();
+    bool handleEditShortcut (const juce::KeyPress&);
     EditSnapshot takeEditSnapshot() const;
     void applyEditSnapshot (const EditSnapshot&);
     static juce::juce_wchar shortcutLetter (const juce::KeyPress&);

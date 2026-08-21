@@ -166,18 +166,41 @@ MainComponent::MainComponent (ProjectData project)
         if (plotHeader_.btnLine_.getToggleState())
             applyPlotTool (RadiationPatternComponent::Tool::Line);
     };
+    plotHeader_.btnRect_.onClick = [this]
+    {
+        if (plotHeader_.btnRect_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Rectangle);
+    };
+    plotHeader_.btnSquare_.onClick = [this]
+    {
+        if (plotHeader_.btnSquare_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Square);
+    };
+    plotHeader_.btnCircle_.onClick = [this]
+    {
+        if (plotHeader_.btnCircle_.getToggleState())
+            applyPlotTool (RadiationPatternComponent::Tool::Circle);
+    };
     plotHeader_.colourSwatch_.onClick = [this] { showDrawColourPicker(); };
     plotHeader_.setDrawColour (patternComp_.getDrawColour());
+    plotHeader_.setFillAlpha01 (patternComp_.getDrawFillAlpha());
+    plotHeader_.fillAlpha_.onValueChange = [this]
+    {
+        patternComp_.setDrawFillAlpha (plotHeader_.getFillAlpha01());
+    };
     patternComp_.onToolChanged = [this] (RadiationPatternComponent::Tool t)
     {
         using T = RadiationPatternComponent::Tool;
         using A = PlotHeaderBar::ActiveTool;
-        plotHeader_.setActiveTool (t == T::Select ? A::Select
-                                  : t == T::Pan    ? A::Pan
-                                  : t == T::Pencil ? A::Pencil
-                                  : t == T::Eraser ? A::Eraser
-                                  : t == T::Ruler  ? A::Ruler
-                                                   : A::Line);
+        plotHeader_.setActiveTool (t == T::Select    ? A::Select
+                                  : t == T::Pan       ? A::Pan
+                                  : t == T::Pencil    ? A::Pencil
+                                  : t == T::Eraser    ? A::Eraser
+                                  : t == T::Ruler     ? A::Ruler
+                                  : t == T::Line      ? A::Line
+                                  : t == T::Rectangle ? A::Rectangle
+                                  : t == T::Square    ? A::Square
+                                                      : A::Circle);
     };
 
     addAndMakeVisible (statusStrip_);
@@ -230,6 +253,7 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onWillEdit = [this] { willEdit(); };
     patternComp_.onEditCommitted = [this] { commitEdit(); };
+    patternComp_.onKeyPressed = [this] (const juce::KeyPress& k) { return handleEditShortcut (k); };
     patternComp_.onLayoutMoved = [this] { patternComp_.repaint(); };
 
     // Workspace / layout wiring --------------------------------------------
@@ -266,6 +290,7 @@ MainComponent::MainComponent (ProjectData project)
 
     setSize (1340, 820);   // after all child components exist (setSize calls resized)
     setWantsKeyboardFocus (true);
+    addKeyListener (this); // hear keys while a child (toolbar / plot) has focus
     grabKeyboardFocus();
     editBaseline_ = takeEditSnapshot();
 
@@ -274,6 +299,7 @@ MainComponent::MainComponent (ProjectData project)
 
 MainComponent::~MainComponent()
 {
+    removeKeyListener (this);
     if (keyHost_ != nullptr)
         keyHost_->removeKeyListener (this);
     AppSettings::get().removeChangeListener (this);
@@ -323,18 +349,32 @@ ProjectData MainComponent::currentProject() const
 
 juce::juce_wchar MainComponent::shortcutLetter (const juce::KeyPress& key)
 {
-    // Ctrl/Cmd shortcuts must ignore Caps Lock: use the key code when it is a
-    // letter, otherwise fall back to the text character, then lowercase.
-    const int raw = key.getKeyCode();
+    // Caps Lock must not break Ctrl/Cmd+Z/Y. Prefer the physical key code, then
+    // the text character, then Ctrl letter codes (1=A … 26=Z) that some OSes
+    // report when a modifier is held. Always compare in lowercase.
+    auto fromCtrlCode = [] (int v) -> juce::juce_wchar
+    {
+        if (v >= 1 && v <= 26)
+            return (juce::juce_wchar) ('a' + (v - 1));
+        return 0;
+    };
+
     juce::juce_wchar ch = 0;
+    const int raw = key.getKeyCode();
     if ((raw >= 'A' && raw <= 'Z') || (raw >= 'a' && raw <= 'z'))
         ch = (juce::juce_wchar) raw;
-    else
+    else if (auto c = fromCtrlCode (raw); c != 0)
+        ch = c;
+
+    if (ch == 0)
     {
-        const auto t = key.getTextCharacter();
-        if (t >= 32)
-            ch = t;
+        const auto t = (int) key.getTextCharacter();
+        if ((t >= 'A' && t <= 'Z') || (t >= 'a' && t <= 'z'))
+            ch = (juce::juce_wchar) t;
+        else if (auto c = fromCtrlCode (t); c != 0)
+            ch = c;
     }
+
     return juce::CharacterFunctions::toLowerCase (ch);
 }
 
@@ -397,19 +437,22 @@ void MainComponent::parentHierarchyChanged()
     if (keyHost_ != nullptr)
         keyHost_->removeKeyListener (this);
     keyHost_ = getTopLevelComponent();
-    if (keyHost_ != nullptr)
+    // Avoid double-registering if top-level is ourselves.
+    if (keyHost_ != nullptr && keyHost_ != this)
         keyHost_->addKeyListener (this);
 }
 
-bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
+bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
 {
-    const auto mods = key.getModifiers();
-    if (! mods.isCommandDown() || mods.isAltDown())
+    // Prefer live modifiers — Caps Lock / drawing-tool focus can leave KeyPress mods stale.
+    const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+    const bool chord = mods.isCommandDown() || mods.isCtrlDown();
+    if (! chord || mods.isAltDown())
         return false;
 
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
         if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
-            return false;
+            return false; // leave text-field native undo alone
 
     const auto letter = shortcutLetter (key);
     if (letter == 'z')
@@ -426,6 +469,16 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
         return true;
     }
     return false;
+}
+
+bool MainComponent::keyPressed (const juce::KeyPress& key)
+{
+    return handleEditShortcut (key);
+}
+
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
+{
+    return handleEditShortcut (key);
 }
 
 void MainComponent::saveProject()
@@ -952,12 +1005,16 @@ void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool, bool op
     patternComp_.setTool (tool);
     using T = RadiationPatternComponent::Tool;
     using A = PlotHeaderBar::ActiveTool;
-    plotHeader_.setActiveTool (tool == T::Select ? A::Select
-                              : tool == T::Pan    ? A::Pan
-                              : tool == T::Pencil ? A::Pencil
-                              : tool == T::Eraser ? A::Eraser
-                              : tool == T::Ruler  ? A::Ruler
-                                                   : A::Line);
+    plotHeader_.setActiveTool (tool == T::Select    ? A::Select
+                              : tool == T::Pan       ? A::Pan
+                              : tool == T::Pencil    ? A::Pencil
+                              : tool == T::Eraser    ? A::Eraser
+                              : tool == T::Ruler     ? A::Ruler
+                              : tool == T::Line      ? A::Line
+                              : tool == T::Rectangle ? A::Rectangle
+                              : tool == T::Square    ? A::Square
+                                                     : A::Circle);
+    patternComp_.grabKeyboardFocus();
     if (openColourPicker)
         showDrawColourPicker();
 }

@@ -116,7 +116,7 @@ clang++ "${common[@]}" \
 # ---------------------------------------------------------------------------
 APP_NAME="Atomik Acoustic Simulation Engine"
 APP_DIR="$BUILD_DIR/${APP_NAME}.app"
-VERSION="1.2.5"
+VERSION="1.3.0"
 ICNS_CANDIDATES=(
   "$ROOT/dist/mac/Atomik Acoustic Simulation Engine.app/Contents/Resources/Atomik.icns"
   "$ROOT/Assets/Atomik.icns"

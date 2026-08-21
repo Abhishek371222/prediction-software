@@ -12,7 +12,8 @@
 RadiationPatternComponent::RadiationPatternComponent()
 {
     setOpaque (true);
-    setWantsKeyboardFocus (false);
+    // Need focus after drawing so Ctrl/Cmd+Z/Y reach this component (then MainComponent).
+    setWantsKeyboardFocus (true);
     updateMouseCursorForTool();
 }
 
@@ -21,6 +22,7 @@ void RadiationPatternComponent::setTool (Tool t)
     if (tool_ == t) return;
     tool_ = t;
     pendingAnchor_ = false;
+    shapeDragging_ = false;
     drag_ = Drag::None;
     updateMouseCursorForTool();
     if (onToolChanged) onToolChanged (tool_);
@@ -30,6 +32,11 @@ void RadiationPatternComponent::setTool (Tool t)
 void RadiationPatternComponent::setDrawColour (juce::Colour c)
 {
     drawColour_ = c;
+}
+
+void RadiationPatternComponent::setDrawFillAlpha (float a01)
+{
+    drawFillAlpha_ = juce::jlimit (0.0f, 1.0f, a01);
 }
 
 void RadiationPatternComponent::clearAnnotations()
@@ -73,6 +80,11 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> worldPt, float rad
     annotations_.erase (std::remove_if (annotations_.begin(), annotations_.end(),
         [&] (const Annotation& a)
         {
+            if (a.kind == Annotation::Kind::Rectangle
+                || a.kind == Annotation::Kind::Square
+                || a.kind == Annotation::Kind::Circle)
+                return pointHitsShape (worldPt, a, radiusM);
+
             if (a.worldPts.empty()) return true;
             if (a.worldPts.size() == 1)
                 return worldPt.getDistanceFrom (a.worldPts.front()) <= radiusM;
@@ -84,16 +96,94 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> worldPt, float rad
         }), annotations_.end());
 }
 
+juce::Rectangle<float> RadiationPatternComponent::normalisedShapeRect (
+    juce::Point<float> a, juce::Point<float> b, Annotation::Kind kind) noexcept
+{
+    if (kind == Annotation::Kind::Square || kind == Annotation::Kind::Circle)
+    {
+        const float sx = (b.x >= a.x) ? 1.0f : -1.0f;
+        const float sy = (b.y >= a.y) ? 1.0f : -1.0f;
+        const float side = juce::jmax (std::abs (b.x - a.x), std::abs (b.y - a.y));
+        const float x1 = a.x + sx * side;
+        const float y1 = a.y + sy * side;
+        return juce::Rectangle<float>::leftTopRightBottom (
+            juce::jmin (a.x, x1), juce::jmin (a.y, y1),
+            juce::jmax (a.x, x1), juce::jmax (a.y, y1));
+    }
+
+    return juce::Rectangle<float>::leftTopRightBottom (
+        juce::jmin (a.x, b.x), juce::jmin (a.y, b.y),
+        juce::jmax (a.x, b.x), juce::jmax (a.y, b.y));
+}
+
+bool RadiationPatternComponent::pointHitsShape (juce::Point<float> worldPt,
+                                                const Annotation& a,
+                                                float radiusM) noexcept
+{
+    if (a.worldPts.size() < 2) return false;
+    const auto r = normalisedShapeRect (a.worldPts[0], a.worldPts[1], a.kind);
+    if (r.getWidth() < 1.0e-6f || r.getHeight() < 1.0e-6f)
+        return worldPt.getDistanceFrom (r.getCentre()) <= radiusM;
+
+    if (a.kind == Annotation::Kind::Circle)
+    {
+        const float cx = r.getCentreX(), cy = r.getCentreY();
+        const float rx = r.getWidth() * 0.5f, ry = r.getHeight() * 0.5f;
+        const float nx = (worldPt.x - cx) / juce::jmax (1.0e-6f, rx);
+        const float ny = (worldPt.y - cy) / juce::jmax (1.0e-6f, ry);
+        const float d = std::sqrt (nx * nx + ny * ny);
+        return d <= 1.0f + radiusM / juce::jmax (rx, ry);
+    }
+
+    return r.expanded (radiusM).contains (worldPt);
+}
+
+void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
+                                                     const Annotation& a,
+                                                     float alphaMul)
+{
+    if (a.worldPts.size() < 2) return;
+    const auto wr = normalisedShapeRect (a.worldPts[0], a.worldPts[1], a.kind);
+    if (wr.getWidth() < 1.0e-6f && wr.getHeight() < 1.0e-6f) return;
+
+    auto s0 = worldToScreen (wr.getX(), wr.getY());
+    auto s1 = worldToScreen (wr.getRight(), wr.getBottom());
+    auto sr = juce::Rectangle<float>::leftTopRightBottom (
+        juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
+        juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
+
+    const float fillA = juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul;
+    const float strokeA = juce::jlimit (0.15f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+
+    if (a.kind == Annotation::Kind::Circle)
+    {
+        g.setColour (a.colour.withAlpha (fillA));
+        g.fillEllipse (sr);
+        g.setColour (a.colour.withAlpha (strokeA));
+        g.drawEllipse (sr, a.thicknessPx);
+    }
+    else
+    {
+        g.setColour (a.colour.withAlpha (fillA));
+        g.fillRect (sr);
+        g.setColour (a.colour.withAlpha (strokeA));
+        g.drawRect (sr, a.thicknessPx);
+    }
+}
+
 void RadiationPatternComponent::updateMouseCursorForTool()
 {
     switch (tool_)
     {
-        case Tool::Select:  setMouseCursor (juce::MouseCursor::NormalCursor); break;
-        case Tool::Pan:     setMouseCursor (juce::MouseCursor::DraggingHandCursor); break;
-        case Tool::Pencil:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
-        case Tool::Eraser:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
-        case Tool::Ruler:   setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
-        case Tool::Line:    setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+        case Tool::Select:    setMouseCursor (juce::MouseCursor::NormalCursor); break;
+        case Tool::Pan:       setMouseCursor (juce::MouseCursor::DraggingHandCursor); break;
+        case Tool::Pencil:
+        case Tool::Eraser:
+        case Tool::Ruler:
+        case Tool::Line:
+        case Tool::Rectangle:
+        case Tool::Square:
+        case Tool::Circle:    setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
     }
 }
 
@@ -1244,6 +1334,14 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
 
     for (const auto& a : annotations_)
     {
+        if (a.kind == Annotation::Kind::Rectangle
+            || a.kind == Annotation::Kind::Square
+            || a.kind == Annotation::Kind::Circle)
+        {
+            drawShapeAnnotation (g, a);
+            continue;
+        }
+
         strokePath (a);
 
         if (a.kind == Annotation::Kind::Measure && a.worldPts.size() >= 2)
@@ -1279,6 +1377,21 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
             g.fillEllipse (s0.x - 3.0f, s0.y - 3.0f, 6.0f, 6.0f);
             g.fillEllipse (s1.x - 3.0f, s1.y - 3.0f, 6.0f, 6.0f);
         }
+    }
+
+    // Rubber-band preview for shape drag.
+    if (shapeDragging_
+        && (tool_ == Tool::Rectangle || tool_ == Tool::Square || tool_ == Tool::Circle))
+    {
+        Annotation preview;
+        preview.kind = (tool_ == Tool::Rectangle) ? Annotation::Kind::Rectangle
+                     : (tool_ == Tool::Square)    ? Annotation::Kind::Square
+                                                  : Annotation::Kind::Circle;
+        preview.colour = drawColour_;
+        preview.fillAlpha = drawFillAlpha_;
+        preview.thicknessPx = 2.0f;
+        preview.worldPts = { shapeStartWorld_, shapeEndWorld_ };
+        drawShapeAnnotation (g, preview, 0.85f);
     }
 
     // Rubber-band preview for line / ruler second click.
@@ -1335,6 +1448,10 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 {
     if (! canAnnotate()) return;
+
+    // Keep shortcuts (undo/redo) working after using pencil/line/etc.
+    if (! hasKeyboardFocus (true))
+        grabKeyboardFocus();
 
     lastMouse_ = e.position;
     const auto pb = plotArea();
@@ -1394,6 +1511,17 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (tool_ == Tool::Rectangle || tool_ == Tool::Square || tool_ == Tool::Circle)
+    {
+        if (onWillEdit) onWillEdit();
+        shapeStartWorld_ = world;
+        shapeEndWorld_ = world;
+        shapeDragging_ = true;
+        drag_ = Drag::Shape;
+        repaint();
+        return;
+    }
+
     // Select / Pan
     const int hit = (tool_ == Tool::Select) ? speakerHitTest (e.position) : -1;
     if (hit >= 0)
@@ -1444,6 +1572,17 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (drag_ == Drag::Shape)
+    {
+        auto world = screenToWorld (e.position.x, e.position.y);
+        world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
+        world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
+        shapeEndWorld_ = world;
+        lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
     if (drag_ == Drag::Pan)
     {
         origin_ += (e.position - lastMouse_);
@@ -1482,6 +1621,30 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseUp (const juce::MouseEvent&)
 {
+    if (drag_ == Drag::Shape && shapeDragging_)
+    {
+        const auto kind = (tool_ == Tool::Rectangle) ? Annotation::Kind::Rectangle
+                        : (tool_ == Tool::Square)    ? Annotation::Kind::Square
+                                                     : Annotation::Kind::Circle;
+        const auto r = normalisedShapeRect (shapeStartWorld_, shapeEndWorld_, kind);
+        const bool bigEnough = r.getWidth() > 0.05f || r.getHeight() > 0.05f;
+        if (bigEnough)
+        {
+            Annotation a;
+            a.kind = kind;
+            a.colour = drawColour_;
+            a.fillAlpha = drawFillAlpha_;
+            a.thicknessPx = 2.0f;
+            a.worldPts = { shapeStartWorld_, shapeEndWorld_ };
+            annotations_.push_back (std::move (a));
+            if (onEditCommitted) onEditCommitted();
+        }
+        shapeDragging_ = false;
+        drag_ = Drag::None;
+        repaint();
+        return;
+    }
+
     const bool committed = (drag_ == Drag::Pencil || drag_ == Drag::Erase
                             || drag_ == Drag::Speaker || drag_ == Drag::Layer);
     drag_ = Drag::None;
@@ -1536,4 +1699,11 @@ void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
     hoverValid_ = false;
     if (pendingAnchor_)
         repaint();
+}
+
+bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
+{
+    if (onKeyPressed != nullptr && onKeyPressed (key))
+        return true;
+    return false;
 }
