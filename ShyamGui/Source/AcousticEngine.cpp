@@ -7,7 +7,7 @@
 #endif
 
 static constexpr double kSpeedOfSound = 343.0;
-static constexpr double kCabHalfW     = 0.738 * 0.5;
+static constexpr double kCabHalfW     = (double) Q21SCabinet::halfExtentM;
 static constexpr double kPistonRadius = 0.13;
 static constexpr double kOrientationBias = 0.25;
 

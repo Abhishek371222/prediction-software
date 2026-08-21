@@ -622,6 +622,26 @@ void RadiationPatternComponent::drawLayout (juce::Graphics& g, juce::Rectangle<i
     }
 }
 
+juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const Speaker& spk) const
+{
+    // Plan view: depth along X (firing), width along Y.
+    const float hw = Q21SCabinet::widthM * 0.5f;
+    const float hd = Q21SCabinet::depthM * 0.5f;
+    return { spk.x - hd, spk.y - hw, Q21SCabinet::depthM, Q21SCabinet::widthM };
+}
+
+juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
+{
+    const auto wr = speakerFootprintWorld (spk);
+    const auto p0 = worldToScreen (wr.getX(), wr.getY());
+    const auto p1 = worldToScreen (wr.getRight(), wr.getBottom());
+    const float x = juce::jmin (p0.x, p1.x);
+    const float y = juce::jmin (p0.y, p1.y);
+    const float w = std::abs (p1.x - p0.x);
+    const float h = std::abs (p1.y - p0.y);
+    return { x, y, juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
+}
+
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)
 {
     // Distance reference rings (2 / 4 / 8 m) — toggleable from the plot toolbar.
@@ -649,7 +669,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         }
     }
 
-    // White tile + black speaker glyph; selected = thick black boundary (visible on heatmap).
+    // True Q21S plan footprint (750 mm W × 917 mm D). Selected = thick black boundary.
     for (int i = 0; i < (int) speakers_.size(); ++i)
     {
         const auto& spk = speakers_[i];
@@ -658,83 +678,49 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         const float alpha = spk.enabled ? 1.0f : 0.42f;
         const bool reverse = spk.reverseOrientation;
 
-        const float tile = juce::jlimit (18.0f, 28.0f, 22.0f * Brand::UI::scale);
-        juce::Rectangle<float> box (c.x - tile * 0.5f, c.y - tile * 0.5f, tile, tile);
+        auto box = speakerFootprintScreen (spk);
 
-        // White sound-icon tile
-        g.setColour (Brand::white().withAlpha (alpha));
-        g.fillRoundedRectangle (box, 3.0f);
-
+        g.setColour (Brand::white().withAlpha (0.92f * alpha));
+        g.fillRect (box);
+        g.setColour (isSel ? juce::Colours::black.withAlpha (0.98f * alpha)
+                           : Brand::charcoal().withAlpha (0.85f * alpha));
+        g.drawRect (box, isSel ? 2.5f : 1.4f);
         if (isSel)
         {
-            // Black selection frame — reads clearly on red/blue heatmaps.
             g.setColour (juce::Colours::black.withAlpha (0.95f * alpha));
-            g.drawRoundedRectangle (box.expanded (3.0f), 5.0f, 2.6f);
-            g.drawRoundedRectangle (box, 3.0f, 2.2f);
-        }
-        else
-        {
-            g.setColour (Brand::charcoal().withAlpha (0.22f * alpha));
-            g.drawRoundedRectangle (box, 3.0f, 1.0f);
+            g.drawRect (box.expanded (2.0f), 2.0f);
         }
 
-        // Black speaker icon inside the tile (cone facing right + 3 wave arcs)
+        // Facing chevron on the front face (+X = right when not reversed).
         {
-            juce::Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (box.toNearestInt());
-
-            if (reverse)
-                g.addTransform (juce::AffineTransform (-1.0f, 0.0f, box.getCentreX() * 2.0f,
-                                                        0.0f, 1.0f, 0.0f));
-
-            // Inset design space so waves clear the rounded border.
-            const float pad = tile * 0.14f;
-            const auto inner = box.reduced (pad);
-            const float s = inner.getWidth() / 24.0f;
-            const float ox = inner.getX();
-            const float oy = inner.getY();
-            auto P = [&] (float x, float y) { return juce::Point<float> (ox + x * s, oy + y * s); };
-
-            // Classic volume icon: cabinet + cone pointing right (fits in 24×24)
-            juce::Path body;
-            body.startNewSubPath (P (3.0f, 8.5f));
-            body.lineTo (P (8.0f, 8.5f));
-            body.lineTo (P (8.0f, 15.5f));
-            body.lineTo (P (3.0f, 15.5f));
-            body.closeSubPath();
-            body.startNewSubPath (P (8.0f, 8.5f));
-            body.lineTo (P (13.5f, 5.5f));
-            body.lineTo (P (13.5f, 18.5f));
-            body.lineTo (P (8.0f, 15.5f));
-            body.closeSubPath();
-
-            g.setColour (Brand::charcoal().withAlpha (alpha));
-            g.fillPath (body);
-
-            // JUCE arcs: 0 rad = 12 o'clock, clockwise. Right side ≈ π/2.
-            // Keep outermost arc radius ≤ ~8.5 so it stays inside the inset box.
-            const auto origin = P (13.8f, 12.0f);
-            const float a0 = juce::MathConstants<float>::halfPi - 0.65f;
-            const float a1 = juce::MathConstants<float>::halfPi + 0.65f;
-            g.setColour (Brand::charcoal().withAlpha (alpha));
-            for (float r : { 2.6f, 4.4f, 6.2f })
+            const float cy = box.getCentreY();
+            const float inset = juce::jmin (box.getWidth(), box.getHeight()) * 0.18f;
+            juce::Path tip;
+            if (! reverse)
             {
-                juce::Path arc;
-                const float rr = r * s;
-                arc.addCentredArc (origin.x, origin.y, rr, rr, 0.0f, a0, a1, true);
-                g.strokePath (arc, juce::PathStrokeType (1.55f * s,
-                    juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                const float xFront = box.getRight() - inset;
+                tip.addTriangle (xFront, cy,
+                                 xFront - inset * 1.6f, cy - inset,
+                                 xFront - inset * 1.6f, cy + inset);
             }
+            else
+            {
+                const float xFront = box.getX() + inset;
+                tip.addTriangle (xFront, cy,
+                                 xFront + inset * 1.6f, cy - inset,
+                                 xFront + inset * 1.6f, cy + inset);
+            }
+            g.setColour (Brand::charcoal().withAlpha (0.9f * alpha));
+            g.fillPath (tip);
         }
 
-        // Subtle inverted-polarity cue (no green/red +/- badge)
         if (spk.polarityInverted)
         {
+            const float d = juce::jlimit (4.0f, 8.0f, box.getWidth() * 0.12f);
             g.setColour (Brand::red().withAlpha (0.95f * alpha));
-            g.fillEllipse (box.getRight() - 7.0f, box.getY() + 2.0f, 5.0f, 5.0f);
+            g.fillEllipse (box.getRight() - d - 2.0f, box.getY() + 2.0f, d, d);
         }
 
-        // Label above — white Montserrat
         g.setColour (Brand::white().withAlpha (alpha));
         g.setFont (Brand::tech (isSel ? Brand::Type::speakerIdSelected
                                       : Brand::Type::speakerId, true));
@@ -1333,12 +1319,14 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
 // ---------------------------------------------------------------------------
 int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 {
-    const float tile = juce::jlimit (18.0f, 28.0f, 22.0f * Brand::UI::scale);
-    const float half = tile * 0.5f + 6.0f;
+    // True footprint hit, with a small screen pad so zoomed-out cabinets stay selectable.
+    constexpr float kPadPx = 6.0f;
     for (int i = (int) speakers_.size() - 1; i >= 0; --i)
     {
-        auto c = worldToScreen (speakers_[i].x, speakers_[i].y);
-        if (std::abs (p.x - c.x) <= half && std::abs (p.y - c.y) <= half + 8.0f)
+        auto box = speakerFootprintScreen (speakers_[(size_t) i]).expanded (kPadPx);
+        // Also accept clicks on the label band above the cabinet.
+        box.setTop (box.getY() - 16.0f);
+        if (box.contains (p))
             return i;
     }
     return -1;

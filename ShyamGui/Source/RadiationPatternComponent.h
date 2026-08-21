@@ -154,10 +154,12 @@ private:
     bool                    hoverValid_ = false;
 
     static constexpr int   kColourbarW = 86;
-    static constexpr float kCabW = 0.738f;   // cabinet width  (m)
-    static constexpr float kCabD = 0.708f;   // cabinet depth  (m)
     static constexpr float kMaxZoom = 2000.0f;     // enough to resolve 1 mm cells
     static constexpr double kMinGridM = 0.001;     // 1 mm — finest grid box
+
+    // Q21S plan footprint helpers (true product size W×D).
+    juce::Rectangle<float> speakerFootprintScreen (const Speaker& spk) const;
+    juce::Rectangle<float> speakerFootprintWorld  (const Speaker& spk) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RadiationPatternComponent)
 };

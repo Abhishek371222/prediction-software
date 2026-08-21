@@ -98,7 +98,11 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
         setRowVal (kSelected, "Q21S-" + juce::String (selectedIndex + 1)
                               + (s.enabled ? "" : " (off)"));
         setRowVal (kPos,      "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
-                              + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u);
+                              + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u
+                              + "  ·  "
+                              + juce::String ((int) std::lround (Q21SCabinet::widthM * 1000.0f)) + "×"
+                              + juce::String ((int) std::lround (Q21SCabinet::heightM * 1000.0f)) + "×"
+                              + juce::String ((int) std::lround (Q21SCabinet::depthM * 1000.0f)) + " mm");
         setRowVal (kGain,     juce::String (s.gainDB, 0) + " dB");
         setRowVal (kDelay,    juce::String (s.delayMs, 1) + " ms");
         setRowVal (kPolarity, s.polarityInverted ? "Reverse" : "Normal");

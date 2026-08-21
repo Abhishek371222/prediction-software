@@ -390,8 +390,10 @@ void ControlPanel::applyDeviceLayout (int count)
 
 // ---------------------------------------------------------------------------
 // Array presets: lay out a cardioid or end-fired sub array along the firing
-// axis (+x). Spacing is derived from the current frequency (~lambda/4, clamped),
-// and delays are auto-calculated. Everything stays editable afterwards.
+// axis (+x). Cardioid matches the MATLAB BEM cardioid recipe:
+//   rear physically rotated 180 deg, polarity -1, Gain 0.5, delay 3.5 ms,
+//   spacing d = 0.01 m; then coherent pressure sum (superposition) in the engine.
+// End-fired uses ~lambda/4 spacing with progressive delay. Editable afterwards.
 void ControlPanel::applyArrayPreset (PresetKind kind, int count)
 {
     count = juce::jlimit (2, 4, count);
@@ -400,34 +402,77 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
                                  freqBox_.getSelectedId() - 1);
     const double f = kSupportedFrequencies[fi];
     const double lambda = c / juce::jmax (1.0, f);
-    const float s = (float) juce::jlimit (0.6, 1.5, lambda * 0.25);   // spacing (m)
+
+    // MATLAB cardioid DSP on the rear cabinet.
+    constexpr float kCardioidPairD       = 0.01f;   // m, front–rear spacing
+    constexpr float kCardioidRearDelayMs = 3.5f;
+    constexpr float kCardioidRearGainDb  = -6.0f;   // 20*log10(0.5)
+
     const float centreX = 50.0f, centreY = 50.0f;
-    const float start = centreX - s * (float) (count - 1) * 0.5f;     // rear at i=0
 
     speakers_.clear();
-    for (int i = 0; i < count; ++i)
-    {
-        Speaker sp;
-        sp.x = start + s * (float) i;     // increasing x = toward the front (+x)
-        sp.y = centreY;
-        sp.gainDB = 0.0f;
-        sp.reverseOrientation = false;    // firing forward (+x)
-        sp.enabled = true;
 
-        if (kind == PresetKind::EndFired)
+    if (kind == PresetKind::Cardioid)
+    {
+        // 2-sub cardioid pair at the array centre; any extra units sit ahead
+        // along +x at ~lambda/4 so the rear pair keeps the MATLAB geometry.
+        const float extraS = (float) juce::jlimit (0.6, 1.5, lambda * 0.25);
+        const float pairSpan = kCardioidPairD + extraS * (float) juce::jmax (0, count - 2);
+        const float rearX = centreX - 0.5f * pairSpan;
+
+        for (int i = 0; i < count; ++i)
         {
-            // Rear unit fires first; each forward unit delayed by spacing/c so
-            // wavefronts sum forward and cancel rearward.
+            Speaker sp;
+            sp.y = centreY;
+            sp.enabled = true;
+
+            if (i == 0)
+            {
+                // Rear: rotated 180, inverted, Gain 0.5, 3.5 ms delay.
+                sp.x = rearX;
+                sp.gainDB = kCardioidRearGainDb;
+                sp.reverseOrientation = true;
+                sp.polarityInverted = true;
+                sp.delayMs = kCardioidRearDelayMs;
+            }
+            else if (i == 1)
+            {
+                // Front of the cardioid pair: faces +x, unity gain, no delay.
+                sp.x = rearX + kCardioidPairD;
+                sp.gainDB = 0.0f;
+                sp.reverseOrientation = false;
+                sp.polarityInverted = false;
+                sp.delayMs = 0.0f;
+            }
+            else
+            {
+                // Additional forward units ahead of the pair.
+                sp.x = rearX + kCardioidPairD + extraS * (float) (i - 1);
+                sp.gainDB = 0.0f;
+                sp.reverseOrientation = false;
+                sp.polarityInverted = false;
+                sp.delayMs = 0.0f;
+            }
+            speakers_.push_back (sp);
+        }
+    }
+    else // EndFired
+    {
+        const float s = (float) juce::jlimit (0.6, 1.5, lambda * 0.25);
+        const float start = centreX - s * (float) (count - 1) * 0.5f;
+
+        for (int i = 0; i < count; ++i)
+        {
+            Speaker sp;
+            sp.x = start + s * (float) i;
+            sp.y = centreY;
+            sp.gainDB = 0.0f;
+            sp.reverseOrientation = false;
             sp.polarityInverted = false;
             sp.delayMs = (float) ((double) i * (double) s / c * 1000.0);
+            sp.enabled = true;
+            speakers_.push_back (sp);
         }
-        else // Cardioid: rearmost unit inverted + delayed to reject the rear.
-        {
-            const bool rear = (i == 0);
-            sp.polarityInverted = rear;
-            sp.delayMs = rear ? (float) ((double) s / c * 1000.0) : 0.0f;
-        }
-        speakers_.push_back (sp);
     }
 
     selected_ = 0;

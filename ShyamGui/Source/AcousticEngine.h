@@ -4,8 +4,7 @@
 
 // ---------------------------------------------------------------------------
 // Speaker — a single subwoofer in the 2D world (pure data, no JUCE).
-// Cabinet footprint is fixed by the spec (0.738 m x 0.708 m); driver size is
-// irrelevant to the acoustic model (omnidirectional monopole sources).
+// Q21S cabinet: W 750 mm × H 784 mm × D 917 mm (plan footprint = W × D).
 // ---------------------------------------------------------------------------
 struct Speaker
 {
@@ -17,6 +16,15 @@ struct Speaker
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
     bool  enabled            = true;
 };
+
+// Q21S product cabinet dimensions (metres). Plan view uses width × depth.
+namespace Q21SCabinet
+{
+    constexpr float widthM  = 0.750f;   // 750 mm — left/right
+    constexpr float heightM = 0.784f;   // 784 mm — vertical
+    constexpr float depthM  = 0.917f;   // 917 mm — front/back (firing axis)
+    constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
+}
 
 // Measured horizontal directivity for one frequency: linear gain vs angle
 // (degree-indexed, 360 entries), normalized so the on-axis (0 deg) gain = 1.
