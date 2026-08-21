@@ -121,7 +121,7 @@
             <div class="btns">
               ${btn('Download source zip', `/download/${v.version}/source`, !!d.source?.available, d.source?.size)}
               ${btn('Download macOS DMG', `/download/${v.version}/mac`, !!d.mac?.available, d.mac?.size)}
-              ${btn('Download Windows EXE', `/download/${v.version}/windows`, !!d.windows?.available, d.windows?.size)}
+              ${btn('Download Windows ZIP (EXE + data)', `/download/${v.version}/windows`, !!d.windows?.available, d.windows?.size)}
             </div>
           </article>`;
       }).join('');

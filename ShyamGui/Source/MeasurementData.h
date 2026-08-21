@@ -619,8 +619,8 @@ namespace MeasurementData
                     if (accept (cand)) return cand;
                 }
 
-               #if JUCE_MAC
-                // Xcode / packaged .app: also check sibling Resources
+               #if JUCE_MAC || JUCE_WINDOWS
+                // Packaged builds: data may live under Resources next to the exe/.app
                 const juce::File resources = root.getChildFile ("Resources");
                 if (resources.isDirectory())
                 {
