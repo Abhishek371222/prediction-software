@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Local archive server — serves index.html and streams release files from GridFS.
+ * Local archive server — serves index.html and streams release files from
+ * local artifacts/ (preferred) or MongoDB GridFS when configured.
  * Not part of the JUCE app. Run: npm start
  */
 import 'dotenv/config';
@@ -9,20 +10,23 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MongoClient, GridFSBucket, ObjectId } from 'mongodb';
-import { fetchVersionsFromDb } from './lib/sync.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
+const ARTIFACTS = path.join(__dirname, 'artifacts');
+const VERSIONS_JSON = path.join(__dirname, 'versions.json');
 
-if (!process.env.MONGODB_URI) {
-  console.error('Missing MONGODB_URI in .env');
-  process.exit(1);
+const hasMongo = Boolean(process.env.MONGODB_URI);
+let client = null;
+let db = null;
+let bucket = null;
+
+if (hasMongo) {
+  client = new MongoClient(process.env.MONGODB_URI);
+  await client.connect();
+  db = client.db('atomik_releases');
+  bucket = new GridFSBucket(db, { bucketName: 'release_files' });
 }
-
-const client = new MongoClient(process.env.MONGODB_URI);
-await client.connect();
-const db = client.db('atomik_releases');
-const bucket = new GridFSBucket(db, { bucketName: 'release_files' });
 
 function send(res, code, body, type = 'text/plain') {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -40,12 +44,62 @@ function contentType(name) {
   return 'application/octet-stream';
 }
 
+function readLocalVersions() {
+  const raw = JSON.parse(fs.readFileSync(VERSIONS_JSON, 'utf8'));
+  return raw.versions || [];
+}
+
+async function fetchVersions() {
+  if (!hasMongo) return readLocalVersions();
+  try {
+    const { fetchVersionsFromDb } = await import('./lib/sync.mjs');
+    const versions = await fetchVersionsFromDb();
+    // Prefer local Windows artifact flag if GridFS has not been updated yet.
+    const local = readLocalVersions();
+    const byVer = Object.fromEntries(local.map((v) => [v.version, v]));
+    return versions.map((v) => {
+      const loc = byVer[v.version];
+      if (!loc) return v;
+      const merged = { ...v, downloads: { ...v.downloads } };
+      for (const kind of ['source', 'mac', 'windows']) {
+        const localDl = loc.downloads?.[kind];
+        if (localDl?.available && !merged.downloads?.[kind]?.available) {
+          merged.downloads[kind] = localDl;
+        }
+      }
+      return merged;
+    });
+  } catch {
+    return readLocalVersions();
+  }
+}
+
+function localArtifactPath(version, kind) {
+  const versions = readLocalVersions();
+  const doc = versions.find((v) => v.version === version);
+  const meta = doc?.downloads?.[kind];
+  if (!meta?.available || !meta.filename) return null;
+  const full = path.join(ARTIFACTS, meta.filename);
+  if (!full.startsWith(ARTIFACTS)) return null;
+  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null;
+  return { full, filename: path.basename(meta.filename), size: meta.size || fs.statSync(full).size };
+}
+
+function streamLocal(res, info) {
+  res.writeHead(200, {
+    'Content-Type': contentType(info.filename),
+    'Content-Disposition': `attachment; filename="${info.filename}"`,
+    'Content-Length': info.size,
+  });
+  fs.createReadStream(info.full).pipe(res);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
     if (url.pathname === '/api/versions') {
-      const versions = await fetchVersionsFromDb();
+      const versions = await fetchVersions();
       versions.sort((a, b) => {
         const pa = a.version.split('.').map(Number);
         const pb = b.version.split('.').map(Number);
@@ -59,22 +113,33 @@ const server = http.createServer(async (req, res) => {
     if (dl) {
       const version = dl[1].replace(/^v/i, '');
       const kind = dl[2];
-      const doc = await db.collection('versions').findOne({ version });
-      const meta = doc?.files?.[kind];
-      if (!meta?.fileId) return send(res, 404, `No ${kind} artifact for v${version}`);
 
-      const id = new ObjectId(meta.fileId);
-      const filename = meta.filename.split('/').pop();
-      res.writeHead(200, {
-        'Content-Type': contentType(filename),
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': meta.size,
-      });
-      bucket.openDownloadStream(id).on('error', () => {
-        if (!res.headersSent) send(res, 500, 'Download failed');
-        else res.destroy();
-      }).pipe(res);
-      return;
+      const local = localArtifactPath(version, kind);
+      if (local) {
+        streamLocal(res, local);
+        return;
+      }
+
+      if (hasMongo && db) {
+        const doc = await db.collection('versions').findOne({ version });
+        const meta = doc?.files?.[kind];
+        if (meta?.fileId) {
+          const id = new ObjectId(meta.fileId);
+          const filename = meta.filename.split('/').pop();
+          res.writeHead(200, {
+            'Content-Type': contentType(filename),
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': meta.size,
+          });
+          bucket.openDownloadStream(id).on('error', () => {
+            if (!res.headersSent) send(res, 500, 'Download failed');
+            else res.destroy();
+          }).pipe(res);
+          return;
+        }
+      }
+
+      return send(res, 404, `No ${kind} artifact for v${version}`);
     }
 
     let filePath = path.join(__dirname, url.pathname === '/' ? 'index.html' : url.pathname);
@@ -91,5 +156,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Version archive: http://127.0.0.1:${PORT}`);
+  const mode = hasMongo ? 'MongoDB + local artifacts' : 'local artifacts (no .env)';
+  console.log(`Version archive: http://127.0.0.1:${PORT}  [${mode}]`);
 });

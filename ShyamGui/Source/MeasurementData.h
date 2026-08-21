@@ -594,9 +594,11 @@ namespace MeasurementData
     }
 
     // Resolve a dataset folder portably (Windows/macOS).
-    // Walks up from CWD and the executable (including .app/Contents/MacOS)
-    // looking for any of the relative candidates. Optional markerFile must exist
-    // inside a candidate (e.g. "manifest.csv") before it is accepted.
+    // Prefer paths near the running exe / CWD (the cloned repo), then fall back
+    // to a legacy absolute Windows path. Checking legacy first is wrong on
+    // machines that still have an old D:\shayam gui tree without Q21S CSVs —
+    // that made Windows heatmaps diverge from macOS.
+    // Optional markerFile must exist inside a candidate before it is accepted.
     inline juce::File resolveSourceFolder (const juce::File& legacyDevPath,
                                            const std::vector<juce::String>& rels,
                                            const juce::String& markerFile = {})
@@ -606,8 +608,6 @@ namespace MeasurementData
             if (! cand.isDirectory()) return false;
             return markerFile.isEmpty() || cand.getChildFile (markerFile).existsAsFile();
         };
-
-        if (accept (legacyDevPath)) return legacyDevPath;
 
         auto searchFrom = [&] (juce::File root) -> juce::File
         {
@@ -639,49 +639,62 @@ namespace MeasurementData
             return {};
         };
 
-        if (auto f = searchFrom (juce::File::getCurrentWorkingDirectory()); f != juce::File())
-            return f;
-
+        // Prefer exe location over CWD: `start` / Explorer launches often have
+        // an unrelated working directory on Windows.
         const juce::File exeDir = juce::File::getSpecialLocation (
                                      juce::File::currentExecutableFile)
                                      .getParentDirectory();
         if (auto f = searchFrom (exeDir); f != juce::File())
             return f;
 
-        return legacyDevPath;   // missing — caller handles !ok
+        if (auto f = searchFrom (juce::File::getCurrentWorkingDirectory()); f != juce::File())
+            return f;
+
+        if (accept (legacyDevPath))
+            return legacyDevPath;
+
+        return {};   // missing — never return a folder that failed the marker check
     }
 
     // MeasurementIntegrationPack/Data — primary source of real CSV readings.
+    // Marker is a native Q21S far-field polar so old Factory/ShyamGuild-only
+    // packs (which also have manifest.csv) are never selected.
+    // Include ShyamGui/… so an EXE under version-archive/artifacts still finds
+    // the repo pack when walking up to the clone root.
     inline juce::File packDataFolder()
     {
         return resolveSourceFolder (
             juce::File ("D:\\shayam gui\\prediction software\\MeasurementIntegrationPack\\Data"),
-            { "prediction software/MeasurementIntegrationPack/Data",
+            { "ShyamGui/prediction software/MeasurementIntegrationPack/Data",
+              "prediction software/MeasurementIntegrationPack/Data",
               "MeasurementIntegrationPack/Data",
               "Data" },
-            "manifest.csv");
+            "Q21S_52Hz_2p0m.csv");
     }
 
     // Legacy .xlsx folders (fallback when a pack CSV is missing).
     inline juce::File folderForSource (int source)
     {
         const juce::File pack = packDataFolder();
-        if (pack.isDirectory() && pack.getChildFile ("manifest.csv").existsAsFile())
+        if (pack.isDirectory()
+            && pack.getChildFile ("Q21S_52Hz_2p0m.csv").existsAsFile())
             return pack;
 
         // Room = real guild measurements (.xlsx).
         if (source == Gylt)
             return resolveSourceFolder (
                 juce::File ("D:\\shayam gui\\shyamGuildMeasurements"),
-                { "shyamGuildMeasurements" });
+                { "shyamGuildMeasurements",
+                  "ShyamGui/shyamGuildMeasurements" });
 
         // Q21S OpenField — pack CSVs only (no legacy Factory xlsx required).
         return resolveSourceFolder (
             juce::File ("D:\\shayam gui\\prediction software\\MeasurementIntegrationPack\\Data"),
-            { "prediction software/MeasurementIntegrationPack/Data",
+            { "ShyamGui/prediction software/MeasurementIntegrationPack/Data",
+              "prediction software/MeasurementIntegrationPack/Data",
               "MeasurementIntegrationPack/Data",
               "Data" },
-            "manifest.csv");
+            "Q21S_52Hz_2p0m.csv");
     }
 
     inline juce::File xlsxFolderForSource (int source)
@@ -691,11 +704,11 @@ namespace MeasurementData
                 juce::File ("D:\\shayam gui\\shyamGuildMeasurements"),
                 { "shyamGuildMeasurements" });
 
-        // Q21S: canonical BEM 10 m workbook folder (marker = polar mega-file).
+        // Q21S: canonical BEM 10 m workbook folder (per-Hz xlsx pack).
         return resolveSourceFolder (
             juce::File ("D:\\shayam gui\\BEM_Data_10m"),
-            { "BEM_Data_10m", "../BEM_Data_10m" },
-            "Q21S_10m_PolarPlotData.xlsx");
+            { "BEM_Data_10m", "../BEM_Data_10m", "ShyamGui/../BEM_Data_10m" },
+            "52Hz.xlsx");
     }
 
     // Backwards-compatible default (Open Field).

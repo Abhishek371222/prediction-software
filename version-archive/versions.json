@@ -1,26 +1,28 @@
 {
-  "generatedAt": "2026-08-21T10:04:49.155Z",
-  "versions": [
-    {
-      "version": "1.3.0",
-      "notes": "Baseline: Q21S BEM polar×1/r heatmap, cardioid preset, cabinet 750×784×917 mm",
-      "createdAt": "2026-08-21T10:04:48.550Z",
-      "updatedAt": "2026-08-21T10:04:48.550Z",
-      "downloads": {
-        "source": {
-          "available": true,
-          "filename": "v1.3.0/Atomik-Source-v1.3.0.zip",
-          "size": 4652341
-        },
-        "mac": {
-          "available": true,
-          "filename": "v1.3.0/Atomik-macOS-v1.3.0.dmg",
-          "size": 2833020
-        },
-        "windows": {
-          "available": false
-        }
-      }
-    }
-  ]
+    "generatedAt":  "2026-08-21T11:13:00.000Z",
+    "versions":  [
+                     {
+                         "version":  "1.3.0",
+                         "notes":  "Baseline: Q21S BEM polar x 1/r heatmap, cardioid preset, cabinet 750x784x917 mm. Windows EXE loads repo Q21S pack (heatmap-correct).",
+                         "createdAt":  "2026-08-21T10:04:48.550Z",
+                         "updatedAt":  "2026-08-21T11:13:00.000Z",
+                         "downloads":  {
+                                           "source":  {
+                                                          "available":  true,
+                                                          "filename":  "v1.3.0/Atomik-Source-v1.3.0.zip",
+                                                          "size":  4652341
+                                                      },
+                                           "mac":  {
+                                                       "available":  true,
+                                                       "filename":  "v1.3.0/Atomik-macOS-v1.3.0.dmg",
+                                                       "size":  2833020
+                                                   },
+                                           "windows":  {
+                                                           "available":  true,
+                                                           "filename":  "v1.3.0/Atomik-Windows-v1.3.0.exe",
+                                                           "size":  2891144
+                                                       }
+                                       }
+                     }
+                 ]
 }
