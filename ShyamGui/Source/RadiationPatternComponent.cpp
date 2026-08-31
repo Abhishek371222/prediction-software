@@ -2,6 +2,7 @@
 #include "ColourMaps.h"
 #include "BrandTheme.h"
 #include "AppSettings.h"
+#include "MicRingSnap.h"
 #include <cmath>
 #include <algorithm>
 
@@ -19,47 +20,1238 @@ RadiationPatternComponent::RadiationPatternComponent()
 
 void RadiationPatternComponent::setTool (Tool t)
 {
-    if (tool_ == t) return;
+    if (tool_ == t)
+    {
+        updateDrawPrompt();
+        return;
+    }
     tool_ = t;
+    resetDrawSession();
     pendingAnchor_ = false;
-    shapeDragging_ = false;
+    hoverValid_ = false;
+    splProbeValid_ = false;
+    if (t != Tool::Select && addMicArmed_)
+    {
+        addMicArmed_ = false;
+        if (onAddMicArmedChanged) onAddMicArmedChanged();
+    }
     drag_ = Drag::None;
     updateMouseCursorForTool();
     if (onToolChanged) onToolChanged (tool_);
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::setDrawShape (DrawShape s, Construction c)
+{
+    drawShape_ = s;
+    construction_ = c;
+    tool_ = Tool::Shape;
+    resetDrawSession();
+    pendingAnchor_ = false;
+    updateMouseCursorForTool();
+    if (onToolChanged) onToolChanged (tool_);
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::setOrtho (bool on)
+{
+    if (ortho_ == on) return;
+    ortho_ = on;
+    if (ortho_ && selectedSpeakers_.size() >= 2)
+    {
+        const float measured = measureOrthoSpacingM();
+        if (measured > 1.0e-3f)
+            orthoSpacingM_ = measured;
+        applyOrthoSpeakerLayout();
+    }
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::setOrthoAlign (OrthoAlign a)
+{
+    if (orthoAlign_ == a) return;
+    orthoAlign_ = a;
+    if (ortho_)
+        applyOrthoSpeakerLayout();
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::setOrthoSpacingM (float metres)
+{
+    metres = juce::jlimit (0.1f, 50.0f, metres);
+    if (std::abs (orthoSpacingM_ - metres) < 1.0e-4f) return;
+    orthoSpacingM_ = metres;
+    if (ortho_)
+        applyOrthoSpeakerLayout();
+    repaint();
+}
+
+float RadiationPatternComponent::measureOrthoSpacingM() const
+{
+    if (selectedSpeakers_.size() < 2)
+        return 0.0f;
+
+    std::vector<int> idxs = selectedSpeakers_;
+    std::sort (idxs.begin(), idxs.end(), [&] (int a, int b)
+    {
+        const auto& sa = speakers_[(size_t) a];
+        const auto& sb = speakers_[(size_t) b];
+        if (orthoAlign_ == OrthoAlign::Horizontal)
+            return sa.x < sb.x || (sa.x == sb.x && sa.y < sb.y);
+        return sa.y < sb.y || (sa.y == sb.y && sa.x < sb.x);
+    });
+
+    double sum = 0.0;
+    int n = 0;
+    for (size_t i = 1; i < idxs.size(); ++i)
+    {
+        const auto& a = speakers_[(size_t) idxs[i - 1]];
+        const auto& b = speakers_[(size_t) idxs[i]];
+        const float d = (orthoAlign_ == OrthoAlign::Horizontal)
+                            ? std::abs (b.x - a.x)
+                            : std::abs (b.y - a.y);
+        sum += (double) d;
+        ++n;
+    }
+    return n > 0 ? (float) (sum / (double) n) : 0.0f;
+}
+
+void RadiationPatternComponent::syncOrthoSpacingFromSelection()
+{
+    if (! ortho_) return;
+    const float m = measureOrthoSpacingM();
+    if (m > 1.0e-3f)
+        orthoSpacingM_ = m;
+    updateDrawPrompt();
+    repaint();
+}
+
+bool RadiationPatternComponent::applyOrthoSpeakerLayout()
+{
+    if (! ortho_ || selectedSpeakers_.size() < 2)
+        return false;
+
+    std::vector<int> idxs = selectedSpeakers_;
+    // Unique, valid indices
+    std::sort (idxs.begin(), idxs.end());
+    idxs.erase (std::unique (idxs.begin(), idxs.end()), idxs.end());
+    idxs.erase (std::remove_if (idxs.begin(), idxs.end(),
+                                [&] (int i) { return i < 0 || i >= (int) speakers_.size(); }),
+                idxs.end());
+    if (idxs.size() < 2)
+        return false;
+
+    std::sort (idxs.begin(), idxs.end(), [&] (int a, int b)
+    {
+        const auto& sa = speakers_[(size_t) a];
+        const auto& sb = speakers_[(size_t) b];
+        if (orthoAlign_ == OrthoAlign::Horizontal)
+            return sa.x < sb.x || (sa.x == sb.x && sa.y < sb.y);
+        return sa.y < sb.y || (sa.y == sb.y && sa.x < sb.x);
+    });
+
+    if (onWillEdit) onWillEdit();
+
+    const float gap = juce::jmax (0.1f, orthoSpacingM_);
+    const float worldW = hasData_ ? (float) result_.worldW : 100.0f;
+    const float worldH = hasData_ ? (float) result_.worldH : 100.0f;
+
+    if (orthoAlign_ == OrthoAlign::Horizontal)
+    {
+        float sumY = 0.0f;
+        for (int i : idxs)
+            sumY += speakers_[(size_t) i].y;
+        const float y = sumY / (float) idxs.size();
+        const float x0 = speakers_[(size_t) idxs.front()].x;
+
+        for (size_t k = 0; k < idxs.size(); ++k)
+        {
+            auto& s = speakers_[(size_t) idxs[k]];
+            s.x = juce::jlimit (0.0f, worldW, x0 + (float) k * gap);
+            s.y = juce::jlimit (0.0f, worldH, y);
+            if (onSpeakerMoved)
+                onSpeakerMoved (idxs[k], s.x, s.y);
+        }
+    }
+    else
+    {
+        float sumX = 0.0f;
+        for (int i : idxs)
+            sumX += speakers_[(size_t) i].x;
+        const float x = sumX / (float) idxs.size();
+        const float y0 = speakers_[(size_t) idxs.front()].y;
+
+        for (size_t k = 0; k < idxs.size(); ++k)
+        {
+            auto& s = speakers_[(size_t) idxs[k]];
+            s.x = juce::jlimit (0.0f, worldW, x);
+            s.y = juce::jlimit (0.0f, worldH, y0 + (float) k * gap);
+            if (onSpeakerMoved)
+                onSpeakerMoved (idxs[k], s.x, s.y);
+        }
+    }
+
+    if (onEditCommitted) onEditCommitted();
+    repaint();
+    return true;
+}
+
+void RadiationPatternComponent::setDrawGridSnap (bool on)
+{
+    if (drawGridSnap_ == on) return;
+    drawGridSnap_ = on;
+    resetSnapSoundState();
+    updateDrawPrompt();
+}
+
+void RadiationPatternComponent::setShowSplProbe (bool on)
+{
+    if (showSplProbe_ == on) return;
+    showSplProbe_ = on;
+    if (! showSplProbe_)
+        splProbeValid_ = false;
     repaint();
 }
 
 void RadiationPatternComponent::setDrawColour (juce::Colour c)
 {
     drawColour_ = c;
+
+    // Recolour every selected drawing.
+    bool any = false;
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.colour.getARGB() == c.getARGB()) continue;
+        if (! any)
+        {
+            if (onWillEdit) onWillEdit();
+            any = true;
+        }
+        a.colour = c;
+    }
+    if (any && onEditCommitted) onEditCommitted();
+    repaint();
+}
+
+juce::Colour RadiationPatternComponent::getActiveDrawColour() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+        return annotations_[(size_t) selectedAnnot_].colour;
+    return drawColour_;
 }
 
 void RadiationPatternComponent::setDrawFillAlpha (float a01)
 {
     drawFillAlpha_ = juce::jlimit (0.0f, 1.0f, a01);
+
+    // Opacity applies to selected filled shapes only.
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (isFilledShapeKind (a.kind))
+            a.fillAlpha = drawFillAlpha_;
+    }
+    repaint();
+}
+
+float RadiationPatternComponent::getActiveFillAlpha() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (isFilledShapeKind (a.kind))
+            return a.fillAlpha;
+    }
+    return drawFillAlpha_;
 }
 
 void RadiationPatternComponent::clearAnnotations()
 {
     annotations_.clear();
+    selectedAnnots_.clear();
+    setSelectedAnnotation (-1);
+    resetDrawSession();
     pendingAnchor_ = false;
+    hoverValid_ = false;
+    numericBuffer_.clear();
+    updateDrawPrompt();
+    drag_ = Drag::None;
+    repaint();
+}
+
+void RadiationPatternComponent::clearMics()
+{
+    mics_.clear();
+    selectedMic_ = -1;
+    selectedMics_.clear();
+    addMicArmed_ = false;
+    nextMicId_ = 1;
+    if (onAddMicArmedChanged) onAddMicArmedChanged();
+    if (onMicsChanged) onMicsChanged();
+    updateMouseCursorForTool();
+    repaint();
+}
+
+void RadiationPatternComponent::setAddMicArmed (bool armed)
+{
+    if (addMicArmed_ == armed) return;
+    addMicArmed_ = armed;
+    if (armed)
+    {
+        setTool (Tool::Select);
+        setSelectedAnnotation (-1);
+    }
+    updateMouseCursorForTool();
+    if (onAddMicArmedChanged) onAddMicArmedChanged();
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::setMics (std::vector<MicReceiver> m)
+{
+    mics_ = std::move (m);
+    selectedMic_ = -1;
+    selectedMics_.clear();
+    nextMicId_ = 1;
+    for (const auto& mic : mics_)
+        nextMicId_ = juce::jmax (nextMicId_, mic.id + 1);
+    refreshMicLevels();
+    if (onMicsChanged) onMicsChanged();
+    repaint();
+}
+
+void RadiationPatternComponent::setSelectedMic (int index)
+{
+    if (index < 0 || index >= (int) mics_.size())
+        index = -1;
+    selectedMics_.clear();
+    if (index >= 0)
+        selectedMics_.push_back (index);
+    if (selectedMic_ == index) { repaint(); return; }
+    selectedMic_ = index;
+    if (onMicsChanged) onMicsChanged();
+    repaint();
+}
+
+void RadiationPatternComponent::clearPlotSelection()
+{
+    selectedAnnots_.clear();
+    selectedMics_.clear();
+    selectedSpeakers_.clear();
+    selectedAnnot_ = -1;
+    selectedMic_ = -1;
+    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+    if (onMicsChanged) onMicsChanged();
+    repaint();
+}
+
+bool RadiationPatternComponent::isAnnotationSelected (int index) const
+{
+    return std::find (selectedAnnots_.begin(), selectedAnnots_.end(), index)
+        != selectedAnnots_.end();
+}
+
+bool RadiationPatternComponent::isMicSelected (int index) const
+{
+    return std::find (selectedMics_.begin(), selectedMics_.end(), index)
+        != selectedMics_.end();
+}
+
+bool RadiationPatternComponent::isSpeakerSelected (int index) const
+{
+    return std::find (selectedSpeakers_.begin(), selectedSpeakers_.end(), index)
+        != selectedSpeakers_.end();
+}
+
+void RadiationPatternComponent::syncPrimarySelectionFromSets()
+{
+    selectedAnnot_ = selectedAnnots_.empty() ? -1 : selectedAnnots_.back();
+    selectedMic_ = selectedMics_.empty() ? -1 : selectedMics_.back();
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
+        && isFilledShapeKind (annotations_[(size_t) selectedAnnot_].kind))
+        drawFillAlpha_ = annotations_[(size_t) selectedAnnot_].fillAlpha;
+    if (! selectedSpeakers_.empty())
+        selected_ = selectedSpeakers_.back();
+}
+
+void RadiationPatternComponent::refreshMicLevels()
+{
+    for (auto& m : mics_)
+    {
+        float absDb = 0.0f, relDb = 0.0f;
+        m.levelOk = sampleSplAtWorld (m.x, m.y, absDb, relDb);
+        if (m.levelOk)
+            m.relDb = relDb;
+    }
+}
+
+void RadiationPatternComponent::snapMicWorld (float& wx, float& wy, bool playSoundIfNewClip)
+{
+    // Original ring snap: pull onto 1/2/4/8 m; tak only when newly latching.
+    const auto snap = MicRingSnap::snapToRing (wx, wy, speakers_);
+    const bool nowSnapped = snap.snapped;
+    if (nowSnapped)
+    {
+        wx = snap.x;
+        wy = snap.y;
+        if (playSoundIfNewClip && ! micWasSnapped_)
+            SnapClick::playTak();
+    }
+    micWasSnapped_ = nowSnapped;
+}
+
+void RadiationPatternComponent::beginMicDrag (int micIndex, juce::Point<float> screenPos)
+{
+    if (micIndex < 0 || micIndex >= (int) mics_.size()) return;
+    if (onWillEdit) onWillEdit();
+    selectedAnnots_.clear();
+    selectedSpeakers_.clear();
+    selectedMics_.clear();
+    selectedMics_.push_back (micIndex);
+    syncPrimarySelectionFromSets();
+    drag_ = Drag::Mic;
+    auto w = screenToWorld (screenPos.x, screenPos.y);
+    lastMicDragWorld_ = w;
+    lastMouse_ = screenPos;
+    micDragMoved_ = false;
+    micWasSnapped_ = mics_[(size_t) micIndex].ringLocked;
+    resetSnapSoundState();
+}
+
+bool RadiationPatternComponent::placeMicAtWorld (float wx, float wy)
+{
+    if (! hasData_) return false;
+    wx = juce::jlimit (0.0f, (float) result_.worldW, wx);
+    wy = juce::jlimit (0.0f, (float) result_.worldH, wy);
+
+    micWasSnapped_ = false;
+    float sx = wx, sy = wy;
+    snapMicWorld (sx, sy, true);
+
+    if (onWillEdit) onWillEdit();
+    MicReceiver m;
+    m.id = nextMicId_++;
+    m.x = sx;
+    m.y = sy;
+    if (micWasSnapped_)
+    {
+        const auto snap = MicRingSnap::snapToRing (sx, sy, speakers_);
+        m.ringLocked = snap.snapped;
+        m.ringRadiusM = snap.radiusM;
+        m.ringSpeaker = snap.speakerIndex;
+    }
+    mics_.push_back (m);
+    selectedMic_ = (int) mics_.size() - 1;
+    selectedMics_.clear();
+    selectedMics_.push_back (selectedMic_);
+    refreshMicLevels();
+    if (onEditCommitted) onEditCommitted();
+    if (onMicsChanged) onMicsChanged();
+    repaint();
+    return true;
+}
+
+bool RadiationPatternComponent::placeMicOnRing (int micIndex, int speakerIndex, float radiusM)
+{
+    if (micIndex < 0 || micIndex >= (int) mics_.size()) return false;
+    if (speakerIndex < 0 || speakerIndex >= (int) speakers_.size()) return false;
+    const auto& spk = speakers_[(size_t) speakerIndex];
+    auto& mic = mics_[(size_t) micIndex];
+    if (onWillEdit) onWillEdit();
+    auto placed = MicRingSnap::placeOnRing (spk, radiusM, mic.x, mic.y);
+    mic.x = juce::jlimit (0.0f, (float) result_.worldW, placed.x);
+    mic.y = juce::jlimit (0.0f, (float) result_.worldH, placed.y);
+    mic.ringLocked = true;
+    mic.ringRadiusM = radiusM;
+    mic.ringSpeaker = speakerIndex;
+    SnapClick::playTak();
+    selectedMic_ = micIndex;
+    refreshMicLevels();
+    if (onEditCommitted) onEditCommitted();
+    if (onMicsChanged) onMicsChanged();
+    repaint();
+    return true;
+}
+
+int RadiationPatternComponent::micHitTest (juce::Point<float> worldPt, float radiusM) const
+{
+    for (int i = (int) mics_.size() - 1; i >= 0; --i)
+    {
+        const auto& m = mics_[(size_t) i];
+        if (worldPt.getDistanceFrom ({ m.x, m.y }) <= radiusM)
+            return i;
+    }
+    return -1;
+}
+
+juce::String RadiationPatternComponent::micLabelText (const MicReceiver& m) const
+{
+    juce::String label = micDisplayName (m);
+    if (showMicDegrees_)
+    {
+        const int si = MicRingSnap::referenceSpeakerIndex (
+            m.x, m.y, speakers_, m.ringSpeaker);
+        if (si >= 0)
+        {
+            const int deg = (int) std::lround (
+                MicRingSnap::angleDegFromSpeaker (m.x, m.y, speakers_[(size_t) si]));
+            label += "  " + juce::String (deg)
+                   + juce::String::fromUTF8 ("\xc2\xb0");
+        }
+    }
+    if (m.levelOk)
+        label += "  " + juce::String (m.relDb, 1) + " dB";
+    return label;
+}
+
+int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) const
+{
+    // Hit the drawn glyph + label (screen px), not a tiny world-metre radius.
+    for (int i = (int) mics_.size() - 1; i >= 0; --i)
+    {
+        const auto& m = mics_[(size_t) i];
+        const auto s = worldToScreen (m.x, m.y);
+        const auto glyph = juce::Rectangle<float> (s.x - 14.0f, s.y - 16.0f, 28.0f, 32.0f);
+        if (glyph.contains (screenPt))
+            return i;
+
+        const juce::String label = micLabelText (m);
+        const float tw = juce::jmax (40.0f, (float) label.length() * 7.0f + 12.0f);
+        const auto box = juce::Rectangle<float> (s.x + 8.0f, s.y - 12.0f, tw, 20.0f);
+        if (box.contains (screenPt))
+            return i;
+    }
+    return -1;
+}
+
+void RadiationPatternComponent::drawMics (juce::Graphics& g)
+{
+    if (mics_.empty()) return;
+    for (int i = 0; i < (int) mics_.size(); ++i)
+    {
+        const auto& m = mics_[(size_t) i];
+        auto s = worldToScreen (m.x, m.y);
+        const bool sel = isMicSelected (i);
+        g.setColour (sel ? Brand::accent() : Brand::white());
+        // Simple mic glyph: capsule + stand
+        g.fillEllipse (s.x - 5.0f, s.y - 8.0f, 10.0f, 12.0f);
+        g.drawLine (s.x, s.y + 4.0f, s.x, s.y + 10.0f, 1.5f);
+        g.drawLine (s.x - 4.0f, s.y + 10.0f, s.x + 4.0f, s.y + 10.0f, 1.5f);
+        if (sel)
+            g.drawEllipse (s.x - 9.0f, s.y - 11.0f, 18.0f, 18.0f, 1.4f);
+
+        const juce::String label = micLabelText (m);
+        g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+        g.setColour (Brand::panelDark().withAlpha (0.85f));
+        const float tw = (float) g.getCurrentFont().getStringWidth (label) + 10.0f;
+        auto box = juce::Rectangle<float> (s.x + 10.0f, s.y - 10.0f, tw, 16.0f);
+        g.fillRoundedRectangle (box, 3.0f);
+        g.setColour (sel ? Brand::accent() : Brand::white());
+        g.drawText (label, box.toNearestInt(), juce::Justification::centred, false);
+    }
+}
+
+void RadiationPatternComponent::cancelDrawSession()
+{
+    resetDrawSession();
+    pendingAnchor_ = false;
+    hoverValid_ = false;
+    numericBuffer_.clear();
+    updateDrawPrompt();
+    repaint();
+}
+
+void RadiationPatternComponent::resetDrawSession()
+{
+    sessionActive_ = false;
+    sessionPts_.clear();
+    hoverValid_ = false;
+    numericBuffer_.clear();
+}
+
+void RadiationPatternComponent::beginDrawSession()
+{
+    sessionActive_ = true;
+    sessionPts_.clear();
+    numericBuffer_.clear();
+    updateDrawPrompt();
+}
+
+juce::String RadiationPatternComponent::getDrawPrompt() const
+{
+    return drawPrompt_;
+}
+
+void RadiationPatternComponent::updateDrawPrompt()
+{
+    juce::String p;
+    if (addMicArmed_)
+        p = "MIC: click to place (Esc cancels). Snaps to 1 / 2 / 4 / 8 m rings.";
+    else if (tool_ == Tool::Ruler)
+        p = pendingAnchor_ ? "RULER: specify end point" : "RULER: specify start point";
+    else if (tool_ == Tool::Shape)
+    {
+        const char* shapeName =
+            drawShape_ == DrawShape::Line      ? "LINE" :
+            drawShape_ == DrawShape::Polyline  ? "POLYLINE" :
+            drawShape_ == DrawShape::Circle    ? "CIRCLE" :
+            drawShape_ == DrawShape::Arc       ? "ARC" :
+            drawShape_ == DrawShape::Rectangle ? "RECTANGLE" : "SQUARE";
+
+        const char* method =
+            construction_ == Construction::LineTwoPoints      ? "2 Points" :
+            construction_ == Construction::LineOrtho          ? "Horizontal/Vertical" :
+            construction_ == Construction::PolylinePoints     ? "Point-to-Point" :
+            construction_ == Construction::PolylineClosed     ? "Closed" :
+            construction_ == Construction::CircleCenterRadius ? "Center + Radius" :
+            construction_ == Construction::CircleTwoPoints    ? "2 Points (diameter)" :
+            construction_ == Construction::ArcThreePoints     ? "3 Points" :
+            construction_ == Construction::RectTwoCorners     ? "2 Corners" :
+                                                                "2 Corners";
+
+        const int n = (int) sessionPts_.size();
+        const int need = pointsNeeded();
+        juce::String step;
+        if (drawShape_ == DrawShape::Polyline)
+            step = sessionActive_ ? ("point " + juce::String (n + 1) + "  (Enter=finish, Esc=cancel)")
+                                  : "specify first point";
+        else if (n == 0)
+            step = "specify first point";
+        else if (drawShape_ == DrawShape::Circle && construction_ == Construction::CircleCenterRadius)
+            step = "specify radius  (or type value + Enter)";
+        else if (drawShape_ == DrawShape::Circle && construction_ == Construction::CircleTwoPoints)
+            step = "specify second diameter point";
+        else if (drawShape_ == DrawShape::Arc)
+            step = (n == 1) ? "specify point on arc" : "specify end point";
+        else
+            step = "specify next point  (" + juce::String (n) + "/" + juce::String (need) + ")";
+
+        p = juce::String (shapeName) + "  " + method + ":  " + step;
+        if (construction_ == Construction::LineOrtho
+            || juce::ModifierKeys::getCurrentModifiers().isShiftDown())
+            p += "  [SHIFT ORTHO]";
+        if (drawGridSnap_)
+            p += "  [SNAP]";
+        if (numericBuffer_.isNotEmpty())
+            p += "  <" + numericBuffer_ + ">";
+    }
+    else if (tool_ == Tool::Pencil)
+        p = "PENCIL: drag to draw";
+    else if (tool_ == Tool::Eraser)
+        p = "ERASER: drag to erase";
+    else if (tool_ == Tool::Select && ortho_)
+    {
+        p = "ORTHO ";
+        p += (orthoAlign_ == OrthoAlign::Horizontal) ? "Horizontal" : "Vertical";
+        p += ": select 2+ speakers — linked gap ";
+        p += juce::String (orthoSpacingM_, 2) + " m";
+    }
+
+    if (p != drawPrompt_)
+    {
+        drawPrompt_ = p;
+        if (onDrawPromptChanged) onDrawPromptChanged();
+    }
+}
+
+int RadiationPatternComponent::pointsNeeded() const noexcept
+{
+    switch (construction_)
+    {
+        case Construction::ArcThreePoints: return 3;
+        case Construction::PolylinePoints:
+        case Construction::PolylineClosed: return 2; // min; more allowed
+        default: return 2;
+    }
+}
+
+RadiationPatternComponent::AnnotSpace
+RadiationPatternComponent::currentAnnotSpace() const noexcept
+{
+    if (params_.viewMode == ViewMode::Directivity
+        || params_.viewMode == ViewMode::MeasuredPolar)
+        return AnnotSpace::PolarPlot;
+    return AnnotSpace::World;
+}
+
+juce::Point<float> RadiationPatternComponent::polarNormToScreen (float nx, float ny) const
+{
+    return { polarCx_ + nx * polarRadius_, polarCy_ - ny * polarRadius_ };
+}
+
+juce::Point<float> RadiationPatternComponent::screenToPolarNorm (float sx, float sy) const
+{
+    if (polarRadius_ < 1.0e-3f) return {};
+    return { (sx - polarCx_) / polarRadius_,
+             (polarCy_ - sy) / polarRadius_ };
+}
+
+juce::Point<float> RadiationPatternComponent::annotateToScreen (const Annotation& a,
+                                                                juce::Point<float> p) const
+{
+    if (a.space == AnnotSpace::PolarPlot)
+        return polarNormToScreen (p.x, p.y);
+    return worldToScreen (p.x, p.y);
+}
+
+juce::Point<float> RadiationPatternComponent::screenToAnnot (float sx, float sy) const
+{
+    if (currentAnnotSpace() == AnnotSpace::PolarPlot)
+        return screenToPolarNorm (sx, sy);
+    auto w = screenToWorld (sx, sy);
+    w.x = juce::jlimit (0.0f, (float) juce::jmax (1.0, result_.worldW), w.x);
+    w.y = juce::jlimit (0.0f, (float) juce::jmax (1.0, result_.worldH), w.y);
+    return w;
+}
+
+juce::Point<float> RadiationPatternComponent::snapAnnotPoint (juce::Point<float> p) const
+{
+    return snapAnnotPointFull (p, false);
+}
+
+float RadiationPatternComponent::snapScalar (float v, const std::vector<float>& candidates,
+                                             float tol, bool& hit) noexcept
+{
+    hit = false;
+    float best = v;
+    float bestD = tol;
+    for (float c : candidates)
+    {
+        const float d = std::abs (c - v);
+        if (d <= bestD)
+        {
+            bestD = d;
+            best = c;
+            hit = true;
+        }
+    }
+    return best;
+}
+
+juce::Rectangle<float> RadiationPatternComponent::annotationAnnotBounds (
+    const Annotation& a) const
+{
+    if (a.pts.empty()) return {};
+
+    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
+         || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+        return normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+
+    float minX = a.pts.front().x, maxX = minX;
+    float minY = a.pts.front().y, maxY = minY;
+    for (const auto& p : a.pts)
+    {
+        minX = juce::jmin (minX, p.x);
+        maxX = juce::jmax (maxX, p.x);
+        minY = juce::jmin (minY, p.y);
+        maxY = juce::jmax (maxY, p.y);
+    }
+    return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY);
+}
+
+juce::Rectangle<float> RadiationPatternComponent::selectionAnnotBounds() const
+{
+    bool any = false;
+    float minX = 0, minY = 0, maxX = 0, maxY = 0;
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        const auto b = annotationAnnotBounds (annotations_[(size_t) idx]);
+        if (b.isEmpty()) continue;
+        if (! any)
+        {
+            minX = b.getX(); minY = b.getY();
+            maxX = b.getRight(); maxY = b.getBottom();
+            any = true;
+        }
+        else
+        {
+            minX = juce::jmin (minX, b.getX());
+            minY = juce::jmin (minY, b.getY());
+            maxX = juce::jmax (maxX, b.getRight());
+            maxY = juce::jmax (maxY, b.getBottom());
+        }
+    }
+    if (! any) return {};
+    return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY);
+}
+
+juce::Point<float> RadiationPatternComponent::selectionSnapReference() const
+{
+    const auto b = selectionAnnotBounds();
+    if (! b.isEmpty())
+        return { b.getX(), b.getY() };
+
+    if (! selectedMics_.empty() && selectedMics_.front() >= 0
+        && selectedMics_.front() < (int) mics_.size())
+    {
+        const auto& m = mics_[(size_t) selectedMics_.front()];
+        return { m.x, m.y };
+    }
+    if (! selectedSpeakers_.empty() && selectedSpeakers_.front() >= 0
+        && selectedSpeakers_.front() < (int) speakers_.size())
+    {
+        const auto& s = speakers_[(size_t) selectedSpeakers_.front()];
+        return { s.x, s.y };
+    }
+    return {};
+}
+
+void RadiationPatternComponent::collectObjectSnapAxes (std::vector<float>& xs,
+                                                       std::vector<float>& ys,
+                                                       bool ignoreSelected) const
+{
+    xs.clear();
+    ys.clear();
+    const auto space = currentAnnotSpace();
+
+    auto addX = [&] (float v) { xs.push_back (v); };
+    auto addY = [&] (float v) { ys.push_back (v); };
+    auto addBounds = [&] (juce::Rectangle<float> b)
+    {
+        if (b.isEmpty()) return;
+        addX (b.getX());
+        addX (b.getRight());
+        addX (b.getCentreX());
+        addY (b.getY());
+        addY (b.getBottom());
+        addY (b.getCentreY());
+    };
+
+    for (int i = 0; i < (int) annotations_.size(); ++i)
+    {
+        if (ignoreSelected && isAnnotationSelected (i)) continue;
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+
+        if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
+             || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+        {
+            addBounds (annotationAnnotBounds (a));
+        }
+        else
+        {
+            for (const auto& p : a.pts)
+            {
+                addX (p.x);
+                addY (p.y);
+            }
+            // Midpoints of segments help lining up strokes.
+            for (size_t k = 1; k < a.pts.size(); ++k)
+            {
+                addX (0.5f * (a.pts[k - 1].x + a.pts[k].x));
+                addY (0.5f * (a.pts[k - 1].y + a.pts[k].y));
+            }
+        }
+    }
+
+    if (space == AnnotSpace::World)
+    {
+        for (int i = 0; i < (int) mics_.size(); ++i)
+        {
+            if (ignoreSelected && isMicSelected (i)) continue;
+            addX (mics_[(size_t) i].x);
+            addY (mics_[(size_t) i].y);
+        }
+        for (int i = 0; i < (int) speakers_.size(); ++i)
+        {
+            if (ignoreSelected && isSpeakerSelected (i)) continue;
+            const auto& spk = speakers_[(size_t) i];
+            addX (spk.x);
+            addY (spk.y);
+            const float hw = 0.5f * Q21SCabinet::widthM;
+            const float hd = 0.5f * Q21SCabinet::depthM;
+            addBounds ({ spk.x - hw, spk.y - hd, hw * 2.0f, hd * 2.0f });
+        }
+    }
+}
+
+void RadiationPatternComponent::collectAnnotationEdgeAxes (std::vector<float>& xs,
+                                                           std::vector<float>& ys,
+                                                           bool ignoreSelected) const
+{
+    xs.clear();
+    ys.clear();
+    const auto space = currentAnnotSpace();
+
+    for (int i = 0; i < (int) annotations_.size(); ++i)
+    {
+        if (ignoreSelected && isAnnotationSelected (i)) continue;
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+
+        if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
+             || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+        {
+            const auto b = annotationAnnotBounds (a);
+            if (b.isEmpty()) continue;
+            xs.push_back (b.getX());
+            xs.push_back (b.getRight());
+            ys.push_back (b.getY());
+            ys.push_back (b.getBottom());
+        }
+        else
+        {
+            for (const auto& p : a.pts)
+            {
+                xs.push_back (p.x);
+                ys.push_back (p.y);
+            }
+        }
+    }
+}
+
+bool RadiationPatternComponent::selectionMeetsOtherAnnotation (juce::Rectangle<float> sel) const
+{
+    if (sel.isEmpty()) return false;
+
+    const float tol = juce::jmax (0.02f, 2.5f / juce::jmax (1.0f, worldScaleX()));
+    const auto space = currentAnnotSpace();
+
+    for (int i = 0; i < (int) annotations_.size(); ++i)
+    {
+        if (isAnnotationSelected (i)) continue;
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+
+        const auto o = annotationAnnotBounds (a);
+        if (o.isEmpty()) continue;
+
+        const bool yOverlap = sel.getY() <= o.getBottom() + tol
+                           && sel.getBottom() >= o.getY() - tol;
+        const bool xOverlap = sel.getX() <= o.getRight() + tol
+                           && sel.getRight() >= o.getX() - tol;
+
+        if (yOverlap)
+        {
+            if (std::abs (sel.getRight() - o.getX())      <= tol) return true; // A right | B left
+            if (std::abs (sel.getX()     - o.getRight())  <= tol) return true; // A left  | B right
+            if (std::abs (sel.getX()     - o.getX())      <= tol) return true; // lefts aligned
+            if (std::abs (sel.getRight() - o.getRight())  <= tol) return true; // rights aligned
+        }
+        if (xOverlap)
+        {
+            if (std::abs (sel.getBottom() - o.getY())       <= tol) return true;
+            if (std::abs (sel.getY()      - o.getBottom())  <= tol) return true;
+            if (std::abs (sel.getY()      - o.getY())       <= tol) return true;
+            if (std::abs (sel.getBottom() - o.getBottom())  <= tol) return true;
+        }
+    }
+    return false;
+}
+
+juce::Point<float> RadiationPatternComponent::snapAnnotPointFull (juce::Point<float> p,
+                                                                  bool ignoreSelected,
+                                                                  bool* objectHit) const
+{
+    if (objectHit != nullptr)
+        *objectHit = false;
+
+    if (! drawGridSnap_) return p;
+
+    if (currentAnnotSpace() == AnnotSpace::PolarPlot)
+    {
+        const float r = std::sqrt (p.x * p.x + p.y * p.y);
+        float ang = std::atan2 (p.y, p.x);
+        const float stepR = 0.05f;
+        const float stepA = (float) (15.0 * M_PI / 180.0);
+        const float rs = std::round (r / stepR) * stepR;
+        const float as = std::round (ang / stepA) * stepA;
+        return { rs * std::cos (as), rs * std::sin (as) };
+    }
+
+    // 1) Snap to the same minor grid the heatmap draws (visible lines).
+    const auto gm = currentGridMetrics();
+    const float step = (float) gm.minor;
+    float x = p.x;
+    float y = p.y;
+    if (step > 1.0e-9f)
+    {
+        x = std::round (p.x / step) * step;
+        y = std::round (p.y / step) * step;
+    }
+
+    // 2) Object snap (edges / corners / centres) — wins when closer than ~10 px.
+    //    Applied per-axis so a left edge can lock while Y still follows the grid.
+    const float tolX = 10.0f / juce::jmax (1.0f, worldScaleX());
+    const float tolY = 10.0f / juce::jmax (1.0f, worldScaleY());
+    std::vector<float> xs, ys;
+    collectObjectSnapAxes (xs, ys, ignoreSelected);
+    bool hitX = false, hitY = false;
+    const float ox = snapScalar (p.x, xs, tolX, hitX);
+    const float oy = snapScalar (p.y, ys, tolY, hitY);
+    if (hitX) x = ox;
+    if (hitY) y = oy;
+
+    // Tak / objectHit: only other drawing edges — not speakers, mics, or centres
+    // (those caused random clicks and armed the sound before a real shape meet).
+    if (objectHit != nullptr)
+    {
+        std::vector<float> ex, ey;
+        collectAnnotationEdgeAxes (ex, ey, ignoreSelected);
+        bool edgeX = false, edgeY = false;
+        snapScalar (p.x, ex, tolX, edgeX);
+        snapScalar (p.y, ey, tolY, edgeY);
+        *objectHit = edgeX || edgeY;
+    }
+
+    return { x, y };
+}
+
+void RadiationPatternComponent::resetSnapSoundState() noexcept
+{
+    snapSoundArmed_ = false;
+    snapSoundOffFrames_ = 0;
+}
+
+void RadiationPatternComponent::noteSnapSound (bool objectSnapEngaged,
+                                               juce::Point<float> raw,
+                                               juce::Point<float> snapped)
+{
+    juce::ignoreUnused (raw, snapped);
+
+    if (! drawGridSnap_)
+    {
+        snapSoundArmed_ = false;
+        snapSoundOffFrames_ = 0;
+        return;
+    }
+
+    // Tak on rising edge of object/edge/corner latch only (not grid steps).
+    // Do not require a large raw→snapped pull: selection moves often apply a
+    // small correction on the meeting edge while the opposite corner is already
+    // on-grid, which previously silenced the click when two shapes met.
+    if (! objectSnapEngaged)
+    {
+        if (++snapSoundOffFrames_ >= 4)
+            snapSoundArmed_ = false;
+        return;
+    }
+
+    snapSoundOffFrames_ = 0;
+
+    if (! snapSoundArmed_)
+    {
+        SnapClick::playTak();
+        lastSnapSoundPos_ = snapped;
+        snapSoundArmed_ = true;
+    }
+}
+
+juce::Point<float> RadiationPatternComponent::applyOrtho (juce::Point<float> from,
+                                                          juce::Point<float> to) const
+{
+    // Drawing constraint: Line Ortho construction or hold Shift — not the Ortho align tool.
+    const bool force = construction_ == Construction::LineOrtho
+                    || juce::ModifierKeys::getCurrentModifiers().isShiftDown();
+    if (! force)
+        return to;
+    const float dx = std::abs (to.x - from.x);
+    const float dy = std::abs (to.y - from.y);
+    if (dx >= dy)
+        return { to.x, from.y };
+    return { from.x, to.y };
+}
+
+bool RadiationPatternComponent::circleFrom3Points (juce::Point<float> p1,
+                                                   juce::Point<float> p2,
+                                                   juce::Point<float> p3,
+                                                   juce::Point<float>& centre,
+                                                   float& radius) noexcept
+{
+    const float ax = p1.x, ay = p1.y;
+    const float bx = p2.x, by = p2.y;
+    const float cx = p3.x, cy = p3.y;
+    const float d = 2.0f * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    if (std::abs (d) < 1.0e-10f) return false;
+    const float ux = ((ax * ax + ay * ay) * (by - cy)
+                    + (bx * bx + by * by) * (cy - ay)
+                    + (cx * cx + cy * cy) * (ay - by)) / d;
+    const float uy = ((ax * ax + ay * ay) * (cx - bx)
+                    + (bx * bx + by * by) * (ax - cx)
+                    + (cx * cx + cy * cy) * (bx - ax)) / d;
+    centre = { ux, uy };
+    radius = centre.getDistanceFrom (p1);
+    return radius > 1.0e-6f;
+}
+
+void RadiationPatternComponent::commitAnnotation (Annotation a)
+{
+    if (onWillEdit) onWillEdit();
+    a.space = currentAnnotSpace();
+    a.colour = drawColour_;
+    a.fillAlpha = drawFillAlpha_;
+    a.construction = construction_;
+    annotations_.push_back (std::move (a));
+    // Newly placed shape becomes the selection so opacity/move apply to it.
+    if (annotations_.back().kind != Annotation::Kind::Freehand)
+        setSelectedAnnotation ((int) annotations_.size() - 1);
+    if (onEditCommitted) onEditCommitted();
+    resetDrawSession();
+    updateDrawPrompt();
     repaint();
 }
 
 void RadiationPatternComponent::setAnnotations (std::vector<Annotation> a)
 {
     annotations_ = std::move (a);
+    setSelectedAnnotation (-1);
+    resetDrawSession();
     pendingAnchor_ = false;
     drag_ = Drag::None;
+    updateDrawPrompt();
     repaint();
+}
+
+bool RadiationPatternComponent::finishPolyline (bool forceClose)
+{
+    if (sessionPts_.size() < 2) return false;
+    Annotation a;
+    a.kind = Annotation::Kind::Polyline;
+    a.pts = sessionPts_;
+    a.closed = forceClose || construction_ == Construction::PolylineClosed;
+    a.thicknessPx = 2.2f;
+    if (a.closed && a.pts.size() >= 2
+        && a.pts.front().getDistanceFrom (a.pts.back()) > 1.0e-4f)
+        a.pts.push_back (a.pts.front());
+    commitAnnotation (std::move (a));
+    return true;
+}
+
+bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
+{
+    bool objHit = false;
+    auto p = snapAnnotPointFull (raw, false, &objHit);
+    noteSnapSound (objHit, raw, p);
+    if (! sessionPts_.empty())
+        p = applyOrtho (sessionPts_.back(), p);
+
+    if (drawShape_ == DrawShape::Polyline)
+    {
+        if (! sessionActive_)
+            beginDrawSession();
+
+        // Close if click lands near the start vertex.
+        const float closeTol = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 0.08f : 0.12f;
+        if (sessionPts_.size() >= 2
+            && sessionPts_.front().getDistanceFrom (p) < closeTol)
+            return finishPolyline (true);
+
+        sessionPts_.push_back (p);
+        updateDrawPrompt();
+        repaint();
+        return true;
+    }
+
+    if (! sessionActive_)
+        beginDrawSession();
+
+    sessionPts_.push_back (p);
+    const int need = pointsNeeded();
+
+    if ((int) sessionPts_.size() < need)
+    {
+        updateDrawPrompt();
+        repaint();
+        return true;
+    }
+
+    // Complete shape
+    Annotation a;
+    a.thicknessPx = 2.0f;
+
+    if (drawShape_ == DrawShape::Line)
+    {
+        a.kind = Annotation::Kind::Line;
+        a.pts = { sessionPts_[0], sessionPts_[1] };
+        a.thicknessPx = 2.2f;
+        commitAnnotation (std::move (a));
+        return true;
+    }
+
+    if (drawShape_ == DrawShape::Circle)
+    {
+        a.kind = Annotation::Kind::Circle;
+        if (construction_ == Construction::CircleTwoPoints)
+        {
+            // Diameter endpoints → store as center + rim point
+            const auto mid = (sessionPts_[0] + sessionPts_[1]) * 0.5f;
+            a.pts = { mid, sessionPts_[1] };
+        }
+        else
+            a.pts = { sessionPts_[0], sessionPts_[1] };
+        commitAnnotation (std::move (a));
+        return true;
+    }
+
+    if (drawShape_ == DrawShape::Arc && sessionPts_.size() >= 3)
+    {
+        juce::Point<float> c;
+        float r = 0;
+        if (! circleFrom3Points (sessionPts_[0], sessionPts_[1], sessionPts_[2], c, r))
+        {
+            resetDrawSession();
+            updateDrawPrompt();
+            repaint();
+            return false;
+        }
+        a.kind = Annotation::Kind::Arc;
+        // Store: center, start, end, mid-on-arc (for sweep sense)
+        a.pts = { c, sessionPts_[0], sessionPts_[2], sessionPts_[1] };
+        commitAnnotation (std::move (a));
+        return true;
+    }
+
+    if (drawShape_ == DrawShape::Rectangle || drawShape_ == DrawShape::Square)
+    {
+        a.kind = (drawShape_ == DrawShape::Square) ? Annotation::Kind::Square
+                                                   : Annotation::Kind::Rectangle;
+        a.pts = { sessionPts_[0], sessionPts_[1] };
+        commitAnnotation (std::move (a));
+        return true;
+    }
+
+    resetDrawSession();
+    updateDrawPrompt();
+    return false;
+}
+
+bool RadiationPatternComponent::commitNumericValue (double value)
+{
+    if (tool_ != Tool::Shape || ! sessionActive_ || sessionPts_.empty())
+        return false;
+    if (value <= 0.0) return false;
+
+    const auto& from = sessionPts_.back();
+    juce::Point<float> dir = hoverValid_ ? (hoverAnnot_ - from)
+                                         : juce::Point<float> (1.0f, 0.0f);
+    const float len = dir.getDistanceFromOrigin();
+    if (len < 1.0e-8f)
+        dir = { 1.0f, 0.0f };
+    else
+        dir *= (1.0f / len);
+
+    // In polar space, numeric is in normalised units; in world, metres.
+    const float dist = (float) value;
+    auto to = from + dir * dist;
+    to = applyOrtho (from, to);
+    return acceptAnnotPoint (to);
 }
 
 bool RadiationPatternComponent::canAnnotate() const noexcept
 {
-    // Annotations only render on the SPL field plot (not polar views).
-    return hasData_
-        && params_.viewMode != ViewMode::Directivity
-        && params_.viewMode != ViewMode::MeasuredPolar;
+    // SPL heatmap or polar plot overlays.
+    if (params_.viewMode == ViewMode::Directivity
+        || params_.viewMode == ViewMode::MeasuredPolar)
+        return true;
+    return hasData_;
 }
 
 float RadiationPatternComponent::distPointToSegment (juce::Point<float> p,
@@ -75,31 +1267,406 @@ float RadiationPatternComponent::distPointToSegment (juce::Point<float> p,
     return p.getDistanceFrom (a + ab * t);
 }
 
-void RadiationPatternComponent::eraseNear (juce::Point<float> worldPt, float radiusM)
+void RadiationPatternComponent::eraseNear (juce::Point<float> annotPt, float radius)
 {
     annotations_.erase (std::remove_if (annotations_.begin(), annotations_.end(),
         [&] (const Annotation& a)
         {
+            if (a.space != currentAnnotSpace()) return false;
+
             if (a.kind == Annotation::Kind::Rectangle
                 || a.kind == Annotation::Kind::Square
-                || a.kind == Annotation::Kind::Circle)
-                return pointHitsShape (worldPt, a, radiusM);
+                || a.kind == Annotation::Kind::Circle
+                || a.kind == Annotation::Kind::Arc
+                || a.kind == Annotation::Kind::Polyline)
+                return pointHitsShape (annotPt, a, radius);
 
-            if (a.worldPts.empty()) return true;
-            if (a.worldPts.size() == 1)
-                return worldPt.getDistanceFrom (a.worldPts.front()) <= radiusM;
+            if (a.pts.empty()) return true;
+            if (a.pts.size() == 1)
+                return annotPt.getDistanceFrom (a.pts.front()) <= radius;
 
-            for (size_t i = 1; i < a.worldPts.size(); ++i)
-                if (distPointToSegment (worldPt, a.worldPts[i - 1], a.worldPts[i]) <= radiusM)
+            for (size_t i = 1; i < a.pts.size(); ++i)
+                if (distPointToSegment (annotPt, a.pts[i - 1], a.pts[i]) <= radius)
                     return true;
             return false;
         }), annotations_.end());
+
+    // Indices shift after erase — clear selection to avoid pointing at the wrong shape.
+    setSelectedAnnotation (-1);
+}
+
+bool RadiationPatternComponent::isFilledShapeKind (Annotation::Kind k) noexcept
+{
+    return k == Annotation::Kind::Rectangle
+        || k == Annotation::Kind::Square
+        || k == Annotation::Kind::Circle;
+}
+
+int RadiationPatternComponent::annotationHitTest (juce::Point<float> annotPt,
+                                                  float radius) const
+{
+    const auto space = currentAnnotSpace();
+    for (int i = (int) annotations_.size() - 1; i >= 0; --i)
+    {
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+
+        if (a.kind == Annotation::Kind::Rectangle
+            || a.kind == Annotation::Kind::Square
+            || a.kind == Annotation::Kind::Circle
+            || a.kind == Annotation::Kind::Arc
+            || a.kind == Annotation::Kind::Polyline)
+        {
+            if (pointHitsShape (annotPt, a, radius))
+                return i;
+            continue;
+        }
+
+        if (a.pts.empty()) continue;
+        if (a.pts.size() == 1)
+        {
+            if (annotPt.getDistanceFrom (a.pts.front()) <= radius)
+                return i;
+            continue;
+        }
+        for (size_t j = 1; j < a.pts.size(); ++j)
+            if (distPointToSegment (annotPt, a.pts[j - 1], a.pts[j]) <= radius)
+                return i;
+    }
+    return -1;
+}
+
+void RadiationPatternComponent::setSelectedAnnotation (int index)
+{
+    if (index < 0 || index >= (int) annotations_.size())
+        index = -1;
+
+    selectedAnnots_.clear();
+    selectedMics_.clear();
+    selectedSpeakers_.clear();
+    selectedMic_ = -1;
+    if (index >= 0)
+        selectedAnnots_.push_back (index);
+
+    if (selectedAnnot_ == index && index >= 0)
+    {
+        syncPrimarySelectionFromSets();
+        if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+        repaint();
+        return;
+    }
+
+    selectedAnnot_ = index;
+    syncPrimarySelectionFromSets();
+    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+    repaint();
+}
+
+void RadiationPatternComponent::moveSelectedAnnotationBy (juce::Point<float> deltaAnnot)
+{
+    if (std::abs (deltaAnnot.x) < 1.0e-12f && std::abs (deltaAnnot.y) < 1.0e-12f)
+        return;
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        for (auto& p : a.pts)
+            p += deltaAnnot;
+    }
+}
+
+void RadiationPatternComponent::moveSelectionBy (juce::Point<float> deltaAnnot,
+                                                 juce::Point<float> deltaWorld)
+{
+    if (std::abs (deltaAnnot.x) > 1.0e-12f || std::abs (deltaAnnot.y) > 1.0e-12f)
+        moveSelectedAnnotationBy (deltaAnnot);
+
+    const bool moveWorld = (std::abs (deltaWorld.x) > 1.0e-12f
+                            || std::abs (deltaWorld.y) > 1.0e-12f);
+    if (! moveWorld) return;
+
+    for (int idx : selectedMics_)
+    {
+        // Group / mixed selection move: free translate only — ring snap is
+        // handled by the dedicated Drag::Mic path (original first snap pattern).
+        if (idx < 0 || idx >= (int) mics_.size()) continue;
+        auto& mic = mics_[(size_t) idx];
+        mic.x = juce::jlimit (0.0f, (float) result_.worldW, mic.x + deltaWorld.x);
+        mic.y = juce::jlimit (0.0f, (float) result_.worldH, mic.y + deltaWorld.y);
+        mic.ringLocked = false;
+        mic.ringSpeaker = -1;
+    }
+
+    for (int idx : selectedSpeakers_)
+    {
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        auto& spk = speakers_[(size_t) idx];
+        spk.x = juce::jlimit (0.0f, (float) result_.worldW, spk.x + deltaWorld.x);
+        spk.y = juce::jlimit (0.0f, (float) result_.worldH, spk.y + deltaWorld.y);
+        if (onSpeakerMoved)
+            onSpeakerMoved (idx, spk.x, spk.y);
+    }
+
+    if (! selectedMics_.empty())
+    {
+        refreshMicLevels();
+        if (onMicsChanged) onMicsChanged();
+    }
+}
+
+std::vector<juce::Point<float>> RadiationPatternComponent::resizeHandlesFor (
+    const Annotation& a)
+{
+    std::vector<juce::Point<float>> h;
+    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
+        && a.pts.size() >= 2)
+    {
+        const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+        h.push_back ({ r.getX(),      r.getY() });
+        h.push_back ({ r.getRight(),  r.getY() });
+        h.push_back ({ r.getRight(),  r.getBottom() });
+        h.push_back ({ r.getX(),      r.getBottom() });
+        return h;
+    }
+
+    if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
+    {
+        const auto c = a.pts[0];
+        const float rad = juce::jmax (1.0e-4f, c.getDistanceFrom (a.pts[1]));
+        h.push_back (c);                          // 0 = centre (move)
+        h.push_back ({ c.x + rad, c.y });         // E / N / W / S radius grips
+        h.push_back ({ c.x,       c.y + rad });
+        h.push_back ({ c.x - rad, c.y });
+        h.push_back ({ c.x,       c.y - rad });
+        return h;
+    }
+
+    return a.pts; // line / polyline / arc / freehand vertices
+}
+
+int RadiationPatternComponent::resizeHandleHitTest (const Annotation& a,
+                                                    juce::Point<float> annotPt,
+                                                    float radius) const
+{
+    const auto handles = resizeHandlesFor (a);
+    for (int i = (int) handles.size() - 1; i >= 0; --i)
+        if (annotPt.getDistanceFrom (handles[(size_t) i]) <= radius)
+            return i;
+    return -1;
+}
+
+void RadiationPatternComponent::applyAnnotationResize (Annotation& a, int handleIndex,
+                                                       juce::Point<float> annotPt)
+{
+    if (handleIndex < 0) return;
+    auto pt = annotPt;
+    if (drawGridSnap_)
+    {
+        bool objHit = false;
+        pt = snapAnnotPointFull (annotPt, true, &objHit);
+        noteSnapSound (objHit, annotPt, pt);
+    }
+
+    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
+        && a.pts.size() >= 2 && handleIndex < 4)
+    {
+        const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+        const juce::Point<float> corners[4] = {
+            { r.getX(),     r.getY() },
+            { r.getRight(), r.getY() },
+            { r.getRight(), r.getBottom() },
+            { r.getX(),     r.getBottom() }
+        };
+        const auto fixed = corners[(handleIndex + 2) % 4];
+        a.pts.resize (2);
+        a.pts[0] = fixed;
+        a.pts[1] = pt;
+        return;
+    }
+
+    if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
+    {
+        if (handleIndex == 0)
+        {
+            const auto d = pt - a.pts[0];
+            a.pts[0] = pt;
+            a.pts[1] += d;
+        }
+        else
+        {
+            float rad = pt.getDistanceFrom (a.pts[0]);
+            if (rad < 1.0e-4f) rad = 1.0e-4f;
+            auto dir = pt - a.pts[0];
+            const float len = dir.getDistanceFromOrigin();
+            if (len < 1.0e-8f)
+                dir = { 1.0f, 0.0f };
+            else
+                dir *= (1.0f / len);
+            a.pts[1] = a.pts[0] + dir * rad;
+        }
+        return;
+    }
+
+    if (handleIndex < (int) a.pts.size())
+        a.pts[(size_t) handleIndex] = pt;
+}
+
+void RadiationPatternComponent::drawSelectionOverlay (juce::Graphics& g, const Annotation& a)
+{
+    g.setColour (Brand::accent());
+
+    if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
+    {
+        const auto& c = a.pts[0];
+        const float r = c.getDistanceFrom (a.pts[1]);
+        auto sc = annotateToScreen (a, c);
+        float rx, ry;
+        if (a.space == AnnotSpace::PolarPlot)
+            rx = ry = r * polarRadius_;
+        else
+        {
+            rx = r * worldScaleX();
+            ry = r * worldScaleY();
+        }
+        g.drawEllipse (sc.x - rx, sc.y - ry, rx * 2.0f, ry * 2.0f, 1.5f);
+    }
+    else if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
+             && a.pts.size() >= 2)
+    {
+        const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+        auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
+        auto s1 = annotateToScreen (a, { wr.getRight(), wr.getBottom() });
+        auto sr = juce::Rectangle<float>::leftTopRightBottom (
+            juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
+            juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
+        g.drawRect (sr, 1.5f);
+    }
+
+    // Resize grips only when this is the sole selected drawing.
+    const bool showGrips = (selectedAnnots_.size() == 1
+                            && selectedMics_.empty()
+                            && selectedSpeakers_.empty());
+    for (const auto& p : resizeHandlesFor (a))
+    {
+        auto s = annotateToScreen (a, p);
+        g.setColour (Brand::accent());
+        if (showGrips)
+            g.fillEllipse (s.x - 4.5f, s.y - 4.5f, 9.0f, 9.0f);
+        else
+            g.drawEllipse (s.x - 3.5f, s.y - 3.5f, 7.0f, 7.0f, 1.4f);
+        g.setColour (Brand::panelDark());
+        g.drawEllipse (s.x - 4.5f, s.y - 4.5f, 9.0f, 9.0f, 1.2f);
+    }
+}
+
+juce::Rectangle<float> RadiationPatternComponent::annotationScreenBounds (
+    const Annotation& a) const
+{
+    if (a.pts.empty()) return {};
+
+    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
+         || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+    {
+        const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+        auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
+        auto s1 = annotateToScreen (a, { wr.getRight(), wr.getBottom() });
+        return juce::Rectangle<float>::leftTopRightBottom (
+            juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
+            juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y)).expanded (3.0f);
+    }
+
+    float minX = 1.0e9f, minY = 1.0e9f, maxX = -1.0e9f, maxY = -1.0e9f;
+    for (const auto& p : a.pts)
+    {
+        auto s = annotateToScreen (a, p);
+        minX = juce::jmin (minX, s.x);
+        minY = juce::jmin (minY, s.y);
+        maxX = juce::jmax (maxX, s.x);
+        maxY = juce::jmax (maxY, s.y);
+    }
+    if (maxX < minX) return {};
+    // Thin strokes (lines) get a hit padding so marquee can catch them.
+    return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY)
+        .expanded (6.0f);
+}
+
+juce::Rectangle<float> RadiationPatternComponent::currentMarqueeScreen() const
+{
+    return juce::Rectangle<float>::leftTopRightBottom (
+        juce::jmin (marqueeStartScreen_.x, marqueeEndScreen_.x),
+        juce::jmin (marqueeStartScreen_.y, marqueeEndScreen_.y),
+        juce::jmax (marqueeStartScreen_.x, marqueeEndScreen_.x),
+        juce::jmax (marqueeStartScreen_.y, marqueeEndScreen_.y));
+}
+
+void RadiationPatternComponent::applyMarqueeSelection (bool addToExisting)
+{
+    const auto box = currentMarqueeScreen();
+    if (box.getWidth() < 3.0f && box.getHeight() < 3.0f)
+        return;
+
+    if (! addToExisting)
+    {
+        selectedAnnots_.clear();
+        selectedMics_.clear();
+        selectedSpeakers_.clear();
+    }
+
+    const auto space = currentAnnotSpace();
+    for (int i = 0; i < (int) annotations_.size(); ++i)
+    {
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+        if (box.intersects (annotationScreenBounds (a)) && ! isAnnotationSelected (i))
+            selectedAnnots_.push_back (i);
+    }
+
+    if (space == AnnotSpace::World)
+    {
+        for (int i = 0; i < (int) mics_.size(); ++i)
+        {
+            auto s = worldToScreen (mics_[(size_t) i].x, mics_[(size_t) i].y);
+            if (box.contains (s) && ! isMicSelected (i))
+                selectedMics_.push_back (i);
+        }
+        for (int i = 0; i < (int) speakers_.size(); ++i)
+        {
+            if (box.intersects (speakerFootprintScreen (speakers_[(size_t) i]))
+                && ! isSpeakerSelected (i))
+                selectedSpeakers_.push_back (i);
+        }
+    }
+
+    syncPrimarySelectionFromSets();
+    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+    if (onMicsChanged) onMicsChanged();
+    if (! selectedSpeakers_.empty() && onSpeakerSelected)
+        onSpeakerSelected (selectedSpeakers_.back());
+}
+
+void RadiationPatternComponent::drawMarqueeOverlay (juce::Graphics& g)
+{
+    if (drag_ != Drag::Marquee) return;
+    auto r = currentMarqueeScreen();
+    if (r.getWidth() < 1.0f && r.getHeight() < 1.0f) return;
+    g.setColour (Brand::accent().withAlpha (0.15f));
+    g.fillRect (r);
+    g.setColour (Brand::accent().withAlpha (0.9f));
+    g.drawRect (r, 1.2f);
 }
 
 juce::Rectangle<float> RadiationPatternComponent::normalisedShapeRect (
     juce::Point<float> a, juce::Point<float> b, Annotation::Kind kind) noexcept
 {
-    if (kind == Annotation::Kind::Square || kind == Annotation::Kind::Circle)
+    // Circle (AutoCAD CIRCLE default): a = center, b = point on circumference.
+    if (kind == Annotation::Kind::Circle)
+    {
+        const float r = a.getDistanceFrom (b);
+        return juce::Rectangle<float> (a.x - r, a.y - r, r * 2.0f, r * 2.0f);
+    }
+
+    // Square: first corner a, opposite corner constrained to equal sides.
+    if (kind == Annotation::Kind::Square)
     {
         const float sx = (b.x >= a.x) ? 1.0f : -1.0f;
         const float sy = (b.y >= a.y) ? 1.0f : -1.0f;
@@ -111,79 +1678,400 @@ juce::Rectangle<float> RadiationPatternComponent::normalisedShapeRect (
             juce::jmax (a.x, x1), juce::jmax (a.y, y1));
     }
 
+    // Rectangle (AutoCAD RECTANG): diagonally opposite corners.
     return juce::Rectangle<float>::leftTopRightBottom (
         juce::jmin (a.x, b.x), juce::jmin (a.y, b.y),
         juce::jmax (a.x, b.x), juce::jmax (a.y, b.y));
 }
 
-bool RadiationPatternComponent::pointHitsShape (juce::Point<float> worldPt,
-                                                const Annotation& a,
-                                                float radiusM) noexcept
+
+juce::String RadiationPatternComponent::formatLengthLabel (float metres)
 {
-    if (a.worldPts.size() < 2) return false;
-    const auto r = normalisedShapeRect (a.worldPts[0], a.worldPts[1], a.kind);
-    if (r.getWidth() < 1.0e-6f || r.getHeight() < 1.0e-6f)
-        return worldPt.getDistanceFrom (r.getCentre()) <= radiusM;
+    const float m = std::abs (metres);
+    if (m < 1.0f)
+        return juce::String (m * 100.0f, 0) + " cm";
+    return juce::String (m, 2) + " m";
+}
+
+void RadiationPatternComponent::drawPendingDimLabel (juce::Graphics& g,
+                                                     juce::Point<float> screenMid,
+                                                     const juce::String& text)
+{
+    g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+    const float tw = (float) juce::jmax (64, text.length() * 7 + 16);
+    const float th = 18.0f;
+    auto labelBox = juce::Rectangle<float> (screenMid.x - tw * 0.5f, screenMid.y - th - 6.0f,
+                                            tw, th);
+    g.setColour (Brand::panelDark().withAlpha (0.85f));
+    g.fillRoundedRectangle (labelBox, 4.0f);
+    g.setColour (drawColour_);
+    g.drawText (text, labelBox.toNearestInt(), juce::Justification::centred, false);
+}
+
+bool RadiationPatternComponent::sampleSplAtWorld (float wx, float wy,
+                                                  float& absDb, float& relDb) const noexcept
+{
+    const int W = result_.width;
+    const int H = result_.height;
+    if (W < 2 || H < 2 || result_.worldW < 1.0e-6 || result_.worldH < 1.0e-6)
+        return false;
+
+    const float fx = (float) ((wx / (float) result_.worldW) * (double) (W - 1));
+    const float fy = (float) ((wy / (float) result_.worldH) * (double) (H - 1));
+    if (fx < 0.0f || fy < 0.0f || fx > (float) (W - 1) || fy > (float) (H - 1))
+        return false;
+
+    const int c0 = juce::jlimit (0, W - 2, (int) std::floor (fx));
+    const int r0 = juce::jlimit (0, H - 2, (int) std::floor (fy));
+    const int c1 = c0 + 1;
+    const int r1 = r0 + 1;
+    const float tx = fx - (float) c0;
+    const float ty = fy - (float) r0;
+
+    const bool hasRel = result_.splRelDB.size() == (size_t) W * (size_t) H;
+    const bool hasAbs = result_.hasAbsoluteSpl
+                     && result_.splAbsDB.size() == (size_t) W * (size_t) H;
+    const bool hasDisp = result_.splDB.size() == (size_t) W * (size_t) H;
+    if (! hasRel && ! hasAbs && ! hasDisp)
+        return false;
+
+    auto sample = [&] (const std::vector<float>& grid) -> float
+    {
+        const float v00 = grid[(size_t) r0 * (size_t) W + (size_t) c0];
+        const float v10 = grid[(size_t) r0 * (size_t) W + (size_t) c1];
+        const float v01 = grid[(size_t) r1 * (size_t) W + (size_t) c0];
+        const float v11 = grid[(size_t) r1 * (size_t) W + (size_t) c1];
+        const float a = v00 + (v10 - v00) * tx;
+        const float b = v01 + (v11 - v01) * tx;
+        return a + (b - a) * ty;
+    };
+
+    relDb = hasRel ? sample (result_.splRelDB)
+                   : (hasDisp ? sample (result_.splDB) : 0.0f);
+    if (hasAbs)
+        absDb = sample (result_.splAbsDB);
+    else if (result_.hasAbsoluteSpl)
+        absDb = (float) result_.peakAbsDb + relDb;
+    else
+        absDb = relDb;
+
+    return true;
+}
+
+bool RadiationPatternComponent::updateSplProbeAt (juce::Point<float> screenPt)
+{
+    splProbeValid_ = false;
+    if (! showSplProbe_)
+        return false;
+    if (tool_ != Tool::Select)
+        return false;
+    if (! hasData_ || params_.viewMode == ViewMode::Directivity
+                   || params_.viewMode == ViewMode::MeasuredPolar)
+        return false;
+
+    const auto pb = plotArea();
+    if (! pb.toFloat().contains (screenPt))
+        return false;
+
+    auto w = screenToWorld (screenPt.x, screenPt.y);
+    if (w.x < 0.0f || w.y < 0.0f
+        || w.x > (float) result_.worldW || w.y > (float) result_.worldH)
+        return false;
+
+    float absDb = 0.0f, relDb = 0.0f;
+    if (! sampleSplAtWorld (w.x, w.y, absDb, relDb))
+        return false;
+
+    splProbeValid_ = true;
+    splProbeScreen_ = screenPt;
+    splProbeWorld_ = w;
+    splProbeAbsDb_ = absDb;
+    splProbeRelDb_ = relDb;
+    return true;
+}
+
+void RadiationPatternComponent::drawSplProbe (juce::Graphics& g)
+{
+    if (! showSplProbe_ || ! splProbeValid_)
+        return;
+
+    // Crosshair at sample point
+    g.setColour (Brand::white().withAlpha (0.85f));
+    g.drawLine (splProbeScreen_.x - 7.0f, splProbeScreen_.y,
+                splProbeScreen_.x + 7.0f, splProbeScreen_.y, 1.2f);
+    g.drawLine (splProbeScreen_.x, splProbeScreen_.y - 7.0f,
+                splProbeScreen_.x, splProbeScreen_.y + 7.0f, 1.2f);
+    g.drawEllipse (splProbeScreen_.x - 4.0f, splProbeScreen_.y - 4.0f, 8.0f, 8.0f, 1.2f);
+
+    juce::String line1;
+    if (result_.hasAbsoluteSpl)
+        line1 = juce::String (splProbeAbsDb_, 1) + " dB SPL";
+    else
+        line1 = juce::String (splProbeRelDb_, 1) + " dB (rel.)";
+
+    const juce::String line2 = "(" + juce::String (splProbeWorld_.x, 1) + ", "
+                             + juce::String (splProbeWorld_.y, 1) + ") m"
+                             + (result_.hasAbsoluteSpl
+                                    ? ("   " + juce::String (splProbeRelDb_, 1) + " dB rel")
+                                    : juce::String());
+
+    g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+    const float pad = 8.0f;
+    const float tw = (float) juce::jmax (line1.length(), line2.length()) * 7.2f + pad * 2.0f;
+    const float th = 36.0f;
+    float lx = splProbeScreen_.x + 14.0f;
+    float ly = splProbeScreen_.y - th - 8.0f;
+    const auto pb = plotArea().toFloat();
+    if (lx + tw > pb.getRight() - 4.0f)
+        lx = splProbeScreen_.x - tw - 14.0f;
+    if (ly < pb.getY() + 4.0f)
+        ly = splProbeScreen_.y + 14.0f;
+
+    auto box = juce::Rectangle<float> (lx, ly, tw, th);
+    g.setColour (Brand::panelDark().withAlpha (0.92f));
+    g.fillRoundedRectangle (box, 5.0f);
+    g.setColour (Brand::accent().withAlpha (0.7f));
+    g.drawRoundedRectangle (box, 5.0f, 1.0f);
+    g.setColour (Brand::white());
+    g.drawText (line1, box.withTrimmedTop (2.0f).withTrimmedBottom (th * 0.45f).toNearestInt(),
+                juce::Justification::centred, false);
+    g.setColour (Brand::muted());
+    g.setFont (Brand::tech (Brand::UI::scaledFont (10.0f), false));
+    g.drawText (line2, box.withTrimmedTop (th * 0.48f).withTrimmedBottom (2.0f).toNearestInt(),
+                juce::Justification::centred, false);
+}
+
+void RadiationPatternComponent::updateRubberBandAt (juce::Point<float> screenPt)
+{
+    const bool tracking = (tool_ == Tool::Ruler && pendingAnchor_)
+                       || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty());
+    if (! tracking)
+        return;
+
+    const bool inPlot = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+                            ? getLocalBounds().toFloat().contains (screenPt)
+                            : plotArea().toFloat().contains (screenPt);
+    if (! canAnnotate() || ! inPlot)
+    {
+        hoverValid_ = false;
+        return;
+    }
+
+    hoverAnnot_ = screenToAnnot (screenPt.x, screenPt.y);
+    hoverValid_ = true;
+}
+
+bool RadiationPatternComponent::tryFinishRubberBandAt (juce::Point<float> screenPt)
+{
+    // Click-drag-release: finish 2-point shapes / ruler when the drag travelled enough.
+    updateRubberBandAt (screenPt);
+    if (! hoverValid_)
+        return false;
+
+    if (tool_ == Tool::Ruler && pendingAnchor_)
+    {
+        auto annot = applyOrtho (pendingStartWorld_, hoverAnnot_);
+        annot = snapAnnotPoint (annot);
+        const float minDist = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 0.02f : 0.05f;
+        if (pendingStartWorld_.getDistanceFrom (annot) <= minDist)
+            return false;
+        if (onWillEdit) onWillEdit();
+        Annotation a;
+        a.kind = Annotation::Kind::Measure;
+        a.space = currentAnnotSpace();
+        a.colour = drawColour_;
+        a.thicknessPx = 1.8f;
+        a.pts = { pendingStartWorld_, annot };
+        annotations_.push_back (std::move (a));
+        if (onEditCommitted) onEditCommitted();
+        pendingAnchor_ = false;
+        hoverValid_ = false;
+        updateDrawPrompt();
+        repaint();
+        return true;
+    }
+
+    if (tool_ == Tool::Shape && sessionActive_
+        && drawShape_ != DrawShape::Polyline
+        && drawShape_ != DrawShape::Arc
+        && sessionPts_.size() == 1
+        && pointsNeeded() == 2)
+    {
+        auto p = applyOrtho (sessionPts_.back(), hoverAnnot_);
+        p = snapAnnotPoint (p);
+        const float minDist = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 0.02f : 0.05f;
+        if (sessionPts_.front().getDistanceFrom (p) <= minDist)
+            return false;
+        acceptAnnotPoint (p);
+        return true;
+    }
+
+    return false;
+}
+
+bool RadiationPatternComponent::pointHitsShape (juce::Point<float> pt,
+                                                const Annotation& a,
+                                                float radius) noexcept
+{
+    if (a.pts.size() < 2) return false;
 
     if (a.kind == Annotation::Kind::Circle)
     {
-        const float cx = r.getCentreX(), cy = r.getCentreY();
-        const float rx = r.getWidth() * 0.5f, ry = r.getHeight() * 0.5f;
-        const float nx = (worldPt.x - cx) / juce::jmax (1.0e-6f, rx);
-        const float ny = (worldPt.y - cy) / juce::jmax (1.0e-6f, ry);
-        const float d = std::sqrt (nx * nx + ny * ny);
-        return d <= 1.0f + radiusM / juce::jmax (rx, ry);
+        const auto& c = a.pts[0];
+        const float r = c.getDistanceFrom (a.pts[1]);
+        return pt.getDistanceFrom (c) <= r + radius;
     }
 
-    return r.expanded (radiusM).contains (worldPt);
+    if (a.kind == Annotation::Kind::Arc && a.pts.size() >= 3)
+    {
+        const auto& c = a.pts[0];
+        const float r = c.getDistanceFrom (a.pts[1]);
+        return std::abs (pt.getDistanceFrom (c) - r) <= radius;
+    }
+
+    if (a.kind == Annotation::Kind::Polyline)
+    {
+        for (size_t i = 1; i < a.pts.size(); ++i)
+            if (distPointToSegment (pt, a.pts[i - 1], a.pts[i]) <= radius)
+                return true;
+        return false;
+    }
+
+    const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+    if (r.getWidth() < 1.0e-6f || r.getHeight() < 1.0e-6f)
+        return pt.getDistanceFrom (r.getCentre()) <= radius;
+
+    return r.expanded (radius).contains (pt);
 }
 
 void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
                                                      const Annotation& a,
                                                      float alphaMul)
 {
-    if (a.worldPts.size() < 2) return;
-    const auto wr = normalisedShapeRect (a.worldPts[0], a.worldPts[1], a.kind);
+    if (a.pts.size() < 2) return;
+
+    // Isolate from any leftover Graphics::setOpacity (e.g. heatmap / layout).
+    juce::Graphics::ScopedSaveState ss (g);
+    g.setOpacity (1.0f);
+
+    const float fillA = juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul;
+    const float strokeA = juce::jlimit (0.15f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+    // Rebuild from RGB so we never inherit a stale alpha channel on colour.
+    const auto base = juce::Colour::fromFloatRGBA (a.colour.getFloatRed(),
+                                                   a.colour.getFloatGreen(),
+                                                   a.colour.getFloatBlue(),
+                                                   1.0f);
+
+    if (a.kind == Annotation::Kind::Circle)
+    {
+        const auto& c = a.pts[0];
+        const float r = c.getDistanceFrom (a.pts[1]);
+        if (r < 1.0e-6f) return;
+        auto sc = annotateToScreen (a, c);
+        float rx, ry;
+        if (a.space == AnnotSpace::PolarPlot)
+        {
+            rx = r * polarRadius_;
+            ry = r * polarRadius_;
+        }
+        else
+        {
+            rx = r * worldScaleX();
+            ry = r * worldScaleY();
+        }
+        auto sr = juce::Rectangle<float> (sc.x - rx, sc.y - ry, rx * 2.0f, ry * 2.0f);
+        g.setColour (base.withAlpha (fillA));
+        g.fillEllipse (sr);
+        g.setColour (base.withAlpha (strokeA));
+        g.drawEllipse (sr, a.thicknessPx);
+        return;
+    }
+
+    const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
     if (wr.getWidth() < 1.0e-6f && wr.getHeight() < 1.0e-6f) return;
 
-    auto s0 = worldToScreen (wr.getX(), wr.getY());
-    auto s1 = worldToScreen (wr.getRight(), wr.getBottom());
+    auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
+    auto s1 = annotateToScreen (a, { wr.getRight(), wr.getBottom() });
     auto sr = juce::Rectangle<float>::leftTopRightBottom (
         juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
         juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
 
-    const float fillA = juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul;
-    const float strokeA = juce::jlimit (0.15f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+    g.setColour (base.withAlpha (fillA));
+    g.fillRect (sr);
+    g.setColour (base.withAlpha (strokeA));
+    g.drawRect (sr, a.thicknessPx);
+}
 
-    if (a.kind == Annotation::Kind::Circle)
+void RadiationPatternComponent::drawArcAnnotation (juce::Graphics& g,
+                                                   const Annotation& a,
+                                                   float alphaMul)
+{
+    // pts: center, start, end, mid-on-arc
+    if (a.pts.size() < 4) return;
+    const auto& c = a.pts[0];
+    const float r = c.getDistanceFrom (a.pts[1]);
+    if (r < 1.0e-6f) return;
+
+    auto angOf = [&] (juce::Point<float> p) -> float
     {
-        g.setColour (a.colour.withAlpha (fillA));
-        g.fillEllipse (sr);
-        g.setColour (a.colour.withAlpha (strokeA));
-        g.drawEllipse (sr, a.thicknessPx);
-    }
-    else
+        return std::atan2 (p.y - c.y, p.x - c.x);
+    };
+    float a0 = angOf (a.pts[1]);
+    float a1 = angOf (a.pts[2]);
+    float am = angOf (a.pts[3]);
+
+    // Sweep from a0 to a1 through am
+    auto norm = [] (float x)
     {
-        g.setColour (a.colour.withAlpha (fillA));
-        g.fillRect (sr);
-        g.setColour (a.colour.withAlpha (strokeA));
-        g.drawRect (sr, a.thicknessPx);
+        while (x < 0.0f) x += (float) (2.0 * M_PI);
+        while (x >= (float) (2.0 * M_PI)) x -= (float) (2.0 * M_PI);
+        return x;
+    };
+    a0 = norm (a0); a1 = norm (a1); am = norm (am);
+
+    auto betweenCCW = [] (float s, float e, float m)
+    {
+        float se = e - s; if (se < 0) se += (float) (2.0 * M_PI);
+        float sm = m - s; if (sm < 0) sm += (float) (2.0 * M_PI);
+        return sm <= se + 1.0e-4f;
+    };
+    const bool ccw = betweenCCW (a0, a1, am);
+    float sweep = a1 - a0;
+    if (ccw) { if (sweep < 0) sweep += (float) (2.0 * M_PI); }
+    else     { if (sweep > 0) sweep -= (float) (2.0 * M_PI); }
+
+    juce::Path path;
+    const int n = juce::jmax (8, (int) std::ceil (std::abs (sweep) / (float) (M_PI / 36.0)));
+    for (int i = 0; i <= n; ++i)
+    {
+        const float t = (float) i / (float) n;
+        const float ang = a0 + sweep * t;
+        const juce::Point<float> wp { c.x + r * std::cos (ang), c.y + r * std::sin (ang) };
+        auto sp = annotateToScreen (a, wp);
+        if (i == 0) path.startNewSubPath (sp);
+        else        path.lineTo (sp);
     }
+    g.setColour (a.colour.withMultipliedAlpha (alphaMul));
+    g.strokePath (path, juce::PathStrokeType (a.thicknessPx,
+                                               juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
 }
 
 void RadiationPatternComponent::updateMouseCursorForTool()
 {
+    if (addMicArmed_)
+    {
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+        return;
+    }
     switch (tool_)
     {
-        case Tool::Select:    setMouseCursor (juce::MouseCursor::NormalCursor); break;
-        case Tool::Pan:       setMouseCursor (juce::MouseCursor::DraggingHandCursor); break;
+        case Tool::Select: setMouseCursor (juce::MouseCursor::NormalCursor); break;
+        case Tool::Pan:    setMouseCursor (juce::MouseCursor::DraggingHandCursor); break;
         case Tool::Pencil:
         case Tool::Eraser:
         case Tool::Ruler:
-        case Tool::Line:
-        case Tool::Rectangle:
-        case Tool::Square:
-        case Tool::Circle:    setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
+        case Tool::Shape:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
     }
 }
 
@@ -197,6 +2085,8 @@ void RadiationPatternComponent::updateData (const SimResult& result, const SimPa
     if (! viewInit_ || std::abs (zoom_ - 1.0f) < 0.02f)
         fitView();
     buildImage();
+    refreshMicLevels();
+    if (onMicsChanged) onMicsChanged();
     repaint();
 }
 
@@ -205,6 +2095,192 @@ void RadiationPatternComponent::setSpeakers (const std::vector<Speaker>& speaker
     speakers_ = speakers;
     selected_ = selectedIndex;
     repaint();
+}
+
+void RadiationPatternComponent::selectOnlySpeaker (int index)
+{
+    selected_ = index;
+    selectedSpeakers_.clear();
+    if (index >= 0 && index < (int) speakers_.size())
+        selectedSpeakers_.push_back (index);
+    repaint();
+}
+
+bool RadiationPatternComponent::hasCopyableSelection() const noexcept
+{
+    return ! selectedAnnots_.empty()
+        || ! selectedMics_.empty()
+        || ! selectedSpeakers_.empty();
+}
+
+bool RadiationPatternComponent::hasClipboardContent() const noexcept
+{
+    return ! clipboard_.empty();
+}
+
+bool RadiationPatternComponent::copySelection()
+{
+    clipboard_ = {};
+    pasteGeneration_ = 0;
+
+    for (int idx : selectedAnnots_)
+        if (idx >= 0 && idx < (int) annotations_.size())
+            clipboard_.annots.push_back (annotations_[(size_t) idx]);
+
+    for (int idx : selectedMics_)
+        if (idx >= 0 && idx < (int) mics_.size())
+            clipboard_.mics.push_back (mics_[(size_t) idx]);
+
+    for (int idx : selectedSpeakers_)
+        if (idx >= 0 && idx < (int) speakers_.size())
+            clipboard_.speakers.push_back (speakers_[(size_t) idx]);
+
+    return ! clipboard_.empty();
+}
+
+bool RadiationPatternComponent::pasteClipboard()
+{
+    if (clipboard_.empty())
+        return false;
+
+    ++pasteGeneration_;
+    const float worldNudge = 1.0f * (float) pasteGeneration_;
+    const float polarNudge = 0.05f * (float) pasteGeneration_;
+
+    if (onWillEdit) onWillEdit();
+
+    clearPlotSelection();
+
+    std::vector<int> newAnnots, newMics, newSpeakers;
+
+    for (auto a : clipboard_.annots)
+    {
+        const float dx = (a.space == AnnotSpace::PolarPlot) ? polarNudge : worldNudge;
+        const float dy = dx;
+        for (auto& p : a.pts)
+        {
+            p.x += dx;
+            p.y += dy;
+        }
+        newAnnots.push_back ((int) annotations_.size());
+        annotations_.push_back (std::move (a));
+    }
+
+    for (auto m : clipboard_.mics)
+    {
+        m.id = nextMicId_++;
+        m.x = juce::jlimit (0.0f, (float) result_.worldW, m.x + worldNudge);
+        m.y = juce::jlimit (0.0f, (float) result_.worldH, m.y + worldNudge);
+        m.ringLocked = false;
+        m.ringSpeaker = -1;
+        m.levelOk = false;
+        newMics.push_back ((int) mics_.size());
+        mics_.push_back (std::move (m));
+    }
+
+    if (! clipboard_.speakers.empty() && onPasteSpeakers != nullptr)
+    {
+        std::vector<Speaker> toAdd;
+        toAdd.reserve (clipboard_.speakers.size());
+        for (auto s : clipboard_.speakers)
+        {
+            s.x = juce::jlimit (0.0f, (float) result_.worldW, s.x + worldNudge);
+            s.y = juce::jlimit (0.0f, (float) result_.worldH, s.y + worldNudge);
+            toAdd.push_back (s);
+        }
+        newSpeakers = onPasteSpeakers (std::move (toAdd));
+        // Control panel notify refreshes speakers_ via syncRenderer — re-read selection.
+    }
+
+    selectedAnnots_ = std::move (newAnnots);
+    selectedMics_ = std::move (newMics);
+    selectedSpeakers_ = std::move (newSpeakers);
+    syncPrimarySelectionFromSets();
+
+    if (! selectedMics_.empty())
+    {
+        refreshMicLevels();
+        if (onMicsChanged) onMicsChanged();
+    }
+    if (! selectedSpeakers_.empty() && onSpeakerSelected)
+        onSpeakerSelected (selectedSpeakers_.back());
+    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+    if (onEditCommitted) onEditCommitted();
+    repaint();
+    return true;
+}
+
+void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> screenPos)
+{
+    juce::PopupMenu m;
+    const bool canEdit = hasCopyableSelection();
+    m.addItem (1, "Copy",   canEdit);
+    m.addItem (2, "Paste",  hasClipboardContent()); // off when clipboard empty
+    m.addSeparator();
+    m.addItem (3, "Delete", canEdit);
+    m.showMenuAsync (juce::PopupMenu::Options()
+                         .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+                     [safe = juce::Component::SafePointer<RadiationPatternComponent> (this)] (int result)
+                     {
+                         if (safe == nullptr || result <= 0) return;
+                         if (result == 1)
+                             safe->copySelection();
+                         else if (result == 2)
+                             safe->pasteClipboard();
+                         else if (result == 3)
+                             safe->deleteSelection();
+                     });
+}
+
+bool RadiationPatternComponent::deleteSelection()
+{
+    if (! hasCopyableSelection())
+        return false;
+    if (sessionActive_ || pendingAnchor_)
+        return false;
+
+    if (onWillEdit) onWillEdit();
+
+    if (! selectedAnnots_.empty())
+    {
+        std::vector<int> order = selectedAnnots_;
+        std::sort (order.begin(), order.end(), std::greater<int>());
+        for (int idx : order)
+            if (idx >= 0 && idx < (int) annotations_.size())
+                annotations_.erase (annotations_.begin() + idx);
+        selectedAnnots_.clear();
+        selectedAnnot_ = -1;
+    }
+
+    if (! selectedMics_.empty())
+    {
+        std::vector<int> order = selectedMics_;
+        std::sort (order.begin(), order.end(), std::greater<int>());
+        for (int idx : order)
+            if (idx >= 0 && idx < (int) mics_.size())
+                mics_.erase (mics_.begin() + idx);
+        selectedMics_.clear();
+        selectedMic_ = -1;
+        if (onMicsChanged) onMicsChanged();
+    }
+
+    if (! selectedSpeakers_.empty() && onDeleteSpeakers != nullptr)
+    {
+        auto toRemove = selectedSpeakers_;
+        selectedSpeakers_.clear();
+        selected_ = -1;
+        onDeleteSpeakers (std::move (toRemove));
+    }
+    else
+    {
+        selectedSpeakers_.clear();
+    }
+
+    syncPrimarySelectionFromSets();
+    if (onEditCommitted) onEditCommitted();
+    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+    repaint();
+    return true;
 }
 
 void RadiationPatternComponent::setMeasuredData (const MeasuredSet& measured)
@@ -429,13 +2505,15 @@ void RadiationPatternComponent::buildImage()
                                     : result_.splDB[idx];
                 if (params_.bandedSPL)
                 {
-                    c = ColourMaps::splBand (dB, (float) AcousticEngine::kColourStepDB);
+                    // Contour bands: fixed 3 dB steps. db Floor only clips the bottom.
+                    c = ColourMaps::splBandForFloor (dB, (float) params_.dBfloor, 3.0f);
                 }
                 else
                 {
-                    const float floor = (float) params_.dBfloor;
-                    const float t = (floor < 0.0f) ? (dB - floor) / (0.0f - floor) : 0.0f;
-                    c = ColourMaps::sevenColor (juce::jlimit (0.0f, 1.0f, t));
+                    // Continuous: fixed 0…−36 colour span (−6 dB always same hue).
+                    // db Floor only blacks out levels at/below the floor.
+                    const float t = ColourMaps::relDbToColourT (dB, (float) params_.dBfloor);
+                    c = ColourMaps::sevenColor (t);
                 }
             }
 
@@ -454,6 +2532,8 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     if (params_.viewMode == ViewMode::MeasuredPolar)
     {
         drawMeasuredPolar (g, getLocalBounds());
+        drawAnnotations (g, getLocalBounds());
+        drawMarqueeOverlay (g);
         return;
     }
 
@@ -469,8 +2549,9 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
 
     if (params_.viewMode == ViewMode::Directivity)
     {
-        // Full-area CLIO-style plot (no colour bar).
         drawPolarPlot (g, getLocalBounds());
+        drawAnnotations (g, getLocalBounds());
+        drawMarqueeOverlay (g);
         return;
     }
 
@@ -482,6 +2563,9 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         drawGrid     (g, pb);
         drawSpeakers (g, pb);
         drawAnnotations (g, pb);
+        drawMics (g);
+        drawSplProbe (g);
+        drawMarqueeOverlay (g);
     }
 
     drawColourbar (g, getLocalBounds().withTrimmedLeft (pb.getWidth() + 8));
@@ -498,6 +2582,7 @@ void RadiationPatternComponent::drawField (juce::Graphics& g, juce::Rectangle<in
 
     // Smooth gradient (EASE-style) interpolates; banded contours stay crisp.
     const bool banded = (params_.viewMode == ViewMode::SPL && params_.bandedSPL);
+    juce::Graphics::ScopedSaveState ss (g);
     g.setImageResamplingQuality (banded ? juce::Graphics::lowResamplingQuality
                                         : juce::Graphics::highResamplingQuality);
     g.setOpacity (1.0f);
@@ -734,10 +2819,10 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const 
 
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)
 {
-    // Distance reference rings (2 / 4 / 8 m) — toggleable from the plot toolbar.
+    // Distance reference rings (1 / 2 / 4 / 8 m) — toggleable from the plot toolbar.
     if (showDistanceRings_)
     {
-        static constexpr float kRingM[] = { 2.0f, 4.0f, 8.0f };
+        static constexpr float kRingM[] = { 1.0f, 2.0f, 4.0f, 8.0f };
         for (const auto& spk : speakers_)
         {
             if (! spk.enabled) continue;
@@ -764,21 +2849,39 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
     {
         const auto& spk = speakers_[i];
         const auto c = worldToScreen (spk.x, spk.y);
-        const bool isSel = (i == selected_);
+        const bool isSel = (i == selected_) || isSpeakerSelected (i);
         const float alpha = spk.enabled ? 1.0f : 0.42f;
         const bool reverse = spk.reverseOrientation;
 
         auto box = speakerFootprintScreen (spk);
 
+        if (isSel)
+        {
+            // Vivid magenta-red selection glow — distinct from heatmap SPL reds (#ed2227 / orange).
+            const auto glow = juce::Colour (0xffff3d6e);
+            for (int ring = 4; ring >= 1; --ring)
+            {
+                const float expand = 2.0f + (float) ring * 2.5f;
+                const float a = (0.10f + 0.10f * (float) (5 - ring)) * alpha;
+                g.setColour (glow.withAlpha (a));
+                g.fillRoundedRectangle (box.expanded (expand), 3.0f);
+            }
+            g.setColour (glow.withAlpha (0.75f * alpha));
+            g.drawRoundedRectangle (box.expanded (3.5f), 2.5f, 2.2f);
+        }
+
         g.setColour (Brand::white().withAlpha (0.92f * alpha));
         g.fillRect (box);
-        g.setColour (isSel ? juce::Colours::black.withAlpha (0.98f * alpha)
+        g.setColour (isSel ? juce::Colour (0xffff3d6e).withAlpha (0.98f * alpha)
                            : Brand::charcoal().withAlpha (0.85f * alpha));
         g.drawRect (box, isSel ? 2.5f : 1.4f);
         if (isSel)
         {
-            g.setColour (juce::Colours::black.withAlpha (0.95f * alpha));
-            g.drawRect (box.expanded (2.0f), 2.0f);
+            // Light rim so the glow stays readable on hot (red/orange) SPL areas.
+            g.setColour (juce::Colour (0xfffff0f3).withAlpha (0.9f * alpha));
+            g.drawRect (box.expanded (2.0f), 1.6f);
+            g.setColour (juce::Colour (0xffff3d6e).withAlpha (0.95f * alpha));
+            g.drawRect (box.expanded (3.5f), 1.4f);
         }
 
         // Facing chevron on the front face (+X = right when not reversed).
@@ -818,6 +2921,67 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                     (int) (c.x - 40), (int) (box.getY() - 16.0f), 80, 14,
                     juce::Justification::centred);
     }
+
+    drawOrthoSpacingOverlay (g);
+}
+
+void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
+{
+    if (! ortho_ || selectedSpeakers_.size() < 2)
+        return;
+
+    std::vector<int> idxs = selectedSpeakers_;
+    std::sort (idxs.begin(), idxs.end());
+    idxs.erase (std::unique (idxs.begin(), idxs.end()), idxs.end());
+    idxs.erase (std::remove_if (idxs.begin(), idxs.end(),
+                                [&] (int i) { return i < 0 || i >= (int) speakers_.size(); }),
+                idxs.end());
+    if (idxs.size() < 2)
+        return;
+
+    std::sort (idxs.begin(), idxs.end(), [&] (int a, int b)
+    {
+        const auto& sa = speakers_[(size_t) a];
+        const auto& sb = speakers_[(size_t) b];
+        if (orthoAlign_ == OrthoAlign::Horizontal)
+            return sa.x < sb.x || (sa.x == sb.x && sa.y < sb.y);
+        return sa.y < sb.y || (sa.y == sb.y && sa.x < sb.x);
+    });
+
+    const auto glow = juce::Colour (0xffff3d6e);
+    g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
+
+    for (size_t i = 1; i < idxs.size(); ++i)
+    {
+        const auto& a = speakers_[(size_t) idxs[i - 1]];
+        const auto& b = speakers_[(size_t) idxs[i]];
+        const auto sa = worldToScreen (a.x, a.y);
+        const auto sb = worldToScreen (b.x, b.y);
+        const auto mid = (sa + sb) * 0.5f;
+        const float d = (orthoAlign_ == OrthoAlign::Horizontal)
+                            ? std::abs (b.x - a.x)
+                            : std::abs (b.y - a.y);
+
+        g.setColour (glow.withAlpha (0.85f));
+        g.drawLine (sa.x, sa.y, sb.x, sb.y, 1.4f);
+
+        // End ticks perpendicular to the gap line
+        const float tx = (orthoAlign_ == OrthoAlign::Horizontal) ? 0.0f : 6.0f;
+        const float ty = (orthoAlign_ == OrthoAlign::Horizontal) ? 6.0f : 0.0f;
+        g.drawLine (sa.x - tx, sa.y - ty, sa.x + tx, sa.y + ty, 1.4f);
+        g.drawLine (sb.x - tx, sb.y - ty, sb.x + tx, sb.y + ty, 1.4f);
+
+        const juce::String lab = juce::String (d, 2) + " m";
+        const float tw = (float) lab.length() * 7.0f + 14.0f;
+        const float th = 18.0f;
+        auto box = juce::Rectangle<float> (mid.x - tw * 0.5f, mid.y - th * 0.5f - 10.0f, tw, th);
+        g.setColour (Brand::panelDark().withAlpha (0.92f));
+        g.fillRoundedRectangle (box, 4.0f);
+        g.setColour (glow.withAlpha (0.9f));
+        g.drawRoundedRectangle (box, 4.0f, 1.2f);
+        g.setColour (Brand::white());
+        g.drawText (lab, box.toNearestInt(), juce::Justification::centred, false);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -846,36 +3010,46 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
 
     if (params_.viewMode == ViewMode::SPL && params_.bandedSPL)
     {
-        const int bands = 7;
+        // Fixed 3 dB contour steps from 0 down to db Floor (never stretch labels).
+        const float step = 3.0f;
+        const float floor = (float) params_.dBfloor;
+        const int bands = juce::jmax (1, (int) std::lround (-floor / step) + 1);
         const float bh = (float) barH / (float) bands;
         for (int i = 0; i < bands; ++i)
         {
-            g.setColour (ColourMaps::splPalette()[i]);
+            const float db = -step * (float) i;
+            g.setColour (ColourMaps::splBandForFloor (db, floor, step));
             g.fillRect ((float) barX, barY + i * bh, (float) barW, bh + 0.5f);
-            const int db = (int) std::lround ((float) i * (params_.dBfloor / (bands - 1)));
-            drawTick (db, (int) (barY + i * bh));
+            drawTick ((int) std::lround (db), (int) (barY + i * bh));
         }
         g.setColour (outline);
-        g.drawRect (barX, barY, barW, (int) (bh * bands), 1);
+        g.drawRect (barX, barY, barW, (int) (bh * (float) bands + 0.5f), 1);
     }
-    else // continuous — same Graph-colors/mockup gradient as field colormap
+    else // continuous — fixed −6 dB legend ticks; floor is the bottom stop only
     {
+        const float floor = (float) params_.dBfloor;
+        const float span = juce::jmax (ColourMaps::kRelSplDesignSpanDB, -floor);
         for (int yy = 0; yy < barH; ++yy)
         {
-            const float t = 1.0f - (float) yy / (float) juce::jmax (1, barH - 1);
+            const float frac = (float) yy / (float) juce::jmax (1, barH - 1); // 0 at top
+            const float db = -frac * span;
+            const float t = ColourMaps::relDbToColourT (db, floor);
             g.setColour (ColourMaps::sevenColor (t));
             g.fillRect (barX, barY + yy, barW, 1);
         }
         g.setColour (outline);
         g.drawRect (barX, barY, barW, barH, 1);
 
-        constexpr int nT = 6; // 0, -6, -12, -18, -24, -30, -36
-        for (int i = 0; i <= nT; ++i)
+        // Ticks every −6 dB from 0 down to floor (e.g. 0,−6,…,−36) — never −9.
+        const float step = ColourMaps::kRelSplStepDB;
+        const int nTicks = juce::jmax (1, (int) std::lround (-floor / step));
+        for (int i = 0; i <= nTicks; ++i)
         {
-            const float frac = (float) i / (float) nT;
-            const int ty = barY + (int) (frac * (barH - 1));
-            const int dB = (int) std::lround (frac * params_.dBfloor);
-            drawTick (dB, ty);
+            const float db = -step * (float) i;
+            if (db < floor - 0.01f) break;
+            const float frac = (span > 1.0e-3f) ? (-db / span) : 0.0f;
+            const int ty = barY + (int) std::lround (frac * (float) (barH - 1));
+            drawTick ((int) std::lround (db), ty);
         }
     }
 
@@ -1110,9 +3284,9 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
-// DIRECTIVITY — CLIO-style Atomik plot of the *unit* measured horizontal
-// pattern (from Room / Ground Plane .xlsx). With 2+ enabled subs, the array
-// far-field (engine polarMag) is overlaid so add/delete/enable is visible.
+// DIRECTIVITY — CLIO-style Atomik plot of the *simulated* far-field pattern
+// (AcousticEngine::polarMag). No measured-unit CSV overlay here — that lives
+// on the Measured Polar view only.
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
@@ -1120,12 +3294,10 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
     for (const auto& s : speakers_) if (s.enabled) ++nEnabled;
 
     const int hz = (int) (params_.frequency + 0.5);
-    const juce::String setName = measured_.sourceName.isNotEmpty()
-                                     ? measured_.sourceName : "Measured";
 
-    juce::String sub = setName + utf8Dot() + "Unit directivity";
+    juce::String sub = "Simulated far-field";
     if (nEnabled >= 2)
-        sub += utf8Dot() + "Array overlay (" + juce::String (nEnabled) + " subs)";
+        sub += utf8Dot() + "Array (" + juce::String (nEnabled) + " subs)";
     else if (nEnabled == 1)
         sub += utf8Dot() + "1 sub";
     else
@@ -1133,43 +3305,34 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
 
     ClioFrame fr;
     drawClioChrome (g, bounds, hz, sub, fr);
+    polarCx_ = fr.cx;
+    polarCy_ = fr.cy;
+    polarRadius_ = fr.radius;
+    polarFrameValid_ = fr.radius > 1.0f;
 
-    std::vector<float> degs, dbs;
-    juce::String distLabel = juce::String (measuredDistanceM_, 1) + " m";
-    const auto syn = MeasurementData::curveForFrequency (measured_, hz, measuredDistanceM_);
-    const MeasuredCurve* primary = syn.ok ? &syn.curve : nullptr;
-
-    // Smooth polar for every catalogue frequency (native xlsx or log-blend).
-    if (primary != nullptr)
+    // Simulated polar from the engine (cardioid / coherent array lobes, etc.).
+    if (! result_.polarMag.empty() && nEnabled > 0)
     {
-        MeasurementData::polarStrokeSamples (*primary, degs, dbs);
-        const juce::Colour ink (0xff1a1c20);
-        strokeClioCurve (g, fr, degs, dbs, ink, 2.6f);
-        if (primary->beamwidthDeg > 1.0f)
-            drawBeamwidthRing (g, fr, primary->beamwidthDeg);
-    }
-    else
-    {
-        g.setColour (juce::Colour (0xff5a6270));
-        g.setFont (Brand::tech (Brand::Type::colourBarTick));
-        g.drawText ("No measured reading for " + juce::String (hz) + " Hz",
-                    bounds.withTrimmedTop (bounds.getHeight() / 2),
-                    juce::Justification::centred);
-    }
-
-    // Array far-field overlay when 2+ subs are enabled (updates on delete/enable).
-    if (nEnabled >= 2 && ! result_.polarMag.empty())
-    {
-        degs.clear(); dbs.clear();
+        std::vector<float> degs, dbs;
         const int n = (int) result_.polarMag.size();
+        degs.reserve ((size_t) n);
+        dbs.reserve ((size_t) n);
         for (int i = 0; i < n; ++i)
         {
             const float mag = juce::jmax (1.0e-6f, result_.polarMag[(size_t) i]);
             degs.push_back ((float) i * 360.0f / (float) n);
             dbs.push_back (20.0f * std::log10 (mag));
         }
-        // Dashed-look via thinner accent stroke.
-        strokeClioCurve (g, fr, degs, dbs, Brand::accent().withAlpha (0.85f), 1.6f);
+        strokeClioCurve (g, fr, degs, dbs, Brand::accent().withAlpha (0.95f), 2.2f);
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xff5a6270));
+        g.setFont (Brand::tech (Brand::Type::colourBarTick));
+        g.drawText (nEnabled == 0 ? "Enable a Q21S unit and press RUN"
+                                  : "No polar data — press RUN",
+                    bounds.withTrimmedTop (bounds.getHeight() / 2),
+                    juce::Justification::centred);
     }
 
     // Speaker markers (live list — reflects delete / enable immediately).
@@ -1197,28 +3360,12 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
     const int lx = bounds.getX() + 24;
     int ly = bounds.getY() + 58;
     g.setFont (Brand::tech (Brand::Type::axis));
-    g.setColour (juce::Colour (0xff1a1c20));
+    g.setColour (Brand::accent().withAlpha (0.95f));
     g.fillRect (lx, ly + 4, 16, 3);
-    g.drawText ("Unit @ " + distLabel, lx + 20, ly, 160, 14, juce::Justification::left);
-    ly += 15;
-    if (primary != nullptr && primary->beamwidthDeg > 1.0f)
-    {
-        g.setColour (juce::Colour (0xff5a6270));
-        g.setFont (Brand::mono (Brand::Type::polarLegendMeta));
-        g.drawText ("BW " + juce::String (primary->beamwidthDeg, 0)
-                    + juce::String::fromUTF8 ("\xc2\xb0"),
-                    lx, ly, 120, 12, juce::Justification::left);
-        ly += 14;
-    }
-    if (nEnabled >= 2)
-    {
-        g.setColour (Brand::accent().withAlpha (0.85f));
-        g.fillRect (lx, ly + 4, 16, 3);
-        g.setColour (juce::Colour (0xff1a1c20));
-        g.setFont (Brand::tech (Brand::Type::axis));
-        g.drawText ("Array (" + juce::String (nEnabled) + " subs)",
-                    lx + 20, ly, 140, 14, juce::Justification::left);
-    }
+    g.setColour (juce::Colour (0xff1a1c20));
+    g.drawText (nEnabled >= 2 ? ("Array (" + juce::String (nEnabled) + " subs)")
+                              : "Simulated pattern",
+                lx + 20, ly, 160, 14, juce::Justification::left);
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,6 +3416,10 @@ void RadiationPatternComponent::drawMeasuredPolar (juce::Graphics& g,
                        + utf8Dot() + juce::String (measuredDistanceM_, 1) + " m";
     ClioFrame fr;
     drawClioChrome (g, bounds, displayHz, sub, fr);
+    polarCx_ = fr.cx;
+    polarCy_ = fr.cy;
+    polarRadius_ = fr.radius;
+    polarFrameValid_ = fr.radius > 1.0f;
 
     if (mf == nullptr || ! mf->ok)
     {
@@ -1315,116 +3466,201 @@ void RadiationPatternComponent::drawMeasuredPolar (juce::Graphics& g,
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectangle<int>)
 {
+    const auto space = currentAnnotSpace();
+
     auto strokePath = [&] (const Annotation& a, float alpha = 1.0f)
     {
-        if (a.worldPts.size() < 2) return;
+        if (a.pts.size() < 2) return;
         juce::Path path;
-        auto p0 = worldToScreen (a.worldPts[0].x, a.worldPts[0].y);
+        auto p0 = annotateToScreen (a, a.pts[0]);
         path.startNewSubPath (p0);
-        for (size_t i = 1; i < a.worldPts.size(); ++i)
-        {
-            auto p = worldToScreen (a.worldPts[i].x, a.worldPts[i].y);
-            path.lineTo (p);
-        }
+        for (size_t i = 1; i < a.pts.size(); ++i)
+            path.lineTo (annotateToScreen (a, a.pts[i]));
         g.setColour (a.colour.withMultipliedAlpha (alpha));
         g.strokePath (path, juce::PathStrokeType (a.thicknessPx,
                                                    juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
     };
 
-    for (const auto& a : annotations_)
+    auto formatDim = [&] (float dist) -> juce::String
     {
+        if (space == AnnotSpace::PolarPlot)
+            return juce::String (dist, 3) + " r";
+        return formatLengthLabel (dist);
+    };
+
+    for (size_t ai = 0; ai < annotations_.size(); ++ai)
+    {
+        const auto& a = annotations_[ai];
+        if (a.space != space) continue;
+
         if (a.kind == Annotation::Kind::Rectangle
             || a.kind == Annotation::Kind::Square
             || a.kind == Annotation::Kind::Circle)
         {
             drawShapeAnnotation (g, a);
+            if (isAnnotationSelected ((int) ai))
+                drawSelectionOverlay (g, a);
+            continue;
+        }
+        if (a.kind == Annotation::Kind::Arc)
+        {
+            drawArcAnnotation (g, a);
+            if (isAnnotationSelected ((int) ai))
+                drawSelectionOverlay (g, a);
             continue;
         }
 
         strokePath (a);
 
-        if (a.kind == Annotation::Kind::Measure && a.worldPts.size() >= 2)
+        if (a.kind == Annotation::Kind::Measure && a.pts.size() >= 2)
         {
-            const auto& w0 = a.worldPts.front();
-            const auto& w1 = a.worldPts.back();
-            const float distM = w0.getDistanceFrom (w1);
-            auto s0 = worldToScreen (w0.x, w0.y);
-            auto s1 = worldToScreen (w1.x, w1.y);
+            const auto& w0 = a.pts.front();
+            const auto& w1 = a.pts.back();
+            const float dist = w0.getDistanceFrom (w1);
+            auto s0 = annotateToScreen (a, w0);
+            auto s1 = annotateToScreen (a, w1);
             const auto mid = (s0 + s1) * 0.5f;
 
             g.setColour (a.colour);
             g.fillEllipse (s0.x - 3.5f, s0.y - 3.5f, 7.0f, 7.0f);
             g.fillEllipse (s1.x - 3.5f, s1.y - 3.5f, 7.0f, 7.0f);
-
-            const juce::String label = (distM < 1.0f)
-                ? juce::String (distM * 100.0f, 0) + " cm"
-                : juce::String (distM, 2) + " m";
-            g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
-            const int tw = 64, th = 18;
-            auto labelBox = juce::Rectangle<float> (mid.x - tw * 0.5f, mid.y - th - 6.0f,
-                                                    (float) tw, (float) th);
-            g.setColour (Brand::panelDark().withAlpha (0.85f));
-            g.fillRoundedRectangle (labelBox, 4.0f);
-            g.setColour (a.colour);
-            g.drawText (label, labelBox.toNearestInt(), juce::Justification::centred, false);
+            drawPendingDimLabel (g, mid, formatDim (dist));
         }
-        else if (a.kind == Annotation::Kind::Line && a.worldPts.size() >= 2)
+        else if ((a.kind == Annotation::Kind::Line || a.kind == Annotation::Kind::Polyline)
+                 && a.pts.size() >= 2)
         {
-            auto s0 = worldToScreen (a.worldPts.front().x, a.worldPts.front().y);
-            auto s1 = worldToScreen (a.worldPts.back().x, a.worldPts.back().y);
+            auto s0 = annotateToScreen (a, a.pts.front());
+            auto s1 = annotateToScreen (a, a.pts.back());
             g.setColour (a.colour);
             g.fillEllipse (s0.x - 3.0f, s0.y - 3.0f, 6.0f, 6.0f);
             g.fillEllipse (s1.x - 3.0f, s1.y - 3.0f, 6.0f, 6.0f);
         }
+
+        if (isAnnotationSelected ((int) ai))
+            drawSelectionOverlay (g, a);
     }
 
-    // Rubber-band preview for shape drag.
-    if (shapeDragging_
-        && (tool_ == Tool::Rectangle || tool_ == Tool::Square || tool_ == Tool::Circle))
+    // Rubber-band: ruler (two-click) ------------------------------------------------
+    if (tool_ == Tool::Ruler && pendingAnchor_ && hoverValid_)
     {
         Annotation preview;
-        preview.kind = (tool_ == Tool::Rectangle) ? Annotation::Kind::Rectangle
-                     : (tool_ == Tool::Square)    ? Annotation::Kind::Square
-                                                  : Annotation::Kind::Circle;
+        preview.kind = Annotation::Kind::Measure;
+        preview.space = space;
         preview.colour = drawColour_;
-        preview.fillAlpha = drawFillAlpha_;
-        preview.thicknessPx = 2.0f;
-        preview.worldPts = { shapeStartWorld_, shapeEndWorld_ };
-        drawShapeAnnotation (g, preview, 0.85f);
-    }
-
-    // Rubber-band preview for line / ruler second click.
-    if (pendingAnchor_ && hoverValid_
-        && (tool_ == Tool::Line || tool_ == Tool::Ruler))
-    {
-        Annotation preview;
-        preview.kind = (tool_ == Tool::Ruler) ? Annotation::Kind::Measure
-                                              : Annotation::Kind::Line;
-        preview.colour = drawColour_;
-        preview.thicknessPx = (tool_ == Tool::Ruler) ? 1.8f : 2.2f;
-        preview.worldPts = { pendingStartWorld_, hoverWorld_ };
+        preview.thicknessPx = 1.8f;
+        auto hover = applyOrtho (pendingStartWorld_, hoverAnnot_);
+        hover = snapAnnotPoint (hover);
+        preview.pts = { pendingStartWorld_, hover };
         strokePath (preview, 0.75f);
 
-        auto s0 = worldToScreen (pendingStartWorld_.x, pendingStartWorld_.y);
-        auto s1 = worldToScreen (hoverWorld_.x, hoverWorld_.y);
+        auto s0 = annotateToScreen (preview, preview.pts[0]);
+        auto s1 = annotateToScreen (preview, preview.pts[1]);
         g.setColour (drawColour_.withAlpha (0.9f));
         g.fillEllipse (s0.x - 3.5f, s0.y - 3.5f, 7.0f, 7.0f);
         g.drawEllipse (s1.x - 3.5f, s1.y - 3.5f, 7.0f, 7.0f, 1.2f);
+        drawPendingDimLabel (g, (s0 + s1) * 0.5f,
+                             formatDim (preview.pts[0].getDistanceFrom (preview.pts[1])));
+    }
 
-        if (tool_ == Tool::Ruler)
+    // Rubber-band: Shape session ----------------------------------------------------
+    if (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty() && hoverValid_)
+    {
+        Annotation preview;
+        preview.space = space;
+        preview.colour = drawColour_;
+        preview.fillAlpha = drawFillAlpha_;
+        preview.thicknessPx = 2.0f;
+        auto hover = applyOrtho (sessionPts_.back(), hoverAnnot_);
+        hover = snapAnnotPoint (hover);
+
+        auto markPts = [&] (const std::vector<juce::Point<float>>& pts)
         {
-            const float distM = pendingStartWorld_.getDistanceFrom (hoverWorld_);
-            const auto mid = (s0 + s1) * 0.5f;
-            const juce::String label = (distM < 1.0f)
-                ? juce::String (distM * 100.0f, 0) + " cm"
-                : juce::String (distM, 2) + " m";
-            g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
-            g.setColour (Brand::panelDark().withAlpha (0.85f));
-            auto box = juce::Rectangle<float> (mid.x - 32.0f, mid.y - 24.0f, 64.0f, 18.0f);
-            g.fillRoundedRectangle (box, 4.0f);
-            g.setColour (drawColour_);
-            g.drawText (label, box.toNearestInt(), juce::Justification::centred, false);
+            g.setColour (drawColour_.withAlpha (0.9f));
+            for (size_t i = 0; i < pts.size(); ++i)
+            {
+                auto s = annotateToScreen (preview, pts[i]);
+                if (i + 1 == pts.size())
+                    g.drawEllipse (s.x - 3.5f, s.y - 3.5f, 7.0f, 7.0f, 1.2f);
+                else
+                    g.fillEllipse (s.x - 3.5f, s.y - 3.5f, 7.0f, 7.0f);
+            }
+        };
+
+        if (drawShape_ == DrawShape::Polyline)
+        {
+            preview.kind = Annotation::Kind::Polyline;
+            preview.pts = sessionPts_;
+            preview.pts.push_back (hover);
+            strokePath (preview, 0.75f);
+            markPts (preview.pts);
+        }
+        else if (drawShape_ == DrawShape::Line)
+        {
+            preview.kind = Annotation::Kind::Line;
+            preview.pts = { sessionPts_[0], hover };
+            strokePath (preview, 0.75f);
+            markPts (preview.pts);
+            drawPendingDimLabel (g,
+                (annotateToScreen (preview, preview.pts[0])
+                 + annotateToScreen (preview, preview.pts[1])) * 0.5f,
+                formatDim (preview.pts[0].getDistanceFrom (preview.pts[1])));
+        }
+        else if (drawShape_ == DrawShape::Circle)
+        {
+            preview.kind = Annotation::Kind::Circle;
+            if (construction_ == Construction::CircleTwoPoints && sessionPts_.size() >= 1)
+            {
+                const auto mid = (sessionPts_[0] + hover) * 0.5f;
+                preview.pts = { mid, hover };
+            }
+            else
+                preview.pts = { sessionPts_[0], hover };
+            drawShapeAnnotation (g, preview, 0.85f);
+            auto s0 = annotateToScreen (preview, sessionPts_[0]);
+            auto s1 = annotateToScreen (preview, hover);
+            g.setColour (drawColour_.withAlpha (0.65f));
+            g.drawLine (s0.x, s0.y, s1.x, s1.y, 1.2f);
+            markPts ({ sessionPts_[0], hover });
+            drawPendingDimLabel (g, (s0 + s1) * 0.5f,
+                                 "R = " + formatDim (preview.pts[0].getDistanceFrom (preview.pts[1])));
+        }
+        else if (drawShape_ == DrawShape::Arc)
+        {
+            preview.kind = Annotation::Kind::Arc;
+            if (sessionPts_.size() == 1)
+            {
+                preview.kind = Annotation::Kind::Line;
+                preview.pts = { sessionPts_[0], hover };
+                strokePath (preview, 0.75f);
+                markPts (preview.pts);
+            }
+            else if (sessionPts_.size() >= 2)
+            {
+                juce::Point<float> c;
+                float r = 0;
+                if (circleFrom3Points (sessionPts_[0], sessionPts_[1], hover, c, r))
+                {
+                    preview.pts = { c, sessionPts_[0], hover, sessionPts_[1] };
+                    drawArcAnnotation (g, preview, 0.85f);
+                }
+                markPts ({ sessionPts_[0], sessionPts_[1], hover });
+            }
+        }
+        else if (drawShape_ == DrawShape::Rectangle || drawShape_ == DrawShape::Square)
+        {
+            preview.kind = (drawShape_ == DrawShape::Square) ? Annotation::Kind::Square
+                                                            : Annotation::Kind::Rectangle;
+            preview.pts = { sessionPts_[0], hover };
+            drawShapeAnnotation (g, preview, 0.85f);
+            markPts (preview.pts);
+            const auto wr = normalisedShapeRect (sessionPts_[0], hover, preview.kind);
+            juce::String dim = formatDim (wr.getWidth());
+            if (preview.kind == Annotation::Kind::Rectangle)
+                dim += "  x  " + formatDim (wr.getHeight());
+            auto s0 = annotateToScreen (preview, sessionPts_[0]);
+            auto s1 = annotateToScreen (preview, hover);
+            drawPendingDimLabel (g, (s0 + s1) * 0.5f, dim);
         }
     }
 }
@@ -1447,28 +3683,132 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 
 void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 {
-    if (! canAnnotate()) return;
-
     // Keep shortcuts (undo/redo) working after using pencil/line/etc.
     if (! hasKeyboardFocus (true))
         grabKeyboardFocus();
 
     lastMouse_ = e.position;
     const auto pb = plotArea();
-    if (! pb.contains (e.getPosition())) return;
+    // Polar uses full bounds as the plot frame; SPL uses the trimmed plot area.
+    const bool inPlot = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+                            ? getLocalBounds().contains (e.getPosition())
+                            : pb.contains (e.getPosition());
+    if (! inPlot) return;
 
-    auto world = screenToWorld (e.position.x, e.position.y);
-    world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
-    world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
+    if (e.mods.isPopupMenu())
+    {
+        // Select under the cursor first so Copy/Paste/Delete work without a prior left-click.
+        // Already-selected hits keep the current multi-selection (Windows-style).
+        auto annotPt = screenToAnnot (e.position.x, e.position.y);
+        const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+            ? (10.0f / juce::jmax (1.0f, polarRadius_))
+            : (10.0f / juce::jmax (1.0f, worldScale()));
+
+        bool hitSomething = false;
+
+        if (currentAnnotSpace() == AnnotSpace::World)
+        {
+            const int mHit = micHitTestScreen (e.position);
+            if (mHit >= 0)
+            {
+                hitSomething = true;
+                if (! isMicSelected (mHit))
+                {
+                    selectedAnnots_.clear();
+                    selectedSpeakers_.clear();
+                    selectedMics_.clear();
+                    selectedMics_.push_back (mHit);
+                    syncPrimarySelectionFromSets();
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                    repaint();
+                }
+            }
+        }
+
+        if (! hitSomething)
+        {
+            const int aHit = annotationHitTest (annotPt, radius);
+            if (aHit >= 0)
+            {
+                hitSomething = true;
+                if (! isAnnotationSelected (aHit))
+                {
+                    selectedAnnots_.clear();
+                    selectedMics_.clear();
+                    selectedSpeakers_.clear();
+                    selectedAnnots_.push_back (aHit);
+                    syncPrimarySelectionFromSets();
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                    repaint();
+                }
+            }
+        }
+
+        if (! hitSomething && currentAnnotSpace() == AnnotSpace::World)
+        {
+            const int sHit = speakerHitTest (e.position);
+            if (sHit >= 0)
+            {
+                hitSomething = true;
+                if (! isSpeakerSelected (sHit))
+                {
+                    selectedAnnots_.clear();
+                    selectedMics_.clear();
+                    selectedSpeakers_.clear();
+                    selectedSpeakers_.push_back (sHit);
+                    syncPrimarySelectionFromSets();
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                    if (onSpeakerSelected) onSpeakerSelected (sHit);
+                    repaint();
+                }
+            }
+        }
+
+        juce::ignoreUnused (hitSomething); // empty space keeps current selection (Paste still works)
+        showSelectionContextMenu (e.getScreenPosition());
+        return;
+    }
+
+    auto annot = screenToAnnot (e.position.x, e.position.y);
+
+    // Add Mic armed: place on heatmap — but clicking an existing mic selects it.
+    if (addMicArmed_ && currentAnnotSpace() == AnnotSpace::World)
+    {
+        const int mHit = micHitTestScreen (e.position);
+        if (mHit >= 0)
+        {
+            setAddMicArmed (false);
+            selectedAnnots_.clear();
+            selectedSpeakers_.clear();
+            selectedMics_.clear();
+            selectedMics_.push_back (mHit);
+            syncPrimarySelectionFromSets();
+            if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+            if (onMicsChanged) onMicsChanged();
+            if (tool_ == Tool::Select)
+                beginMicDrag (mHit, e.position);
+            repaint();
+            return;
+        }
+
+        auto w = screenToWorld (e.position.x, e.position.y);
+        placeMicAtWorld (w.x, w.y);
+        return;
+    }
 
     if (tool_ == Tool::Pencil)
     {
+        if (! canAnnotate()) return;
         if (onWillEdit) onWillEdit();
         Annotation stroke;
         stroke.kind = Annotation::Kind::Freehand;
+        stroke.space = currentAnnotSpace();
         stroke.colour = drawColour_;
         stroke.thicknessPx = 2.4f;
-        stroke.worldPts.push_back (world);
+        stroke.pts.push_back (snapAnnotPoint (annot));
         annotations_.push_back (std::move (stroke));
         drag_ = Drag::Pencil;
         repaint();
@@ -1477,71 +3817,280 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
     if (tool_ == Tool::Eraser)
     {
+        if (! canAnnotate()) return;
         if (onWillEdit) onWillEdit();
-        const float radiusM = 8.0f / juce::jmax (1.0f, worldScale());
-        eraseNear (world, radiusM);
+        const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+            ? (8.0f / juce::jmax (1.0f, polarRadius_))
+            : (8.0f / juce::jmax (1.0f, worldScale()));
+        eraseNear (annot, radius);
         drag_ = Drag::Erase;
         repaint();
         return;
     }
 
-    if (tool_ == Tool::Line || tool_ == Tool::Ruler)
+    if (tool_ == Tool::Ruler)
     {
+        if (! canAnnotate()) return;
+        const auto rawAnnot = annot;
+        bool objHit = false;
+        annot = snapAnnotPointFull (annot, false, &objHit);
+        noteSnapSound (objHit, rawAnnot, annot);
         if (! pendingAnchor_)
         {
             pendingAnchor_ = true;
-            pendingStartWorld_ = world;
-            hoverWorld_ = world;
+            pendingStartWorld_ = annot;
+            hoverAnnot_ = annot;
             hoverValid_ = true;
+            drag_ = Drag::RubberBand;
+            updateDrawPrompt();
         }
         else
         {
-            if (onWillEdit) onWillEdit();
-            Annotation a;
-            a.kind = (tool_ == Tool::Ruler) ? Annotation::Kind::Measure
-                                            : Annotation::Kind::Line;
-            a.colour = drawColour_;
-            a.thicknessPx = (tool_ == Tool::Ruler) ? 1.8f : 2.2f;
-            a.worldPts = { pendingStartWorld_, world };
-            annotations_.push_back (std::move (a));
+            annot = applyOrtho (pendingStartWorld_, annot);
+            const auto rawEnd = annot;
+            bool endHit = false;
+            annot = snapAnnotPointFull (annot, false, &endHit);
+            noteSnapSound (endHit, rawEnd, annot);
+            if (pendingStartWorld_.getDistanceFrom (annot) > 1.0e-4f)
+            {
+                if (onWillEdit) onWillEdit();
+                Annotation a;
+                a.kind = Annotation::Kind::Measure;
+                a.space = currentAnnotSpace();
+                a.colour = drawColour_;
+                a.thicknessPx = 1.8f;
+                a.pts = { pendingStartWorld_, annot };
+                annotations_.push_back (std::move (a));
+                if (onEditCommitted) onEditCommitted();
+            }
             pendingAnchor_ = false;
-            if (onEditCommitted) onEditCommitted();
+            hoverValid_ = false;
+            drag_ = Drag::None;
+            updateDrawPrompt();
         }
         repaint();
         return;
     }
 
-    if (tool_ == Tool::Rectangle || tool_ == Tool::Square || tool_ == Tool::Circle)
+    if (tool_ == Tool::Shape)
     {
-        if (onWillEdit) onWillEdit();
-        shapeStartWorld_ = world;
-        shapeEndWorld_ = world;
-        shapeDragging_ = true;
-        drag_ = Drag::Shape;
+        if (! canAnnotate()) return;
+        acceptAnnotPoint (annot);
+        hoverAnnot_ = annot;
+        hoverValid_ = sessionActive_ && ! sessionPts_.empty();
+        // Keep rubber-band live while the button is held (click-drag feels smooth).
+        if (sessionActive_ && ! sessionPts_.empty()
+            && (drawShape_ == DrawShape::Polyline
+                || (int) sessionPts_.size() < pointsNeeded()))
+            drag_ = Drag::RubberBand;
+        else
+            drag_ = Drag::None;
+        return;
+    }
+
+    // Select: Windows-style multi-select (click / Ctrl+click / marquee) + group move.
+    if (tool_ == Tool::Select)
+    {
+        const bool additive = e.mods.isCommandDown() || e.mods.isCtrlDown();
+        const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+            ? (10.0f / juce::jmax (1.0f, polarRadius_))
+            : (10.0f / juce::jmax (1.0f, worldScale()));
+        const float handleR = radius * 1.35f;
+
+        auto beginSelectionMove = [&] ()
+        {
+            if (onWillEdit) onWillEdit();
+            drag_ = Drag::SelectionMove;
+            lastAnnotDrag_ = annot;
+            lastMouse_ = e.position;
+            selMoveStartMouse_ = annot;
+            selMoveStartRef_ = selectionSnapReference();
+            selMoveStartBounds_ = selectionAnnotBounds();
+            selMoveHasBounds_ = ! selMoveStartBounds_.isEmpty();
+            selMoveRefValid_ = true;
+            resetSnapSoundState();
+            annotDragMoved_ = false;
+            micDragMoved_ = false;
+            repaint();
+        };
+
+        // Resize grips only when a single drawing is selected (no group).
+        if (selectedAnnots_.size() == 1 && selectedMics_.empty() && selectedSpeakers_.empty())
+        {
+            const int ai = selectedAnnots_.front();
+            if (ai >= 0 && ai < (int) annotations_.size())
+            {
+                const int h = resizeHandleHitTest (annotations_[(size_t) ai], annot, handleR);
+                if (h >= 0)
+                {
+                    if (onWillEdit) onWillEdit();
+                    drag_ = Drag::AnnotResize;
+                    resizeHandleIndex_ = h;
+                    selectedAnnot_ = ai;
+                    annotDragMoved_ = false;
+                    lastAnnotDrag_ = annot;
+                    lastMouse_ = e.position;
+                    repaint();
+                    return;
+                }
+            }
+        }
+
+        // Mic hit (world heatmap only) — glyph + label in screen space.
+        if (currentAnnotSpace() == AnnotSpace::World)
+        {
+            const int mHit = micHitTestScreen (e.position);
+            if (mHit >= 0)
+            {
+                if (additive)
+                {
+                    if (isMicSelected (mHit))
+                        selectedMics_.erase (std::remove (selectedMics_.begin(),
+                                                          selectedMics_.end(), mHit),
+                                             selectedMics_.end());
+                    else
+                        selectedMics_.push_back (mHit);
+                    syncPrimarySelectionFromSets();
+                    if (onMicsChanged) onMicsChanged();
+                    repaint();
+                    return;
+                }
+                if (! isMicSelected (mHit))
+                {
+                    selectedAnnots_.clear();
+                    selectedSpeakers_.clear();
+                    selectedMics_.clear();
+                    selectedMics_.push_back (mHit);
+                    syncPrimarySelectionFromSets();
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                }
+                // Single mic → original Drag::Mic ring snap (not object/grid SelectionMove).
+                if (selectedMics_.size() == 1 && selectedAnnots_.empty()
+                    && selectedSpeakers_.empty())
+                {
+                    beginMicDrag (selectedMics_.front(), e.position);
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                    repaint();
+                    return;
+                }
+                beginSelectionMove();
+                return;
+            }
+        }
+
+        const int aHit = annotationHitTest (annot, radius);
+        if (aHit >= 0)
+        {
+            // Sole selection: allow resize via grips on this hit.
+            if (! additive && selectedAnnots_.size() <= 1)
+            {
+                const int h = resizeHandleHitTest (annotations_[(size_t) aHit], annot, handleR);
+                if (h >= 0)
+                {
+                    selectedAnnots_ = { aHit };
+                    selectedMics_.clear();
+                    selectedSpeakers_.clear();
+                    syncPrimarySelectionFromSets();
+                    if (onWillEdit) onWillEdit();
+                    drag_ = Drag::AnnotResize;
+                    resizeHandleIndex_ = h;
+                    annotDragMoved_ = false;
+                    lastAnnotDrag_ = annot;
+                    lastMouse_ = e.position;
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    repaint();
+                    return;
+                }
+            }
+
+            if (additive)
+            {
+                if (isAnnotationSelected (aHit))
+                    selectedAnnots_.erase (std::remove (selectedAnnots_.begin(),
+                                                        selectedAnnots_.end(), aHit),
+                                           selectedAnnots_.end());
+                else
+                    selectedAnnots_.push_back (aHit);
+                syncPrimarySelectionFromSets();
+                if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                repaint();
+                return;
+            }
+
+            if (! isAnnotationSelected (aHit))
+            {
+                selectedAnnots_.clear();
+                selectedMics_.clear();
+                selectedSpeakers_.clear();
+                selectedAnnots_.push_back (aHit);
+                syncPrimarySelectionFromSets();
+                if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                if (onMicsChanged) onMicsChanged();
+            }
+            beginSelectionMove();
+            return;
+        }
+
+        // Speaker hit — world view only (below)
+        if (currentAnnotSpace() == AnnotSpace::World)
+        {
+            const int sHit = speakerHitTest (e.position);
+            if (sHit >= 0)
+            {
+                if (additive)
+                {
+                    if (isSpeakerSelected (sHit))
+                        selectedSpeakers_.erase (std::remove (selectedSpeakers_.begin(),
+                                                              selectedSpeakers_.end(), sHit),
+                                                 selectedSpeakers_.end());
+                    else
+                        selectedSpeakers_.push_back (sHit);
+                    syncPrimarySelectionFromSets();
+                    if (onSpeakerSelected) onSpeakerSelected (selected_ >= 0 ? selected_ : sHit);
+                    repaint();
+                    return;
+                }
+                if (! isSpeakerSelected (sHit))
+                {
+                    selectedAnnots_.clear();
+                    selectedMics_.clear();
+                    selectedSpeakers_.clear();
+                    selectedSpeakers_.push_back (sHit);
+                    syncPrimarySelectionFromSets();
+                    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                    if (onMicsChanged) onMicsChanged();
+                    if (onSpeakerSelected) onSpeakerSelected (sHit);
+                }
+                beginSelectionMove();
+                return;
+            }
+        }
+
+        // Empty space → marquee (Windows desktop style). Pan is the Pan tool.
+        if (! additive)
+            clearPlotSelection();
+        drag_ = Drag::Marquee;
+        marqueeStartScreen_ = e.position;
+        marqueeEndScreen_ = e.position;
+        lastMouse_ = e.position;
         repaint();
         return;
     }
 
-    // Select / Pan
-    const int hit = (tool_ == Tool::Select) ? speakerHitTest (e.position) : -1;
-    if (hit >= 0)
-    {
-        if (onWillEdit) onWillEdit();
-        drag_ = Drag::Speaker;
-        draggedSpeaker_ = hit;
-        selected_ = hit;
-        if (onSpeakerSelected) onSpeakerSelected (hit);
-        repaint();
-    }
-    else if (tool_ == Tool::Select && layoutEditMode_ && layout_ != nullptr
+    // Pan / layout — SPL world view only
+    if (currentAnnotSpace() == AnnotSpace::PolarPlot)
+        return;
+
+    if (tool_ == Tool::Select && layoutEditMode_ && layout_ != nullptr
              && layout_->valid() && layout_->visible && ! layout_->locked)
     {
         if (onWillEdit) onWillEdit();
         drag_ = Drag::Layer;
     }
-    else if (tool_ == Tool::Pan || tool_ == Tool::Select)
+    else if (tool_ == Tool::Pan)
     {
-        // Empty-space click pans in both Select and Pan (Select still picks speakers first).
         drag_ = Drag::Pan;
     }
 }
@@ -1550,13 +4099,18 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag_ == Drag::Pencil && ! annotations_.empty())
     {
-        auto world = screenToWorld (e.position.x, e.position.y);
-        world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
-        world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
+        auto annot = snapAnnotPoint (screenToAnnot (e.position.x, e.position.y));
         auto& stroke = annotations_.back();
-        if (stroke.worldPts.empty()
-            || stroke.worldPts.back().getDistanceFrom (world) * worldScale() > 1.5f)
-            stroke.worldPts.push_back (world);
+        const float minPx = 0.4f;
+        float pxDist = minPx + 1.0f;
+        if (! stroke.pts.empty())
+        {
+            auto a = annotateToScreen (stroke, stroke.pts.back());
+            auto b = annotateToScreen (stroke, annot);
+            pxDist = a.getDistanceFrom (b);
+        }
+        if (stroke.pts.empty() || pxDist > minPx)
+            stroke.pts.push_back (annot);
         lastMouse_ = e.position;
         repaint();
         return;
@@ -1564,21 +4118,167 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (drag_ == Drag::Erase)
     {
-        auto world = screenToWorld (e.position.x, e.position.y);
-        const float radiusM = 8.0f / juce::jmax (1.0f, worldScale());
-        eraseNear (world, radiusM);
+        auto annot = screenToAnnot (e.position.x, e.position.y);
+        const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+            ? (8.0f / juce::jmax (1.0f, polarRadius_))
+            : (8.0f / juce::jmax (1.0f, worldScale()));
+        eraseNear (annot, radius);
         lastMouse_ = e.position;
         repaint();
         return;
     }
 
-    if (drag_ == Drag::Shape)
+    if (drag_ == Drag::RubberBand
+        || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty())
+        || (tool_ == Tool::Ruler && pendingAnchor_))
     {
-        auto world = screenToWorld (e.position.x, e.position.y);
-        world.x = juce::jlimit (0.0f, (float) result_.worldW, world.x);
-        world.y = juce::jlimit (0.0f, (float) result_.worldH, world.y);
-        shapeEndWorld_ = world;
+        updateRubberBandAt (e.position);
         lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::AnnotResize && selectedAnnot_ >= 0
+        && selectedAnnot_ < (int) annotations_.size()
+        && resizeHandleIndex_ >= 0)
+    {
+        auto cur = screenToAnnot (e.position.x, e.position.y);
+        applyAnnotationResize (annotations_[(size_t) selectedAnnot_],
+                               resizeHandleIndex_, cur);
+        annotDragMoved_ = true;
+        lastAnnotDrag_ = cur;
+        lastMouse_ = e.position;
+        if (tool_ == Tool::Select)
+            updateSplProbeAt (e.position);
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::Marquee)
+    {
+        marqueeEndScreen_ = e.position;
+        lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::SelectionMove)
+    {
+        auto curAnnot = screenToAnnot (e.position.x, e.position.y);
+
+        // Absolute snap from drag-start: avoids drift; snaps whichever edge of the
+        // selection is closest to the grid / neighbouring geometry.
+        // Mic-only moves use Drag::Mic (not this path).
+        juce::Point<float> dAnnot { 0, 0 };
+        juce::Point<float> dWorld { 0, 0 };
+
+        if (drawGridSnap_ && selMoveRefValid_)
+        {
+            const auto mouseDelta = curAnnot - selMoveStartMouse_;
+
+            if (selMoveHasBounds_)
+            {
+                const auto desired = selMoveStartBounds_ + mouseDelta;
+                // Snap each corner; pick the smaller correction per axis so either
+                // side of a rect can lock to a neighbour or grid line.
+                bool hitTL = false, hitBR = false;
+                const auto sTL = snapAnnotPointFull ({ desired.getX(), desired.getY() }, true, &hitTL);
+                const auto sBR = snapAnnotPointFull ({ desired.getRight(), desired.getBottom() }, true, &hitBR);
+
+                const float dLeft  = sTL.x - desired.getX();
+                const float dRight = sBR.x - desired.getRight();
+                const float dBot   = sTL.y - desired.getY();
+                const float dTop   = sBR.y - desired.getBottom();
+
+                // Prefer the side that latched onto another object; else nearer correction.
+                const float dx = hitTL && ! hitBR ? dLeft
+                               : hitBR && ! hitTL ? dRight
+                               : (std::abs (dLeft) <= std::abs (dRight) ? dLeft : dRight);
+                const float dy = hitTL && ! hitBR ? dBot
+                               : hitBR && ! hitTL ? dTop
+                               : (std::abs (dBot) <= std::abs (dTop) ? dBot : dTop);
+
+                const auto curB = selectionAnnotBounds();
+                const auto target = desired.translated (dx, dy);
+                dAnnot = { target.getX() - curB.getX(), target.getY() - curB.getY() };
+
+                // Tak only when the moved selection newly shares an edge with
+                // another shape (the "two rectangles met" case) — not speakers/grid.
+                noteSnapSound (selectionMeetsOtherAnnotation (target),
+                               { desired.getX(), desired.getY() },
+                               { target.getX(), target.getY() });
+            }
+            else
+            {
+                const auto desired = selMoveStartRef_ + mouseDelta;
+                bool objHit = false;
+                const auto snapped = snapAnnotPointFull (desired, true, &objHit);
+                const auto curRef = selectionSnapReference();
+                dAnnot = snapped - curRef;
+                noteSnapSound (objHit, desired, snapped);
+            }
+
+            if (currentAnnotSpace() == AnnotSpace::World)
+                dWorld = dAnnot;
+        }
+        else
+        {
+            dAnnot = curAnnot - lastAnnotDrag_;
+            if (currentAnnotSpace() == AnnotSpace::World)
+            {
+                auto curW = screenToWorld (e.position.x, e.position.y);
+                auto lastW = screenToWorld (lastMouse_.x, lastMouse_.y);
+                dWorld = curW - lastW;
+            }
+        }
+
+        if (std::abs (dAnnot.x) > 1.0e-12f || std::abs (dAnnot.y) > 1.0e-12f
+            || std::abs (dWorld.x) > 1.0e-12f || std::abs (dWorld.y) > 1.0e-12f)
+        {
+            moveSelectionBy (dAnnot, dWorld);
+            lastAnnotDrag_ = curAnnot;
+            annotDragMoved_ = true;
+            micDragMoved_ = true;
+        }
+        lastMouse_ = e.position;
+        if (tool_ == Tool::Select)
+            updateSplProbeAt (e.position);
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::Mic && selectedMic_ >= 0 && selectedMic_ < (int) mics_.size())
+    {
+        // Original first snap pattern: mic follows cursor; ring snap + tak on latch.
+        auto w = screenToWorld (e.position.x, e.position.y);
+        float nx = juce::jlimit (0.0f, (float) result_.worldW, w.x);
+        float ny = juce::jlimit (0.0f, (float) result_.worldH, w.y);
+        snapMicWorld (nx, ny, true);
+        auto& mic = mics_[(size_t) selectedMic_];
+        if (std::abs (mic.x - nx) > 1.0e-6f || std::abs (mic.y - ny) > 1.0e-6f)
+        {
+            mic.x = nx;
+            mic.y = ny;
+            if (micWasSnapped_)
+            {
+                const auto snap = MicRingSnap::snapToRing (nx, ny, speakers_);
+                mic.ringLocked = snap.snapped;
+                mic.ringRadiusM = snap.radiusM;
+                mic.ringSpeaker = snap.speakerIndex;
+            }
+            else
+            {
+                mic.ringLocked = false;
+                mic.ringSpeaker = -1;
+            }
+            micDragMoved_ = true;
+            refreshMicLevels();
+            if (onMicsChanged) onMicsChanged();
+        }
+        lastMouse_ = e.position;
+        lastMicDragWorld_ = w;
+        if (tool_ == Tool::Select)
+            updateSplProbeAt (e.position);
         repaint();
         return;
     }
@@ -1588,6 +4288,8 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         origin_ += (e.position - lastMouse_);
         lastMouse_ = e.position;
         clampViewToField();
+        if (tool_ == Tool::Select)
+            updateSplProbeAt (e.position);
         repaint();
     }
     else if (drag_ == Drag::Layer && layout_ != nullptr)
@@ -1615,40 +4317,52 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
             speakers_[(size_t) draggedSpeaker_].y = ny;
         }
         if (onSpeakerMoved) onSpeakerMoved (draggedSpeaker_, nx, ny);
+        if (tool_ == Tool::Select)
+            updateSplProbeAt (e.position);
         repaint();
     }
 }
 
-void RadiationPatternComponent::mouseUp (const juce::MouseEvent&)
+void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 {
-    if (drag_ == Drag::Shape && shapeDragging_)
+    if (drag_ == Drag::Marquee)
     {
-        const auto kind = (tool_ == Tool::Rectangle) ? Annotation::Kind::Rectangle
-                        : (tool_ == Tool::Square)    ? Annotation::Kind::Square
-                                                     : Annotation::Kind::Circle;
-        const auto r = normalisedShapeRect (shapeStartWorld_, shapeEndWorld_, kind);
-        const bool bigEnough = r.getWidth() > 0.05f || r.getHeight() > 0.05f;
-        if (bigEnough)
-        {
-            Annotation a;
-            a.kind = kind;
-            a.colour = drawColour_;
-            a.fillAlpha = drawFillAlpha_;
-            a.thicknessPx = 2.0f;
-            a.worldPts = { shapeStartWorld_, shapeEndWorld_ };
-            annotations_.push_back (std::move (a));
-            if (onEditCommitted) onEditCommitted();
-        }
-        shapeDragging_ = false;
+        marqueeEndScreen_ = e.position;
+        const bool additive = e.mods.isCommandDown() || e.mods.isCtrlDown();
+        applyMarqueeSelection (additive);
         drag_ = Drag::None;
+        resetSnapSoundState();
+        repaint();
+        return;
+    }
+
+    if (drag_ == Drag::RubberBand
+        || (tool_ == Tool::Shape && sessionActive_)
+        || (tool_ == Tool::Ruler && pendingAnchor_))
+    {
+        // Smooth click-drag: releasing after a real drag finishes the 2-point entity.
+        tryFinishRubberBandAt (e.position);
+        drag_ = Drag::None;
+        // If still waiting for a second pick (tiny click), keep rubber-band on mouseMove.
+        if ((tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty())
+            || (tool_ == Tool::Ruler && pendingAnchor_))
+            updateRubberBandAt (e.position);
         repaint();
         return;
     }
 
     const bool committed = (drag_ == Drag::Pencil || drag_ == Drag::Erase
-                            || drag_ == Drag::Speaker || drag_ == Drag::Layer);
+                            || drag_ == Drag::Speaker || drag_ == Drag::Layer
+                            || (drag_ == Drag::Annot && annotDragMoved_)
+                            || (drag_ == Drag::AnnotResize && annotDragMoved_)
+                            || (drag_ == Drag::SelectionMove && annotDragMoved_)
+                            || (drag_ == Drag::Mic && micDragMoved_));
     drag_ = Drag::None;
     draggedSpeaker_ = -1;
+    resizeHandleIndex_ = -1;
+    annotDragMoved_ = false;
+    micDragMoved_ = false;
+    resetSnapSoundState();
     if (committed && onEditCommitted)
         onEditCommitted();
 }
@@ -1676,33 +4390,139 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
 
 void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
 {
-    if (! pendingAnchor_ || ! (tool_ == Tool::Line || tool_ == Tool::Ruler))
+    const bool tracking = (tool_ == Tool::Ruler && pendingAnchor_)
+                       || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty());
+    if (tracking)
     {
-        hoverValid_ = false;
-        return;
-    }
-    if (! canAnnotate() || ! plotArea().contains (e.getPosition()))
-    {
-        hoverValid_ = false;
+        splProbeValid_ = false;
+        updateRubberBandAt (e.position);
         repaint();
         return;
     }
-    hoverWorld_ = screenToWorld (e.position.x, e.position.y);
-    hoverWorld_.x = juce::jlimit (0.0f, (float) result_.worldW, hoverWorld_.x);
-    hoverWorld_.y = juce::jlimit (0.0f, (float) result_.worldH, hoverWorld_.y);
-    hoverValid_ = true;
-    repaint();
+
+    // Select tool: live SPL readout under the cursor on the heatmap.
+    if (tool_ == Tool::Select && showSplProbe_)
+    {
+        const bool was = splProbeValid_;
+        updateSplProbeAt (e.position);
+        if (splProbeValid_ || was)
+            repaint();
+        return;
+    }
+
+    if (splProbeValid_)
+    {
+        splProbeValid_ = false;
+        repaint();
+    }
+    hoverValid_ = false;
 }
 
 void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
 {
     hoverValid_ = false;
-    if (pendingAnchor_)
+    const bool hadProbe = splProbeValid_;
+    splProbeValid_ = false;
+    if (pendingAnchor_ || sessionActive_ || hadProbe)
         repaint();
+}
+
+void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (tool_ == Tool::Shape && drawShape_ == DrawShape::Polyline && sessionPts_.size() >= 2)
+        finishPolyline (construction_ == Construction::PolylineClosed);
 }
 
 bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
 {
+    {
+        const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+        const bool chord = mods.isCommandDown() || mods.isCtrlDown();
+        if (chord && ! mods.isAltDown())
+        {
+            const auto letter = key.getTextCharacter();
+            const int code = key.getKeyCode();
+            const bool isC = (letter == 'c' || letter == 'C' || code == 'C' || code == 'c');
+            const bool isV = (letter == 'v' || letter == 'V' || code == 'V' || code == 'v');
+            if (isC)
+            {
+                copySelection();
+                return true;
+            }
+            if (isV)
+            {
+                pasteClipboard();
+                return true;
+            }
+        }
+    }
+
+    if (key.isKeyCode (juce::KeyPress::escapeKey))
+    {
+        if (addMicArmed_)
+        {
+            setAddMicArmed (false);
+            return true;
+        }
+        if (pendingAnchor_ || sessionActive_ || numericBuffer_.isNotEmpty())
+        {
+            cancelDrawSession();
+            return true;
+        }
+        if (! selectedAnnots_.empty() || ! selectedMics_.empty() || ! selectedSpeakers_.empty())
+        {
+            clearPlotSelection();
+            return true;
+        }
+    }
+
+    if ((key.isKeyCode (juce::KeyPress::deleteKey)
+         || key.isKeyCode (juce::KeyPress::backspaceKey))
+        && ! sessionActive_ && ! pendingAnchor_
+        && hasCopyableSelection())
+    {
+        deleteSelection();
+        return true;
+    }
+
+    if (tool_ == Tool::Shape)
+    {
+        if (key.isKeyCode (juce::KeyPress::returnKey))
+        {
+            if (numericBuffer_.isNotEmpty())
+            {
+                const double v = numericBuffer_.getDoubleValue();
+                numericBuffer_.clear();
+                if (commitNumericValue (v))
+                    return true;
+                updateDrawPrompt();
+                return true;
+            }
+            if (drawShape_ == DrawShape::Polyline && sessionPts_.size() >= 2)
+            {
+                finishPolyline (construction_ == Construction::PolylineClosed);
+                return true;
+            }
+        }
+
+        const juce::juce_wchar c = key.getTextCharacter();
+        if ((c >= '0' && c <= '9') || c == '.' || c == ',')
+        {
+            if (c == ',')
+                numericBuffer_ += '.';
+            else
+                numericBuffer_ += juce::String::charToString (c);
+            updateDrawPrompt();
+            return true;
+        }
+        if (key.isKeyCode (juce::KeyPress::backspaceKey) && numericBuffer_.isNotEmpty())
+        {
+            numericBuffer_ = numericBuffer_.dropLastCharacters (1);
+            updateDrawPrompt();
+            return true;
+        }
+    }
+
     if (onKeyPressed != nullptr && onKeyPressed (key))
         return true;
     return false;

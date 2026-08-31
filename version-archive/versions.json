@@ -1,28 +1,68 @@
 {
-  "generatedAt": "2026-08-21T11:35:00.000Z",
-  "versions": [
-    {
-      "version": "1.3.0",
-      "notes": "Baseline Q21S heatmap. Windows download is a ZIP (EXE + MeasurementIntegrationPack) so SPL works on any PC.",
-      "createdAt": "2026-08-21T10:04:48.550Z",
-      "updatedAt": "2026-08-21T11:35:00.000Z",
-      "downloads": {
-        "source": {
-          "available": true,
-          "filename": "v1.3.0/Atomik-Source-v1.3.0.zip",
-          "size": 4652341
-        },
-        "mac": {
-          "available": true,
-          "filename": "v1.3.0/Atomik-macOS-v1.3.0.dmg",
-          "size": 2833020
-        },
-        "windows": {
-          "available": true,
-          "filename": "v1.3.0/Atomik-Windows-v1.3.0.zip",
-          "size": 1470123
-        }
-      }
-    }
-  ]
+    "generatedAt":  "2026-08-31T13:11:06.000Z",
+    "versions":  [
+                     {
+                         "version":  "1.3.6",
+                         "notes":  "Mic ring snap restored (original Drag::Mic). Snap tak when drawings meet edge-to-edge. start.md. Q21S still embedded.",
+                         "createdAt":  "2026-08-31T13:10:00.000Z",
+                         "updatedAt":  "2026-08-31T13:11:06.000Z",
+                         "downloads":  {
+                                           "source":  {
+                                                          "available":  true,
+                                                          "filename":  "v1.3.6/Atomik-Source-v1.3.6.zip",
+                                                          "size":  4133238
+                                                      },
+                                           "mac":  {
+                                                       "available":  false
+                                                   },
+                                           "windows":  {
+                                                           "available":  true,
+                                                           "filename":  "v1.3.6/Atomik-Windows-v1.3.6.exe",
+                                                           "size":  3371400
+                                                       }
+                                       }
+                     },
+                     {
+                         "version":  "1.3.5",
+                         "notes":  "Mic receivers, FR window, Show Degrees, embedded Q21S (no Excel). Windows download is the Setup installer (EXE + fonts).",
+                         "createdAt":  "2026-08-26T14:50:00.000Z",
+                         "updatedAt":  "2026-08-26T14:50:00.000Z",
+                         "downloads":  {
+                                           "source":  {
+                                                          "available":  false
+                                                      },
+                                           "mac":  {
+                                                       "available":  false
+                                                   },
+                                           "windows":  {
+                                                           "available":  true,
+                                                           "filename":  "v1.3.5/Atomik-Windows-Setup-v1.3.5.exe",
+                                                           "size":  3585858
+                                                       }
+                                       }
+                     },
+                     {
+                         "version":  "1.3.0",
+                         "notes":  "Baseline Q21S heatmap. Windows download is a ZIP (EXE + MeasurementIntegrationPack) so SPL works on any PC.",
+                         "createdAt":  "2026-08-21T10:04:48.550Z",
+                         "updatedAt":  "2026-08-21T11:35:00.000Z",
+                         "downloads":  {
+                                           "source":  {
+                                                          "available":  true,
+                                                          "filename":  "v1.3.0/Atomik-Source-v1.3.0.zip",
+                                                          "size":  4652341
+                                                      },
+                                           "mac":  {
+                                                       "available":  true,
+                                                       "filename":  "v1.3.0/Atomik-macOS-v1.3.0.dmg",
+                                                       "size":  2833020
+                                                   },
+                                           "windows":  {
+                                                           "available":  true,
+                                                           "filename":  "v1.3.0/Atomik-Windows-v1.3.0.zip",
+                                                           "size":  1470123
+                                                       }
+                                       }
+                     }
+                 ]
 }

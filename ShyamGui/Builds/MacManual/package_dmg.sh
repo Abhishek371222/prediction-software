@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-VERSION="1.3.0"
+VERSION="1.3.6"
 APP_NAME="Atomik Acoustic Simulation Engine"
 DMG_NAME="Atomik_Acoustic_Simulation_Engine_v${VERSION}_macOS"
 OUT_DIR="$ROOT/dist/mac"

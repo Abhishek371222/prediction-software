@@ -1,11 +1,14 @@
-; Inno Setup script for the Acoustic Simulation Engine
-; Builds a single shareable Setup.exe that installs the app + measurement data.
+; Inno Setup script for Atomik Simulation Engine
+; Single Setup.exe — app + brand fonts. Q21S measurement CSVs are embedded in the
+; EXE (no Excel / MeasurementIntegrationPack shipped).
 
 #define MyAppName "Atomik Simulation Engine"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.6"
 #define MyAppPublisher "Atomik"
 #define MyAppExeName "Atomik Simulation Engine.exe"
-#define MyAppIcon "D:\shayam gui\Assets\atomik_icon.ico"
+#define RepoRoot "D:\WORKING_LATESTSHYAM_GUI"
+#define ShyamGui RepoRoot + "\ShyamGui"
+#define AssetsRoot "D:\shayam gui\Assets"
 
 [Setup]
 AppId={{B7E1C2A4-9D3F-4A18-9C2E-7F5A6B8C9D01}
@@ -17,16 +20,15 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
-OutputDir=D:\shayam gui\Installer\Output
-OutputBaseFilename=AtomikAcousticSimulationEngine-Setup
+OutputDir={#ShyamGui}\Installer\Output
+OutputBaseFilename=AtomikSimulationEngine-Setup-v{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 PrivilegesRequired=lowest
 UninstallDisplayName={#MyAppName}
-; Atomik branding for the installer wizard + Add/Remove Programs entry.
-SetupIconFile={#MyAppIcon}
+SetupIconFile={#AssetsRoot}\atomik_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
@@ -36,31 +38,21 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
-; Main executable (built with static CRT -> no runtime redistributable needed)
-Source: "D:\PredictionSoftware(MAC_Version)\ShyamGui\Builds\Release\Atomik Simulation Engine.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
-; Measurement data — real readings only (no CLIO PNG dependency).
-;   Ground Plane -> Factory Readings (open-field .xlsx)
-;   Room         -> shyamGuildMeasurements (room .xlsx)
-Source: "D:\shayam gui\Factory Readings\Factory_1m\Factory_1m\*.xlsx"; DestDir: "{app}\Factory Readings\Factory_1m\Factory_1m"; Flags: ignoreversion
-Source: "D:\shayam gui\shyamGuildMeasurements\*.xlsx"; DestDir: "{app}\shyamGuildMeasurements"; Excludes: "*_2Horizantal.xlsx"; Flags: ignoreversion skipifsourcedoesntexist
+; Main executable — Q21S CSVs are baked in (EmbeddedQ21SData); no sidecar Excel/CSV.
+Source: "{#ShyamGui}\Builds\Release\{#MyAppExeName}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 ; Brand fonts (Montserrat + Space Mono) loaded at runtime from this folder.
-Source: "D:\shayam gui\Assets\Fonts\*.ttf"; DestDir: "{app}\Assets\Fonts"; Flags: ignoreversion
-Source: "D:\shayam gui\Installer\README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
-; Atomik icon (also used for Start Menu / desktop shortcuts).
-Source: "D:\shayam gui\Assets\atomik_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AssetsRoot}\Fonts\*.ttf"; DestDir: "{app}\Assets\Fonts"; Flags: ignoreversion
+Source: "{#ShyamGui}\Installer\README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "{#AssetsRoot}\atomik_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\atomik_icon.ico"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\atomik_icon.ico"; Tasks: desktopicon
 
-; Start every install from a clean slate: remove any leftover user settings
-; (theme/units/recent projects) before installing, so no stale recent projects
-; survive an uninstall + reinstall.
 [InstallDelete]
 Type: filesandordirs; Name: "{userappdata}\Atomik"
 
-; Remove the per-user settings folder when uninstalling.
 [UninstallDelete]
 Type: filesandordirs; Name: "{userappdata}\Atomik"
 

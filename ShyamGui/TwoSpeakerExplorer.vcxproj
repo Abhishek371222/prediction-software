@@ -178,6 +178,7 @@ if errorlevel 1 exit /B 0</Command>
     <ClCompile Include="Source\InfoPanel.cpp" />
     <ClCompile Include="Source\PreferencesComponent.cpp" />
     <ClCompile Include="Source\DashboardComponent.cpp" />
+    <ClCompile Include="Source\EmbeddedQ21SData.cpp" />
   </ItemGroup>
 
   <!-- ======================================================================
@@ -189,7 +190,13 @@ if errorlevel 1 exit /B 0</Command>
     <ClInclude Include="Source\MainComponent.h" />
     <ClInclude Include="Source\AcousticEngine.h" />
     <ClInclude Include="Source\ColourMaps.h" />
+    <ClInclude Include="Source\MicReceiver.h" />
+    <ClInclude Include="Source\MicRingSnap.h" />
+    <ClInclude Include="Source\MicRefLockDialog.h" />
+    <ClInclude Include="Source\MicRefLevelEditor.h" />
+    <ClInclude Include="Source\FrequencyResponseComponent.h" />
     <ClInclude Include="Source\MeasurementData.h" />
+    <ClInclude Include="Source\EmbeddedQ21SData.h" />
     <ClInclude Include="Source\UiTextConfig.h" />
     <ClInclude Include="Source\BrandTheme.h" />
     <ClInclude Include="Source\RadiationPatternComponent.h" />

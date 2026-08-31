@@ -10,6 +10,9 @@
 #include "ProjectData.h"
 #include "LayoutLayer.h"
 #include "UiChrome.h"
+#include "MicReceiver.h"
+#include "FrequencyResponseComponent.h"
+#include "MicRefLockDialog.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent — owns all sub-panels, runs AcousticEngine::compute on a
@@ -46,7 +49,8 @@ private:
     ProjectData currentProject() const;   // metadata + live scene
     void exportPdfReport();
     void buildAndWriteReport (const juce::File& f);
-    juce::Image renderHeatmapImage (double freq, const SimParams& base, double& coverageOut);
+    juce::Image renderHeatmapImage (double freq, const SimParams& base, double& coverageOut,
+                                    double* peakAbsOut = nullptr, bool* hasAbsOut = nullptr);
 
     void scheduleRecompute();
     void runSimulation();
@@ -63,6 +67,7 @@ private:
     {
         ProjectData scene;
         std::vector<RadiationPatternComponent::Annotation> drawings;
+        std::vector<MicReceiver> mics;
     };
     void willEdit();
     void commitEdit();
@@ -95,6 +100,13 @@ private:
     juce::DrawableButton      btnSidebarToggle_ { "sidebarToggle", juce::DrawableButton::ImageFitted };
     PlotHeaderBar             plotHeader_;
     RadiationPatternComponent patternComp_;
+    std::unique_ptr<MicFrequencyResponseWindow> frWindow_;
+    int                       frRefMic_ = 0;
+
+    void showMicPlaceOnRingDialog();
+    void refreshFrequencyResponse();
+    void ensureFrequencyResponseWindow();
+    void showFrequencyResponseWindow();
 
     LayoutLayer layout_;
 
@@ -103,16 +115,24 @@ private:
     juce::Label titleLabel_, versionLabel_;
     ParamBar    paramBar_;
     StatusStrip statusStrip_;
+    juce::TooltipWindow tooltipWindow_ { this, 450 };
     juce::StringArray statChips_;   // live simulation stats, shown in the Help (?) popup
 
     juce::Label exportHeader_, viewHeader_;
 
     juce::TextButton     btnStats_ { "Statistics" };
+    juce::TextButton     btnProject_ { "Project" };
     juce::DrawableButton btnHelp_  { "help", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnPrefsIcon_ { "prefs", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnMore_  { "more", juce::DrawableButton::ImageFitted };
     void showOverflowMenu();
     void showStatsPopup();
+    void showProjectMenu();
+    void launchNewProjectInstance();
+    void openProjectInNewWindow();
+    void openProjectInCurrentWindow();
+    void loadProjectFile (const juce::File& f);
+    static bool launchAppInstance (const juce::String& args = {});
     void refreshHeaderIcons();
     std::unique_ptr<class PreferencesComponent> prefsPanel_;
     void layoutPrefsPanel();

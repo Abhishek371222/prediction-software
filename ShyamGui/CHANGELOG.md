@@ -4,17 +4,72 @@ All notable changes to this product are documented here.
 This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## Version lineage (v1.0.0 → current)
+
+| Version | Date | Role |
+|---------|------|------|
+| **1.0.0** | 2026-06-22 | Initial Acoustic Prediction baseline (30×30 m, XN18, measured directivity from 2026-06-24) |
+| **1.1.0** | 2026-06-29 | Theming, `.atmk` projects, PDF/heatmap export, CAD/DXF, array presets, dual datasets, installer |
+| **1.2.x** (beta) | ~2026-07 | UI redesign to Graph colors.pdf / Atomik chrome (signal-red accents, heatmap colours, packaging as `betav1.2.3`) — see §1.2.0 below |
+| **1.3.0** | 2026-08-21 | Q21S BEM polar×1/r on 100×100 m, plot tools, undo/redo, version archive, Windows portable ZIP |
+| **1.3.5** | 2026-08-26 | Mic receivers + FR window, Show Degrees, embedded Q21S (no Excel on target), Windows Setup |
+| **1.3.6** | 2026-08-31 | Mic ring snap restored; shape-edge Snap tak; start.md |
+
 Dates follow the work that shipped in source history and the Windows/mac builds of
-this tree (including 2026-08-21 Q21S physics and version-archive updates).
+this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.3.6] - 2026-08-31
+
+**Atomik Simulation Engine v1.3.6** — mic ring snap back to the original cursor-follow
+pattern, reliable **tak** when drawings snap edge-to-edge with Snap on, and a repo
+`start.md` for build/run.
+
+### Fixed
+- **Mic drag / ring snap**: restored first `Drag::Mic` behaviour (follow cursor,
+  1/2/4/8 m ring latch + tak). No longer stuck after latching; not driven by
+  object/grid SelectionMove snap.
+- **Snap tak on shapes**: plays when two drawings newly share an edge (e.g. two
+  rectangles meet). Ignores speaker/mic/centre near-misses that caused random clicks.
+
+### Added
+- Root **`start.md`** — how to build and run the Windows app.
+
+### Changed
+- Version strings / file version resource → **v1.3.6**.
+
+---
+
+## [1.3.5] - 2026-08-26
+
+**Atomik Simulation Engine v1.3.5** — virtual mic probes on the heatmap, a floating
+frequency-response window, optional degree labels vs Q21S facing, and a Windows
+Setup that ships **without** Excel / MeasurementIntegrationPack (Q21S CSVs are
+embedded in the EXE).
+
+### Added
+- **Mic tool** (toolbar): Add Mic, Place on ring, Show Degrees.
+- Virtual receivers with ring snap (1 / 2 / 4 / 8 m), in-memory **tak** snap sound,
+  live relative dB labels, floating Frequency Response window.
+- **Show Degrees**: angle vs Q21S facing (0° = front, CCW) before the dB on mic labels.
+- **Embedded Q21S CSVs** in the Release EXE — heatmaps/polars work on another PC
+  without shipping Excel or a sidecar Data folder.
+- **Windows Setup** `AtomikSimulationEngine-Setup-v1.3.5.exe` (EXE + fonts only).
+
+### Changed
+- Installer no longer copies Factory / shyamGuild `.xlsx` measurement folders.
+- Version strings / file version resource → **v1.3.5**.
 
 ---
 
 ## [1.3.0] - 2026-08-21
-*Development window: 2026-08-12 -> 2026-08-21.*
+*Development window: 2026-08-12 → 2026-08-21 (Windows portable pack through 2026-08-21 evening).*
 
 **Atomik Simulation Engine v1.3.0** — Q21S coverage prediction on a **100×100 m**
 world using BEM polars × spherical spreading, Ground Plane measurements, plot
-drawing tools, branded Windows/mac builds, and a standalone version archive.
+drawing tools (including shapes), branded Windows/mac builds, a standalone
+version archive, and a **Windows portable ZIP** so SPL heatmaps work off-machine.
 
 ### Development timeline (what landed when)
 
@@ -30,17 +85,27 @@ drawing tools, branded Windows/mac builds, and a standalone version archive.
 - **2026-08-20…21** - Q21S product physics: coherent BEM polar × 1/r over the
   full grid (no ±5 m stamp), absolute SPL, MATLAB-style cardioid preset, true
   cabinet footprint (750×784×917 mm), single-sub heatmap docs/figures, portable
-  pack zip, and MongoDB-backed version archive (source + DMG/EXE downloads).
+  pack zip, and MongoDB-backed version archive (source + DMG / Windows downloads).
+- **2026-08-21** - Plot **shapes** (rectangle / square / circle) with colour +
+  fill opacity; Caps Lock–safe undo retained (`9db9c91`).
+- **2026-08-21** - **Windows heatmap data path**: prefer exe/repo
+  `MeasurementIntegrationPack` (Q21S CSVs) over legacy `D:\shayam gui\…`;
+  archive ships **ZIP = EXE + Data** so other PCs get correct SPL (`windows` branch).
 
 ### Added
 
 - **Plot drawing tools** on the SPL heatmap: Select, Pan, Pencil, Eraser, Ruler,
   Line, plus a colour swatch. Annotations stay locked in world metres.
+- **Plot shapes**: Rectangle, Square, and Circle tools with fill **opacity**
+  slider; undo/redo covers shape edits.
 - **Undo / redo** (`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`). Shortcut letter is
   lowercased so Caps Lock does not block it. Covers drawings, cabinet moves,
   add/delete/layout/presets, and control-panel edits. Text fields keep their own undo.
 - **Windows Release exe** `Builds\Release\Atomik Simulation Engine.exe` (static
   CRT, signed locally). Installer script and README updated to v1.3.0.
+- **Windows portable ZIP** (`Atomik-Windows-v1.3.0*.zip` / `…-portable.zip`):
+  EXE **plus** `MeasurementIntegrationPack\Data` (Q21S CSVs). Required when
+  sending builds to other machines — the bare EXE alone cannot load heatmaps.
 - **Q21S BEM SPL engine**: measured far-field (≈2 m) directivity D(θ) with
   coherent complex superposition and inverse-square spreading (`r_spread` floored
   at cabinet half-depth). Absolute dB SPL calibrated from on-axis BEM level.
@@ -51,7 +116,8 @@ drawing tools, branded Windows/mac builds, and a standalone version archive.
   `dist_packages/Q21S_SingleSub_SPL_Heatmap.zip`.
 - **Version archive** (`version-archive/`): standalone HTML + MongoDB GridFS
   listing releases from **v1.3.0** with Download source zip / macOS DMG /
-  Windows EXE (not wired into the JUCE app).
+  **Windows ZIP (EXE + data)** (not wired into the JUCE app). Local serve can
+  stream from `artifacts/` without MongoDB.
 
 ### Changed
 
@@ -61,13 +127,17 @@ drawing tools, branded Windows/mac builds, and a standalone version archive.
 - **Wordmark** is **ATOMIK** only (AUDIO line stripped). Header uses cropped
   `Atomik_Logo_Dark.png` / `Atomik_Logo_Light.png`.
 - Header **Stats** pill renamed **Statistics**, width sized to the full label.
-- Measurement UI remains **Ground Plane** only (no Room set in the live UI).
+- Measurement UI remains **Ground Plane** only (no Room set in the live UI);
+  product cabinet / data set is **Q21S** (UI labels formerly XN18).
 - Colourbar / dB floor use **−6 dB** steps; `dBfloor` is display range only.
-- Frequency list is IEC **1/3-octave** centres (UI catalogue = native BEM bands
-  where Q21S CSVs exist).
+- Frequency catalogue = **native BEM bands** where Q21S CSVs exist:
+  20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401 Hz (IEC 1/3-octave
+  centres elsewhere in the pipeline where applicable).
 - **Cabinet geometry** uses Q21S W **750** / H **784** / D **917** mm for plan
   drawing, hit-test, and 1/r singularity floor (depth/2).
 - Heatmap / array prediction uses the **2 m** BEM arc (not 0.5 m near-field).
+- Simulation **world** is **100×100 m** (was 30×30 m in v1.0).
+- Version-archive Windows artifact is a **ZIP with data**, not a lone EXE.
 
 ### Fixed
 
@@ -76,6 +146,38 @@ drawing tools, branded Windows/mac builds, and a standalone version archive.
 - Header title + version layout uses the real logo width instead of a leftover
   200 px reserve.
 - SPL field no longer stamps a ±5 m BEM island; full-world map follows polar × 1/r.
+- **Windows** no longer prefers an old `D:\shayam gui\…` MeasurementIntegrationPack
+  (Factory/ShyamGuild-only) over the repo Q21S pack — that caused broken SPL
+  heatmaps vs macOS when the legacy folder existed.
+- Packaged / archive EXEs resolve `MeasurementIntegrationPack\Data` (and optional
+  `Resources\…`) beside the executable so portable layouts work.
+
+---
+
+## [1.2.0] - 2026-07 (beta series through betav1.2.3)
+*UI redesign between v1.1.0 and the v1.3.0 product cut. Acoustic engine behaviour
+largely unchanged in this span; chrome, theming, and packaging moved to the
+Graph colors.pdf / Atomik mockup language. Deliverable often named `betav1.2.3.exe`.*
+
+### Added / Changed (UI redesign)
+
+- **Brand tokens** centralised in `BrandTheme.h` from Graph colors.pdf
+  (charcoal, white, ash, signal red, heatmap cool/hot stops).
+- **Accent system** moved toward **Signal Red #ED2227** for interactive controls
+  (later product branding in 1.3.0 settled on ATOMIK wordmark + current palette).
+- **Heatmap colour map** stops aligned to brand cool/hot ranges; Rel. SPL legend
+  chrome refined.
+- **Light / dark chrome** for sidebar density, speaker markers, plot chrome, and
+  header actions per product mockups.
+- **Windows packaging** of the redesign build as a signed Release / `betav1.2.3`
+  style artifact (see `Tools/make_ui_changelog_doc.py` / UI changelog docx).
+
+### Notes
+
+- Detailed bullet list of every chrome tweak lives in the UI redesign doc
+  (`Atomik_UI_ChangeLog_GraphColors_to_betav1.2.3.docx` / generator script).
+- v1.3.0 supersedes beta 1.2.x as the tagged product line for Q21S physics and
+  the public `prediction-software` repo.
 
 ---
 

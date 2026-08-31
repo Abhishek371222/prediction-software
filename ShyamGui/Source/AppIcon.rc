@@ -6,8 +6,8 @@
 #include <winver.h>
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     1,3,0,0
-PRODUCTVERSION  1,3,0,0
+FILEVERSION     1,3,6,0
+PRODUCTVERSION  1,3,6,0
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          VOS_NT_WINDOWS32
@@ -20,11 +20,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Atomik"
             VALUE "FileDescription",  "Atomik Simulation Engine"
-            VALUE "FileVersion",      "1.3.0"
+            VALUE "FileVersion",      "1.3.6"
             VALUE "InternalName",     "AtomikSimulationEngine"
             VALUE "OriginalFilename", "Atomik Simulation Engine.exe"
             VALUE "ProductName",      "Atomik Simulation Engine"
-            VALUE "ProductVersion",   "1.3.0"
+            VALUE "ProductVersion",   "1.3.6"
             VALUE "LegalCopyright",   "Atomik"
         END
     END

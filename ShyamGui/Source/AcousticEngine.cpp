@@ -114,7 +114,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
     res.activeSpeakers = (int) srcs.size();
 
     const DirectivityPattern* pat = nullptr;
-    if (p.useMeasuredDirectivity && ! p.directivity.empty())
+    if (! p.directivity.empty())
         pat = pickPattern (p.directivity, f);
 
     res.usedMeasuredDirectivity = (pat != nullptr);
@@ -132,7 +132,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         const double fm = f * std::pow (2.0, frac);
         kBand[(size_t) m]     = 2.0 * M_PI * fm / kSpeedOfSound;
         omegaBand[(size_t) m] = 2.0 * M_PI * fm;
-        if (p.useMeasuredDirectivity && ! p.directivity.empty())
+        if (! p.directivity.empty())
             patBand[(size_t) m] = pickPattern (p.directivity, fm);
     }
 
@@ -223,7 +223,13 @@ SimResult AcousticEngine::compute (const SimParams& p)
     const double Rref = (hasAbs && pat->refDistanceM > 0.05f) ? (double) pat->refDistanceM : 2.0;
     const double Iref = 1.0 / (Rref * Rref);
     const double onAxisAbs = hasAbs ? (double) pat->onAxisSplDb : 0.0;
-    double peakAbs = -1.0e9;
+
+    // Absolute peak MUST be the level at the relative heatmap peak (rel = 0 dB).
+    // Using peakAbs = onAxis + 10·log10(maxI/Iref) then abs = peakAbs + rel locks
+    // the colour map and reported Peak to the same cell (avoids float/path drift).
+    const double peakAbs = hasAbs
+        ? (onAxisAbs + 10.0 * std::log10 (std::max (maxI, 1e-300) / Iref))
+        : 0.0;
 
     for (size_t i = 0; i < P.size(); ++i)
     {
@@ -232,15 +238,9 @@ SimResult AcousticEngine::compute (const SimParams& p)
         res.splDB[i]    = (float) std::max (rel, floorDB);
 
         if (hasAbs)
-        {
-            const double absDb = onAxisAbs + 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / Iref);
-            res.splAbsDB[i] = (float) absDb;
-            peakAbs = std::max (peakAbs, absDb);
-        }
+            res.splAbsDB[i] = (float) (peakAbs + rel);
         else
-        {
             res.splAbsDB[i] = (float) rel;
-        }
 
         res.pressure[i] = (float) (P[i].real() / maxAbsRe);
 
@@ -249,7 +249,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                                 ? (float) std::clamp (coh / Iabs[i], 0.0, 1.0)
                                 : 0.0f;
     }
-    res.peakAbsDb      = hasAbs ? peakAbs : 0.0;
+    res.peakAbsDb      = peakAbs;
     res.hasAbsoluteSpl = hasAbs;
 
     {
@@ -297,4 +297,91 @@ SimResult AcousticEngine::compute (const SimParams& p)
     }
 
     return res;
+}
+
+bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
+                                        float& intensityDb, float& absDb)
+{
+    intensityDb = 0.0f;
+    absDb = 0.0f;
+
+    struct Src
+    {
+        double x, y, gainLin, facing, delaySec, polPhase;
+    };
+    std::vector<Src> srcs;
+    for (const auto& s : p.speakers)
+    {
+        if (! s.enabled) continue;
+        Src src;
+        src.x = s.x; src.y = s.y;
+        src.gainLin = std::pow (10.0, s.gainDB / 20.0);
+        src.facing = s.reverseOrientation ? M_PI : 0.0;
+        src.delaySec = s.delayMs * 1.0e-3;
+        src.polPhase = s.polarityInverted ? M_PI : 0.0;
+        srcs.push_back (src);
+    }
+    if (srcs.empty()) return false;
+
+    const double f = std::max (1.0, p.frequency);
+    const DirectivityPattern* pat = nullptr;
+    if (! p.directivity.empty())
+        pat = pickPattern (p.directivity, f);
+
+    constexpr int Mband = 7;
+    const double halfOct = 1.0 / 6.0;
+    const int mCount = p.octaveSmoothing ? Mband : 1;
+
+    const double X = x, Y = y;
+    std::vector<double> rGeom (srcs.size()), rSpread (srcs.size()), theta (srcs.size());
+    for (size_t i = 0; i < srcs.size(); ++i)
+    {
+        const auto& s = srcs[i];
+        const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y));
+        rGeom[i] = rg;
+        rSpread[i] = std::max (rg, kCabHalfW);
+        theta[i] = std::atan2 (Y - s.y, X - s.x);
+    }
+
+    using cd = std::complex<double>;
+    double Iband = 0.0;
+    for (int m = 0; m < mCount; ++m)
+    {
+        const double frac = (mCount == 1) ? 0.0
+                          : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
+        const double fm = f * std::pow (2.0, frac);
+        const double km = 2.0 * M_PI * fm / kSpeedOfSound;
+        const double wm = 2.0 * M_PI * fm;
+        const DirectivityPattern* pm = pat;
+        if (! p.directivity.empty())
+            pm = pickPattern (p.directivity, fm);
+
+        cd sm (0.0, 0.0);
+        for (size_t i = 0; i < srcs.size(); ++i)
+        {
+            const auto& s = srcs[i];
+            const double D = dirFactor (pm, km, s.facing, theta[i]);
+            const double amp = s.gainLin * D / rSpread[i];
+            const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
+            sm += std::polar (amp, phase);
+        }
+        Iband += std::norm (sm);
+    }
+    Iband /= (double) mCount;
+
+    intensityDb = (float) (10.0 * std::log10 (std::max (Iband, 1e-300)));
+
+    const bool hasAbs = (pat != nullptr && pat->hasAbsolute);
+    if (hasAbs)
+    {
+        const double Rref = pat->refDistanceM > 0.05f ? (double) pat->refDistanceM : 2.0;
+        const double Iref = 1.0 / (Rref * Rref);
+        absDb = (float) ((double) pat->onAxisSplDb
+                         + 10.0 * std::log10 (std::max (Iband, 1e-300) / Iref));
+    }
+    else
+    {
+        absDb = intensityDb;
+    }
+    return true;
 }

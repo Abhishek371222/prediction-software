@@ -105,6 +105,9 @@ ControlPanel::ControlPanel()
     {
         if (updatingUI_) return;
         selected_ = speakerBox_.getSelectedId() - 1;
+        selectedSpeakers_.clear();
+        if (selected_ >= 0)
+            selectedSpeakers_.push_back (selected_);
         refreshEditors();
         if (onSelectionChanged) onSelectionChanged (selected_);
     };
@@ -134,10 +137,10 @@ ControlPanel::ControlPanel()
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
     styleSlider (delaySlider_, 0.0, 50.0, 0.1,  0.0);
-    xSlider_.onValueChange     = [this] { pushEdit(); };
-    ySlider_.onValueChange     = [this] { pushEdit(); };
-    gainSlider_.onValueChange  = [this] { pushEdit(); };
-    delaySlider_.onValueChange = [this] { pushEdit(); };
+    xSlider_.onValueChange     = [this] { pushPositionEdit(); };
+    ySlider_.onValueChange     = [this] { pushPositionEdit(); };
+    gainSlider_.onValueChange  = [this] { pushSharedEdit(); };
+    delaySlider_.onValueChange = [this] { pushSharedEdit(); };
     xSlider_.onDragStart       = [this] { willEdit(); };
     ySlider_.onDragStart       = [this] { willEdit(); };
     gainSlider_.onDragStart    = [this] { willEdit(); };
@@ -146,9 +149,9 @@ ControlPanel::ControlPanel()
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
     styleToggle (enabledToggle_,     "Enabled");
-    polarityToggle_.onClick    = [this] { willEdit(); pushEdit(); };
-    orientationToggle_.onClick = [this] { willEdit(); pushEdit(); };
-    enabledToggle_.onClick     = [this] { willEdit(); pushEdit(); };
+    polarityToggle_.onClick    = [this] { willEdit(); pushSharedEdit(); };
+    orientationToggle_.onClick = [this] { willEdit(); pushSharedEdit(); };
+    enabledToggle_.onClick     = [this] { willEdit(); pushSharedEdit(); };
 
     // --- Global settings ---------------------------------------------------
     addSection (globalHdr_, secSimOpen_);
@@ -160,12 +163,9 @@ ControlPanel::ControlPanel()
     floorSlider_.onValueChange = [this] { notifyChanged(); };
     resSlider_.onDragStart     = [this] { willEdit(); };
     floorSlider_.onDragStart   = [this] { willEdit(); };
-    styleToggle (bandsToggle_, "3 dB contour bands (spec)");
+    styleToggle (bandsToggle_, "Contour bands (3 dB)");
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
-    styleToggle (measuredDirToggle_, "Use measured directivity");
-    measuredDirToggle_.setToggleState (true, juce::dontSendNotification);
-    measuredDirToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
     configTxt (measSetLabel_, "Measurement set");
     measSetBox_.addItem ("Ground Plane", 1);
@@ -261,15 +261,30 @@ ControlPanel::ControlPanel()
         applyArrayPreset (kind, count);
     };
 
-    // RESET — centred text link at the bottom (no Run Simulation in v1.1).
+    // RESET / CLEAR — centred text links at the bottom (no Run Simulation in v1.1).
+    auto styleTextLink = [] (juce::TextButton& b, const juce::String& id)
+    {
+        b.setComponentID (id);
+        b.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+        b.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        b.setColour (juce::TextButton::textColourOffId,  Brand::ash());
+        b.setColour (juce::TextButton::textColourOnId,   Brand::text());
+    };
+
     resetBtn_.setButtonText ("Set to Default");
-    resetBtn_.setComponentID ("ctrlResetLink");
-    resetBtn_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-    resetBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    resetBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
-    resetBtn_.setColour (juce::TextButton::textColourOnId,   Brand::text());
+    styleTextLink (resetBtn_, "ctrlResetLink");
     resetBtn_.onClick = [this] { willEdit(); resetToDefaults(); };
     addAndMakeVisible (resetBtn_);
+
+    clearAllBtn_.setButtonText ("Clear All");
+    styleTextLink (clearAllBtn_, "ctrlClearAllLink");
+    clearAllBtn_.setTooltip ("Remove all drawings, lines, rulers, and shapes from the SPL heatmap");
+    clearAllBtn_.onClick = [this]
+    {
+        willEdit();
+        if (onClearAll) onClearAll();
+    };
+    addAndMakeVisible (clearAllBtn_);
 
     rebuildSpeakerBox();
     refreshEditors();
@@ -522,16 +537,50 @@ void ControlPanel::refreshLayoutControls()
 
 void ControlPanel::pushEdit()
 {
+    // Legacy entry: apply position + shared params (e.g. programmatic commits).
+    pushPositionEdit();
+    pushSharedEdit();
+}
+
+void ControlPanel::pushPositionEdit()
+{
     if (updatingUI_) return;
     if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
-    auto& s = speakers_[(size_t) selected_];
-    s.x       = (float) xSlider_.getValue();
-    s.y       = (float) ySlider_.getValue();
-    s.gainDB  = (float) gainSlider_.getValue();
-    s.delayMs = (float) delaySlider_.getValue();
-    s.polarityInverted   = polarityToggle_.getToggleState();
-    s.reverseOrientation = orientationToggle_.getToggleState();
-    s.enabled            = enabledToggle_.getToggleState();
+
+    auto& primary = speakers_[(size_t) selected_];
+    primary.x = (float) xSlider_.getValue();
+    primary.y = (float) ySlider_.getValue();
+    notifyChanged();
+}
+
+void ControlPanel::pushSharedEdit()
+{
+    if (updatingUI_) return;
+    if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
+
+    const float gainDB  = (float) gainSlider_.getValue();
+    const float delayMs = (float) delaySlider_.getValue();
+    const bool polarity = polarityToggle_.getToggleState();
+    const bool reverse  = orientationToggle_.getToggleState();
+    const bool enabled  = enabledToggle_.getToggleState();
+
+    // Shared acoustic params apply to every speaker currently selected on the plot.
+    // Do not touch X/Y here — slider step (0.1 m) would break object/grid snaps.
+    std::vector<int> targets = selectedSpeakers_;
+    if (targets.empty())
+        targets.push_back (selected_);
+
+    for (int idx : targets)
+    {
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        auto& s = speakers_[(size_t) idx];
+        s.gainDB  = gainDB;
+        s.delayMs = delayMs;
+        s.polarityInverted   = polarity;
+        s.reverseOrientation = reverse;
+        s.enabled            = enabled;
+    }
+
     notifyChanged();
 }
 
@@ -566,10 +615,80 @@ void ControlPanel::selectSpeaker (int index)
 {
     if (index < -1 || index >= (int) speakers_.size()) return;
     selected_ = index;
+    selectedSpeakers_.clear();
+    if (index >= 0)
+        selectedSpeakers_.push_back (index);
     updatingUI_ = true;
     if (index >= 0) speakerBox_.setSelectedId (index + 1, juce::dontSendNotification);
     updatingUI_ = false;
     refreshEditors();
+}
+
+void ControlPanel::setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex)
+{
+    selectedSpeakers_.clear();
+    for (int idx : indices)
+        if (idx >= 0 && idx < (int) speakers_.size())
+            selectedSpeakers_.push_back (idx);
+
+    if (primaryIndex >= 0 && primaryIndex < (int) speakers_.size())
+        selected_ = primaryIndex;
+    else if (! selectedSpeakers_.empty())
+        selected_ = selectedSpeakers_.back();
+    else
+        selected_ = speakers_.empty() ? -1 : juce::jlimit (0, (int) speakers_.size() - 1, selected_);
+
+    updatingUI_ = true;
+    if (selected_ >= 0)
+        speakerBox_.setSelectedId (selected_ + 1, juce::dontSendNotification);
+    updatingUI_ = false;
+    refreshEditors();
+}
+
+std::vector<int> ControlPanel::appendSpeakers (const std::vector<Speaker>& added)
+{
+    std::vector<int> idxs;
+    if (added.empty()) return idxs;
+
+    for (const auto& s : added)
+    {
+        idxs.push_back ((int) speakers_.size());
+        speakers_.push_back (s);
+    }
+
+    selectedSpeakers_ = idxs;
+    selected_ = idxs.back();
+    rebuildSpeakerBox();
+    refreshEditors();
+    notifyChanged();
+    return idxs;
+}
+
+void ControlPanel::removeSpeakers (const std::vector<int>& indices)
+{
+    if (indices.empty()) return;
+
+    std::vector<int> order = indices;
+    std::sort (order.begin(), order.end(), std::greater<int>());
+    int last = -1;
+    for (int idx : order)
+    {
+        if (idx == last) continue;
+        last = idx;
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        speakers_.erase (speakers_.begin() + idx);
+    }
+
+    selectedSpeakers_.clear();
+    if (selected_ >= (int) speakers_.size())
+        selected_ = (int) speakers_.size() - 1;
+    if (selected_ >= 0)
+        selectedSpeakers_.push_back (selected_);
+
+    rebuildSpeakerBox();
+    refreshEditors();
+    if (onSelectionChanged) onSelectionChanged (selected_);
+    notifyChanged();
 }
 
 void ControlPanel::resetToDefaults()
@@ -590,7 +709,6 @@ void ControlPanel::resetToDefaults()
     resSlider_.setValue (400.0, juce::dontSendNotification);
     floorSlider_.setValue (-36.0, juce::dontSendNotification);
     bandsToggle_.setToggleState (false, juce::dontSendNotification);
-    measuredDirToggle_.setToggleState (true, juce::dontSendNotification);
     updatingUI_ = false;
     rebuildSpeakerBox();
     refreshEditors();
@@ -615,7 +733,6 @@ void ControlPanel::applyProject (const ProjectData& p)
     resSlider_.setValue   ((double) p.resolution, juce::dontSendNotification);
     floorSlider_.setValue (p.dBfloor,             juce::dontSendNotification);
     bandsToggle_.setToggleState       (p.bandedSPL,           juce::dontSendNotification);
-    measuredDirToggle_.setToggleState (p.useMeasuredDirectivity, juce::dontSendNotification);
     updatingUI_ = false;
 
     rebuildSpeakerBox();
@@ -639,7 +756,7 @@ SimParams ControlPanel::getParams() const
     p.colourmap  = 0;
     p.bandedSPL  = bandsToggle_.getToggleState();
     p.octaveSmoothing = true; // always on (UI control removed)
-    p.useMeasuredDirectivity = measuredDirToggle_.getToggleState();
+    p.useMeasuredDirectivity = true; // always on — Q21S BEM polars drive heatmap + Directivity
     p.speakers   = speakers_;
     return p;
 }
@@ -729,6 +846,10 @@ void ControlPanel::applyColours()
     resetBtn_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
     resetBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     resetBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
+    styleBtnC (clearAllBtn_, false);
+    clearAllBtn_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+    clearAllBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    clearAllBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
     styleBtnC (applyPresetBtn_, true);
 
     for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
@@ -746,7 +867,7 @@ void ControlPanel::applyColours()
     }
 
     for (auto* t : { &polarityToggle_, &orientationToggle_, &enabledToggle_,
-                     &bandsToggle_, &measuredDirToggle_,
+                     &bandsToggle_,
                      &gridToggle_, &layoutVisibleToggle_, &layoutLockToggle_,
                      &layoutEditToggle_, &layoutSnapToggle_ })
     {
@@ -916,11 +1037,10 @@ void ControlPanel::resized()
         editRow (resLabel_,   resSlider_);
         editRow (floorLabel_, floorSlider_);
         fullRow (bandsToggle_);
-        fullRow (measuredDirToggle_);
         editRow (measSetLabel_, measSetBox_);
     });
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,
-                         &bandsToggle_, &measuredDirToggle_,
+                         &bandsToggle_,
                          &measSetLabel_, &measSetBox_ },
                        secSimOpen_);
     measDistLabel_.setVisible (false);
@@ -950,15 +1070,17 @@ void ControlPanel::resized()
     presetBox_.setVisible (false);
     applyPresetBtn_.setVisible (false);
 
-    // RESET — centred text link at the bottom.
+    // RESET / CLEAR ALL — centred text links at the bottom.
     const int resetH       = Brand::UI::sidebarResetRowH;
-    const int actionsBlock = resetH + pad;
+    const int linkGap      = juce::jmax (2, gap / 2);
+    const int actionsBlock = resetH * 2 + linkGap + pad;
     const int panelBottom  = getHeight() - pad;
     int actionsTop = y;
     if (y + actionsBlock <= panelBottom)
         actionsTop = panelBottom - actionsBlock;
 
     resetBtn_.setBounds (pad, actionsTop, W, resetH);
+    clearAllBtn_.setBounds (pad, actionsTop + resetH + linkGap, W, resetH);
     runBtn_.setVisible (false);
 
     contentHeight_ = juce::jmax (getHeight(), actionsTop + actionsBlock);

@@ -7,12 +7,42 @@ class TwoSpeakerApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName()    override { return "Atomik Simulation Engine"; }
-    const juce::String getApplicationVersion() override { return "1.3.0"; }
-    bool moreThanOneInstanceAllowed()          override { return false; }
+    const juce::String getApplicationVersion() override { return "1.3.6"; }
+    bool moreThanOneInstanceAllowed()          override { return true; }
 
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& /*commandLine*/) override
     {
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel_);
+
+        // Open Project (New Window) passes a .atmk path on the command line.
+        juce::File projectFile;
+        for (const auto& a : juce::JUCEApplication::getCommandLineParameterArray())
+        {
+            const auto path = a.unquoted().trim();
+            if (path.isEmpty()) continue;
+
+            juce::File f (path);
+            if (! juce::File::isAbsolutePath (path))
+                f = juce::File::getCurrentWorkingDirectory().getChildFile (path);
+
+            if (f.existsAsFile() && f.hasFileExtension (".atmk"))
+            {
+                projectFile = f;
+                break;
+            }
+        }
+
+        if (projectFile != juce::File())
+        {
+            ProjectData p;
+            if (ProjectData::loadFromFile (projectFile, p))
+            {
+                AppSettings::get().addRecentProject (projectFile);
+                openProject (std::move (p));
+                return;
+            }
+        }
+
         showDashboard();
     }
 
@@ -25,9 +55,7 @@ public:
 
     void systemRequestedQuit() override { quit(); }
 
-    // Second launch (build/open while already running) must raise the UI —
-    // otherwise `open` looks like a no-op because only one instance is allowed.
-    void anotherInstanceStarted (const juce::String&) override { raiseUi(); }
+    void anotherInstanceStarted (const juce::String&) override {}
 
     void raiseUi()
     {
@@ -104,7 +132,10 @@ public:
     {
     public:
         MainWindow (const juce::String& name, const ProjectData& project)
-            : DocumentWindow (name, Brand::base(), DocumentWindow::allButtons)
+            : DocumentWindow (project.displayName().isNotEmpty()
+                                  ? (name + " - " + project.displayName())
+                                  : name,
+                              Brand::base(), DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent (project), true);

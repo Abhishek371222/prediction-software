@@ -708,6 +708,38 @@ namespace Brand
             setColour (juce::TextEditor::highlightColourId,        accent());
             setColour (juce::TextEditor::highlightedTextColourId,  onAccent());
             setColour (juce::CaretComponent::caretColourId,        onBtnIn());
+            setColour (juce::TooltipWindow::backgroundColourId,    panel());
+            setColour (juce::TooltipWindow::textColourId,          text());
+            setColour (juce::TooltipWindow::outlineColourId,       border());
+            setColour (juce::AlertWindow::backgroundColourId,      panel());
+            setColour (juce::AlertWindow::textColourId,            text());
+            setColour (juce::AlertWindow::outlineColourId,         border());
+        }
+
+        juce::AlertWindow* createAlertWindow (const juce::String& title,
+                                              const juce::String& message,
+                                              const juce::String& button1,
+                                              const juce::String& button2,
+                                              const juce::String& button3,
+                                              juce::MessageBoxIconType iconType,
+                                              int numButtons,
+                                              juce::Component* associatedComponent) override
+        {
+            auto* aw = LookAndFeel_V4::createAlertWindow (
+                title, message, button1, button2, button3,
+                iconType, numButtons, associatedComponent);
+
+            // Default TextButton ink is dark (for light value boxes). Alert chrome
+            // is dark in dark mode, so force a high-contrast OK / Cancel treatment.
+            for (auto* child : aw->getChildren())
+                if (auto* button = dynamic_cast<juce::TextButton*> (child))
+                {
+                    button->setColour (juce::TextButton::buttonColourId,   accent());
+                    button->setColour (juce::TextButton::buttonOnColourId, accent().brighter (0.08f));
+                    button->setColour (juce::TextButton::textColourOffId,  onAccent());
+                    button->setColour (juce::TextButton::textColourOnId,   onAccent());
+                }
+            return aw;
         }
 
         juce::Font getLabelFont (juce::Label& l) override
@@ -742,7 +774,7 @@ namespace Brand
                 return tech (UI::scaledFont (Type::dashRecentItem));
             if (id == "plotFit")
                 return techMed (UI::scaledFont (Type::plotFitButton));
-            if (id == "headerStats")
+            if (id == "headerStats" || id == "headerNewProject")
                 return techSemi (UI::scaledFont (Type::headerStatsButton));
             if (id == "prefsBtn")
                 return techMed (juce::jmin (UI::scaledFont (Type::prefsButton),
@@ -791,7 +823,8 @@ namespace Brand
                 strokeInsideRounded (g, bounds, corner, controlBorderPx, fitViewBorder(),
                                      button.isEnabled() ? 1.0f : 0.40f);
             else if (isSidebarControl (button) || button.getComponentID() == "bottomBtn"
-                     || button.getComponentID() == "headerStats")
+                     || button.getComponentID() == "headerStats"
+                     || button.getComponentID() == "headerNewProject")
                 strokeInsideRounded (g, bounds, corner, controlBorderPx, controlBorder(),
                                      button.isEnabled() ? 1.0f : 0.40f);
             else

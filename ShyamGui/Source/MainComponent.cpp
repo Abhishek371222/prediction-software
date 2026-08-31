@@ -35,7 +35,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.3.0", juce::dontSendNotification);
+    versionLabel_.setText ("v1.3.6", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -109,6 +109,14 @@ MainComponent::MainComponent (ProjectData project)
     btnStats_.onClick = [this] { showStatsPopup(); };
     addAndMakeVisible (btnStats_);
 
+    btnProject_.setComponentID ("headerNewProject");
+    btnProject_.setButtonText (juce::String ("Project") + juce::String::fromUTF8 (" \xe2\x96\xbe"));
+    btnProject_.setTooltip ("Open or create a project");
+    btnProject_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
+    btnProject_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
+    btnProject_.onClick = [this] { showProjectMenu(); };
+    addAndMakeVisible (btnProject_);
+
     btnHelp_.setTooltip ("Help");
     btnPrefsIcon_.setTooltip ("Preferences");
     btnMore_.setTooltip ("More options");
@@ -161,25 +169,98 @@ MainComponent::MainComponent (ProjectData project)
         if (plotHeader_.btnRuler_.getToggleState())
             applyPlotTool (RadiationPatternComponent::Tool::Ruler);
     };
-    plotHeader_.btnLine_.onClick     = [this]
+    plotHeader_.btnShape_.onClick = [this]
     {
-        if (plotHeader_.btnLine_.getToggleState())
-            applyPlotTool (RadiationPatternComponent::Tool::Line);
+        // Always open the Shape → Construction menu; keep Shape tool active.
+        plotHeader_.showShapeMenu ([this] (int shapeId, int constructionId)
+        {
+            using DS = RadiationPatternComponent::DrawShape;
+            using C  = RadiationPatternComponent::Construction;
+            static const DS shapes[] = {
+                DS::Line, DS::Polyline, DS::Circle, DS::Arc, DS::Rectangle, DS::Square
+            };
+            if (shapeId < 0 || shapeId >= (int) (sizeof (shapes) / sizeof (shapes[0])))
+                return;
+            if (constructionId < 0 || constructionId > (int) C::SquareTwoCorners)
+                return;
+            patternComp_.setDrawShape (shapes[shapeId], (C) constructionId);
+            patternComp_.setAddMicArmed (false);
+            plotHeader_.setActiveTool (PlotHeaderBar::ActiveTool::Shape);
+            plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+            patternComp_.grabKeyboardFocus();
+        });
+        // If the radio toggle flipped off due to another tool, re-assert Shape.
+        if (! plotHeader_.btnShape_.getToggleState()
+            && patternComp_.getTool() == RadiationPatternComponent::Tool::Shape)
+            plotHeader_.btnShape_.setToggleState (true, juce::dontSendNotification);
     };
-    plotHeader_.btnRect_.onClick = [this]
+    plotHeader_.btnMic_.onClick = [this]
     {
-        if (plotHeader_.btnRect_.getToggleState())
-            applyPlotTool (RadiationPatternComponent::Tool::Rectangle);
+        const bool hasMics = ! patternComp_.getMics().empty();
+        plotHeader_.showMicMenu ([this] (int itemId)
+        {
+            if (itemId == 1)
+            {
+                patternComp_.setAddMicArmed (true);
+                plotHeader_.setMicArmed (true);
+                plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+                patternComp_.grabKeyboardFocus();
+            }
+            else if (itemId == 2)
+            {
+                showMicPlaceOnRingDialog();
+            }
+            else if (itemId == 3)
+            {
+                patternComp_.setShowMicDegrees (! patternComp_.showMicDegrees());
+            }
+            else if (itemId == 4)
+            {
+                showFrequencyResponseWindow();
+            }
+        }, hasMics, patternComp_.showMicDegrees());
     };
-    plotHeader_.btnSquare_.onClick = [this]
+    patternComp_.onAddMicArmedChanged = [this]
     {
-        if (plotHeader_.btnSquare_.getToggleState())
-            applyPlotTool (RadiationPatternComponent::Tool::Square);
+        plotHeader_.setMicArmed (patternComp_.isAddMicArmed());
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
-    plotHeader_.btnCircle_.onClick = [this]
+    patternComp_.onMicsChanged = [this]
     {
-        if (plotHeader_.btnCircle_.getToggleState())
-            applyPlotTool (RadiationPatternComponent::Tool::Circle);
+        refreshFrequencyResponse();
+    };
+    plotHeader_.btnOrtho_.onClick = [this]
+    {
+        const bool on = plotHeader_.btnOrtho_.getToggleState();
+        plotHeader_.setOrthoExtrasVisible (on);
+        patternComp_.setOrtho (on);
+        if (on)
+        {
+            patternComp_.setOrthoAlign (plotHeader_.isOrthoHorizontal()
+                ? RadiationPatternComponent::OrthoAlign::Horizontal
+                : RadiationPatternComponent::OrthoAlign::Vertical);
+            plotHeader_.setOrthoSpacingM ((double) patternComp_.getOrthoSpacingM());
+        }
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+    };
+    plotHeader_.onOrthoOptionsChanged = [this]
+    {
+        if (! plotHeader_.btnOrtho_.getToggleState())
+            return;
+        patternComp_.setOrthoAlign (plotHeader_.isOrthoHorizontal()
+            ? RadiationPatternComponent::OrthoAlign::Horizontal
+            : RadiationPatternComponent::OrthoAlign::Vertical);
+        patternComp_.setOrthoSpacingM ((float) plotHeader_.getOrthoSpacingM());
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+    };
+    plotHeader_.btnSnap_.onClick = [this]
+    {
+        patternComp_.setDrawGridSnap (plotHeader_.btnSnap_.getToggleState());
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+    };
+    plotHeader_.btnSplProbe_.onClick = [this]
+    {
+        patternComp_.setShowSplProbe (plotHeader_.btnSplProbe_.getToggleState());
     };
     plotHeader_.colourSwatch_.onClick = [this] { showDrawColourPicker(); };
     plotHeader_.setDrawColour (patternComp_.getDrawColour());
@@ -187,20 +268,30 @@ MainComponent::MainComponent (ProjectData project)
     plotHeader_.fillAlpha_.onValueChange = [this]
     {
         patternComp_.setDrawFillAlpha (plotHeader_.getFillAlpha01());
+        plotHeader_.repaint();
+    };
+    patternComp_.onAnnotSelectionChanged = [this]
+    {
+        // Swatch + opacity follow the selected shape (or the draw brush if none).
+        plotHeader_.setFillAlpha01 (patternComp_.getActiveFillAlpha());
+        plotHeader_.setDrawColour (patternComp_.getActiveDrawColour());
+        plotHeader_.repaint();
     };
     patternComp_.onToolChanged = [this] (RadiationPatternComponent::Tool t)
     {
         using T = RadiationPatternComponent::Tool;
         using A = PlotHeaderBar::ActiveTool;
-        plotHeader_.setActiveTool (t == T::Select    ? A::Select
-                                  : t == T::Pan       ? A::Pan
-                                  : t == T::Pencil    ? A::Pencil
-                                  : t == T::Eraser    ? A::Eraser
-                                  : t == T::Ruler     ? A::Ruler
-                                  : t == T::Line      ? A::Line
-                                  : t == T::Rectangle ? A::Rectangle
-                                  : t == T::Square    ? A::Square
-                                                      : A::Circle);
+        plotHeader_.setActiveTool (t == T::Select ? A::Select
+                                  : t == T::Pan    ? A::Pan
+                                  : t == T::Pencil ? A::Pencil
+                                  : t == T::Eraser ? A::Eraser
+                                  : t == T::Ruler  ? A::Ruler
+                                                   : A::Shape);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+    };
+    patternComp_.onDrawPromptChanged = [this]
+    {
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
 
     addAndMakeVisible (statusStrip_);
@@ -208,6 +299,13 @@ MainComponent::MainComponent (ProjectData project)
 
     // Wire panels -----------------------------------------------------------
     controlPanel_.onWillEdit = [this] { willEdit(); };
+    controlPanel_.onClearAll = [this]
+    {
+        patternComp_.clearAnnotations();
+        patternComp_.clearMics();
+        commitEdit();
+        refreshFrequencyResponse();
+    };
     controlPanel_.onChanged     = [this]
     {
         commitEdit();
@@ -231,7 +329,60 @@ MainComponent::MainComponent (ProjectData project)
         }
         else
         {
-            scheduleRecompute();
+            // Display-only params (db Floor / contour bands): recolour immediately
+            // and skip a full physics recompute — the relative field is unchanged.
+            const bool displayOnly =
+                std::abs (live.dBfloor - lastParams_.dBfloor) > 1.0e-6
+                || live.bandedSPL != lastParams_.bandedSPL
+                || live.colourmap != lastParams_.colourmap;
+
+            const bool physicsChanged =
+                std::abs (live.frequency - lastParams_.frequency) > 1.0e-6
+                || live.resolution != lastParams_.resolution
+                || live.octaveSmoothing != lastParams_.octaveSmoothing
+                || live.useMeasuredDirectivity != lastParams_.useMeasuredDirectivity
+                || live.speakers.size() != lastParams_.speakers.size();
+
+            // Speakers compared lightly — full recompute still scheduled when unsure.
+            bool speakersSame = ! physicsChanged
+                && live.speakers.size() == lastParams_.speakers.size();
+            if (speakersSame)
+            {
+                for (size_t i = 0; i < live.speakers.size(); ++i)
+                {
+                    const auto& a = live.speakers[i];
+                    const auto& b = lastParams_.speakers[i];
+                    if (a.enabled != b.enabled
+                        || a.polarityInverted != b.polarityInverted
+                        || a.reverseOrientation != b.reverseOrientation
+                        || std::abs (a.x - b.x) > 1.0e-4f
+                        || std::abs (a.y - b.y) > 1.0e-4f
+                        || std::abs (a.gainDB - b.gainDB) > 1.0e-4f
+                        || std::abs (a.delayMs - b.delayMs) > 1.0e-4f)
+                    {
+                        speakersSame = false;
+                        break;
+                    }
+                }
+            }
+
+            {
+                juce::ScopedLock sl (resultLock_);
+                if (hasResult_)
+                {
+                    lastParams_.dBfloor   = live.dBfloor;
+                    lastParams_.bandedSPL = live.bandedSPL;
+                    lastParams_.colourmap = live.colourmap;
+                    patternComp_.updateData (lastResult_, lastParams_);
+                }
+            }
+
+            if (! hasResult_ || physicsChanged || ! speakersSame)
+                scheduleRecompute();
+            else if (! displayOnly)
+                scheduleRecompute(); // e.g. other sim flags without speaker/freq delta
+            else
+                updateSettingsBar(); // floor / bands only — image already recoloured
         }
     };
     controlPanel_.onRunClicked  = [this] { runSimulation(); };
@@ -239,12 +390,27 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.onSelectionChanged = [this] (int idx)
     {
         patternComp_.setSpeakers (controlPanel_.getSpeakers(), idx);
+        patternComp_.selectOnlySpeaker (idx);
         patternComp_.repaint();
     };
 
     patternComp_.onSpeakerSelected = [this] (int idx)
     {
-        controlPanel_.selectSpeaker (idx);
+        controlPanel_.setSelectedSpeakers (patternComp_.getSelectedSpeakers(), idx);
+        if (plotHeader_.btnOrtho_.getToggleState())
+        {
+            patternComp_.syncOrthoSpacingFromSelection();
+            plotHeader_.setOrthoSpacingM ((double) patternComp_.getOrthoSpacingM());
+            plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        }
+    };
+    patternComp_.onPasteSpeakers = [this] (std::vector<Speaker> added)
+    {
+        return controlPanel_.appendSpeakers (added);
+    };
+    patternComp_.onDeleteSpeakers = [this] (std::vector<int> idxs)
+    {
+        controlPanel_.removeSpeakers (idxs);
     };
     patternComp_.onSpeakerMoved = [this] (int idx, float x, float y)
     {
@@ -306,6 +472,7 @@ MainComponent::~MainComponent()
     measPoll_.stopTimer();
     stopTimer();
     stopThread (3000);
+    frWindow_.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +550,7 @@ MainComponent::EditSnapshot MainComponent::takeEditSnapshot() const
     EditSnapshot s;
     s.scene = currentProject();
     s.drawings = patternComp_.getAnnotations();
+    s.mics = patternComp_.getMics();
     return s;
 }
 
@@ -391,10 +559,13 @@ void MainComponent::applyEditSnapshot (const EditSnapshot& s)
     restoringEdit_ = true;
     controlPanel_.applyProject (s.scene);
     patternComp_.setAnnotations (s.drawings);
+    patternComp_.setMics (s.mics);
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
     restoringEdit_ = false;
     editBaseline_ = s;
+    refreshFrequencyResponse();
+    resized();
 }
 
 void MainComponent::willEdit()
@@ -466,6 +637,16 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
     if (letter == 'y')
     {
         redoEdit();
+        return true;
+    }
+    if (letter == 'c')
+    {
+        patternComp_.copySelection();
+        return true;
+    }
+    if (letter == 'v')
+    {
+        patternComp_.pasteClipboard();
         return true;
     }
     return false;
@@ -595,6 +776,8 @@ void MainComponent::lookAndFeelChanged()
 
     btnStats_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
     btnStats_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
+    btnProject_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
+    btnProject_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
 
     auto restyle = [] (juce::TextButton& b)
     {
@@ -766,9 +949,16 @@ void MainComponent::resized()
     btnHelp_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap * 2;
 
     const auto statsFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::headerStatsButton));
-    const int statsW = juce::jmax (UiConfig::Scale::px (96),
-                                   juce::roundToInt (statsFont.getStringWidthFloat (btnStats_.getButtonText()) + 20.0f));
-    btnStats_.setBounds      (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH); rx -= statsW;
+    const int headerBtnGap = UiConfig::Scale::px (8);
+    auto headerTextBtnW = [&] (const juce::TextButton& b) -> int
+    {
+        return juce::jmax (UiConfig::Scale::px (96),
+                           juce::roundToInt (statsFont.getStringWidthFloat (b.getButtonText()) + 20.0f));
+    };
+    const int statsW = headerTextBtnW (btnStats_);
+    const int projectW = headerTextBtnW (btnProject_);
+    btnStats_.setBounds      (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH); rx -= statsW + headerBtnGap;
+    btnProject_.setBounds (rx - projectW, headerBtnTop, projectW, Brand::UI::headerIconH); rx -= projectW;
 
     {
         // Logo | title + version | flexible space | header buttons.
@@ -865,9 +1055,10 @@ void MainComponent::resized()
     }
     btnSidebarToggle_.toFront (false);
 
-    // Heatmap window — same bodyTop as sidebar.
+    // Heatmap window — same bodyTop as sidebar (FR lives in its own floating window).
     plotHeader_.setBounds (plotX, bodyTop, centreW, plotHdrH);
-    patternComp_.setBounds (plotX, bodyTop + plotHdrH, centreW, juce::jmax (40, bodyH - plotHdrH));
+    patternComp_.setBounds (plotX, bodyTop + plotHdrH, centreW,
+                            juce::jmax (40, bodyH - plotHdrH));
     comingSoonOverlay_.setBounds (patternComp_.getBounds());
 
     // Bottom panel — v1.1: narrow Export column + two equal View Mode columns.
@@ -1005,15 +1196,13 @@ void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool, bool op
     patternComp_.setTool (tool);
     using T = RadiationPatternComponent::Tool;
     using A = PlotHeaderBar::ActiveTool;
-    plotHeader_.setActiveTool (tool == T::Select    ? A::Select
-                              : tool == T::Pan       ? A::Pan
-                              : tool == T::Pencil    ? A::Pencil
-                              : tool == T::Eraser    ? A::Eraser
-                              : tool == T::Ruler     ? A::Ruler
-                              : tool == T::Line      ? A::Line
-                              : tool == T::Rectangle ? A::Rectangle
-                              : tool == T::Square    ? A::Square
-                                                     : A::Circle);
+    plotHeader_.setActiveTool (tool == T::Select ? A::Select
+                              : tool == T::Pan    ? A::Pan
+                              : tool == T::Pencil ? A::Pencil
+                              : tool == T::Eraser ? A::Eraser
+                              : tool == T::Ruler  ? A::Ruler
+                                                 : A::Shape);
+    plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     patternComp_.grabKeyboardFocus();
     if (openColourPicker)
         showDrawColourPicker();
@@ -1092,7 +1281,7 @@ void MainComponent::showDrawColourPicker()
         }
     };
 
-    auto* picker = new ColourPicker (patternComp_.getDrawColour());
+    auto* picker = new ColourPicker (patternComp_.getActiveDrawColour());
     picker->onPick = [this] (juce::Colour c)
     {
         patternComp_.setDrawColour (c);
@@ -1126,7 +1315,7 @@ void MainComponent::updateSettingsBar()
         chips.add ("Q21S = " + juce::String (lastResult_.activeSpeakers)
                      + " / " + juce::String ((int) p.speakers.size()));
         chips.add ("View: " + juce::String (vm));
-        chips.add ("Grid: " + juce::String (p.resolution) + " ^2");
+        chips.add ("Grid: " + juce::String (p.resolution) + " x " + juce::String (p.resolution));
         if (lastResult_.usedMeasuredDirectivity)
         {
             const float simDist = MeasurementData::farFieldDirectivityDistance (measured_, measDistanceM_);
@@ -1185,6 +1374,9 @@ void MainComponent::refreshHeaderIcons()
     btnStats_.setColour (juce::TextButton::buttonColourId,  Brand::statsBtn());
     btnStats_.setColour (juce::TextButton::textColourOffId, Brand::statsText());
     btnStats_.setColour (juce::TextButton::textColourOnId,  Brand::statsText());
+    btnProject_.setColour (juce::TextButton::buttonColourId,  Brand::statsBtn());
+    btnProject_.setColour (juce::TextButton::textColourOffId, Brand::statsText());
+    btnProject_.setColour (juce::TextButton::textColourOnId,  Brand::statsText());
 
     auto hexRgb = [] (juce::Colour c) -> juce::String
     {
@@ -1290,6 +1482,224 @@ void MainComponent::showStatsPopup()
     juce::CallOutBox::launchAsynchronously (std::move (content),
                                             btnStats_.getScreenBounds(),
                                             nullptr);
+}
+
+void MainComponent::showMicPlaceOnRingDialog()
+{
+    const auto mics = patternComp_.getMics();
+    if (mics.empty()) return;
+    const auto speakers = controlPanel_.getSpeakers();
+    const int defMic = juce::jmax (0, patternComp_.getSelectedMic());
+
+    auto* body = new MicRefLockDialog (mics, speakers, defMic);
+    body->onApply = [this] (int micIndex, int speakerIndex, float radiusM)
+    {
+        patternComp_.placeMicOnRing (micIndex, speakerIndex, radiusM);
+        refreshFrequencyResponse();
+    };
+
+    juce::DialogWindow::LaunchOptions opts;
+    opts.content.setOwned (body);
+    opts.dialogTitle = "Place on ring";
+    opts.dialogBackgroundColour = Brand::panel();
+    opts.escapeKeyTriggersCloseButton = true;
+    opts.useNativeTitleBar = true;
+    opts.resizable = false;
+    opts.launchAsync();
+}
+
+void MainComponent::ensureFrequencyResponseWindow()
+{
+    if (frWindow_ != nullptr)
+        return;
+
+    frWindow_ = std::make_unique<MicFrequencyResponseWindow>();
+    frWindow_->content.onReferenceChanged = [this] (int idx)
+    {
+        frRefMic_ = idx;
+        refreshFrequencyResponse();
+    };
+
+    if (auto* top = getTopLevelComponent())
+    {
+        frWindow_->setTopLeftPosition (top->getRight() - frWindow_->getWidth() - 24,
+                                       top->getY() + 72);
+    }
+
+    frWindow_->setVisible (true);
+    frWindow_->toFront (false);
+}
+
+void MainComponent::showFrequencyResponseWindow()
+{
+    if (patternComp_.getMics().empty())
+        return;
+
+    refreshFrequencyResponse();
+    if (frWindow_ == nullptr)
+        return;
+
+    frWindow_->setVisible (true);
+    frWindow_->toFront (true);
+}
+
+void MainComponent::refreshFrequencyResponse()
+{
+    const auto mics = patternComp_.getMics();
+    if (mics.empty())
+    {
+        frWindow_.reset();
+        return;
+    }
+
+    ensureFrequencyResponseWindow();
+
+    if (frRefMic_ < 0 || frRefMic_ >= (int) mics.size())
+        frRefMic_ = 0;
+
+    SimParams base;
+    {
+        juce::ScopedLock sl (measLock_);
+        base = controlPanel_.getParams();
+        base.directivity = directivityTables_;
+        base.bemFields = bemFieldTables_;
+    }
+
+    std::vector<std::vector<float>> curves ((size_t) mics.size());
+    for (size_t mi = 0; mi < mics.size(); ++mi)
+    {
+        curves[mi].resize ((size_t) kNumSupportedFrequencies, 0.0f);
+        for (int hi = 0; hi < kNumSupportedFrequencies; ++hi)
+        {
+            SimParams p = base;
+            p.frequency = kSupportedFrequencies[hi];
+            float intensityDb = 0.0f, absDb = 0.0f;
+            if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
+                                                   intensityDb, absDb))
+                curves[mi][(size_t) hi] = intensityDb;
+            else
+                curves[mi][(size_t) hi] = -120.0f;
+        }
+    }
+
+    frWindow_->content.setCurves (mics, curves, frRefMic_);
+}
+
+void MainComponent::showProjectMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, "Open Project (New Window)");
+    m.addItem (2, "Open Project (Current Window)");
+    m.addSeparator();
+    m.addItem (3, "New Project");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (btnProject_),
+        [this] (int r)
+        {
+            if      (r == 1) openProjectInNewWindow();
+            else if (r == 2) openProjectInCurrentWindow();
+            else if (r == 3) launchNewProjectInstance();
+        });
+}
+
+bool MainComponent::launchAppInstance (const juce::String& args)
+{
+    auto target = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+
+   #if JUCE_MAC
+    const auto bundle = target.getParentDirectory()
+                              .getParentDirectory()
+                              .getParentDirectory();
+    if (bundle.hasFileExtension (".app") && bundle.isDirectory())
+        target = bundle;
+   #endif
+
+    if (target.hasFileExtension (".app"))
+        return juce::Process::openDocument (target.getFullPathName(), args);
+
+    return juce::Process::openDocument (target.getFullPathName(), args);
+}
+
+void MainComponent::launchNewProjectInstance()
+{
+    if (! launchAppInstance ({}))
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::AlertWindow::WarningIcon,
+            "New Project",
+            "Could not start a new Atomik instance.");
+    }
+}
+
+void MainComponent::openProjectInNewWindow()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser> (
+        "Open project in new window",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.atmk");
+    fileChooser_->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (f == juce::File()) return;
+
+            if (! launchAppInstance (f.getFullPathName().quoted()))
+            {
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::AlertWindow::WarningIcon,
+                    "Open Project",
+                    "Could not open the project in a new window.\n\n"
+                    + f.getFullPathName());
+            }
+        });
+}
+
+void MainComponent::openProjectInCurrentWindow()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser> (
+        "Open project in this window",
+        project_.file != juce::File() ? project_.file.getParentDirectory()
+            : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.atmk");
+    fileChooser_->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (f != juce::File())
+                loadProjectFile (f);
+        });
+}
+
+void MainComponent::loadProjectFile (const juce::File& f)
+{
+    ProjectData loaded;
+    if (! ProjectData::loadFromFile (f, loaded))
+    {
+        statusStrip_.setStatus ("Could not open: " + f.getFileName(), false);
+        return;
+    }
+
+    project_ = std::move (loaded);
+    controlPanel_.applyProject (project_);
+    patternComp_.clearAnnotations();
+    patternComp_.clearMics();
+    patternComp_.setSpeakers (controlPanel_.getSpeakers(),
+                              controlPanel_.getSelectedIndex());
+    undoStack_.clear();
+    redoStack_.clear();
+    editBaseline_ = takeEditSnapshot();
+    refreshFrequencyResponse();
+    resized();
+
+    AppSettings::get().addRecentProject (project_.file);
+    updateSettingsBar();
+    updatePlotChrome();
+    scheduleRecompute();
+    statusStrip_.setStatus ("Opened: " + project_.displayName(), true);
+
+    if (auto* w = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()))
+        w->setName ("Atomik Simulation Engine - " + project_.displayName());
 }
 
 void MainComponent::updateViewButtonHighlights()
@@ -1420,7 +1830,8 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
     for (int hz : reportHz)
     {
         ReportBuilder::HeatmapEntry e;
-        e.image = renderHeatmapImage ((double) hz, base, e.coveragePct);
+        e.image = renderHeatmapImage ((double) hz, base, e.coveragePct,
+                                      &e.peakAbsDb, &e.hasAbsoluteSpl);
         e.hz = hz;
         in.heatmaps.push_back (std::move (e));
     }
@@ -1517,7 +1928,8 @@ void MainComponent::applyLayoutSettings()
     patternComp_.repaint();
 }
 
-juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& base, double& coverageOut)
+juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& base, double& coverageOut,
+                                               double* peakAbsOut, bool* hasAbsOut)
 {
     SimParams p = base;
     p.frequency = freq;
@@ -1525,6 +1937,8 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
 
     SimResult r = AcousticEngine::compute (p);
     coverageOut = AcousticAnalysis::coverageWithin (r, 6.0);
+    if (peakAbsOut != nullptr) *peakAbsOut = r.peakAbsDb;
+    if (hasAbsOut  != nullptr) *hasAbsOut  = r.hasAbsoluteSpl;
 
     RadiationPatternComponent comp;
     comp.setBounds (0, 0, 980, 760);
@@ -1572,7 +1986,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.3.0");
+            line ("# Atomik Simulation Engine v1.3.6");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

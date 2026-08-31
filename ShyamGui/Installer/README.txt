@@ -1,22 +1,21 @@
-Atomik Simulation Engine v1.3.0
+Atomik Simulation Engine v1.3.6
 ======================================
 
-2D XN18 placement & directivity visualiser.
+2D Q21S placement & directivity visualiser.
 
 What it does
 ------------
-- Predicts SPL heat maps for 1, 2 or 3 XN18 units in a 30 x 30 m plane.
-- Shows measured horizontal polar plots (30 / 80 / 200 / 500 Hz).
-- Uses measured directivity data for physically accurate predictions.
+- Predicts SPL heat maps for Q21S units on a 100 x 100 m plane.
+- Shows measured horizontal polar plots from embedded Q21S BEM data.
+- Virtual mic receivers (levels, degrees, frequency-response window).
 
 Notes
 -----
-- The "shyamGuildMeasurements" folder (installed next to the program) holds the
-  measurement .xlsx files. The app loads them automatically and live-refreshes
-  if they change. You can drop newer/cleaner measurements into that folder.
+- Measurement curves are embedded in the executable — no Excel or
+  MeasurementIntegrationPack folder is required on the target PC.
 - The "Assets\Fonts" folder holds the Atomik brand fonts (Montserrat and
   Space Mono), loaded at startup.
-- No extra runtime is required; the program is self-contained.
+- No extra runtime is required; the program is self-contained (static CRT).
 
 To uninstall: use "Add or remove programs" in Windows, or the uninstall
 shortcut in the Start Menu.

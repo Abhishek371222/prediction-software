@@ -150,7 +150,13 @@ namespace ReportExport
             + "   ·   " + juce::String (nDev) + " Q21S"
             + "   ·   λ " + juce::String (Units::metresToDisplay (r.lambda), 2) + " " + u;
         if (r.hasAbsoluteSpl && r.peakAbsDb > 1.0)
-            facts += "   ·   Peak " + juce::String (r.peakAbsDb, 1) + " dB SPL";
+        {
+            // Peak = absolute SPL at the heatmap's Rel. SPL = 0 dB cell.
+            facts += "   ·   Peak " + juce::String (r.peakAbsDb, 1) + " dB SPL"
+                  + " (map 0 dB)"
+                  + "   ·   Scale " + juce::String (r.peakAbsDb, 1)
+                  + " to " + juce::String (r.peakAbsDb + p.dBfloor, 1) + " dB";
+        }
         else
             facts += "   ·   Rel. SPL  0 to " + juce::String ((int) p.dBfloor) + " dB";
         facts += juce::String (r.usedMeasuredDirectivity ? "   ·   Measured" : "   ·   Model");
@@ -167,7 +173,7 @@ namespace ReportExport
 
         g.setColour (juce::Colours::white.withAlpha (0.80f));
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.3.0",
+        g.drawText ("Generated  " + liveStamp() + "    v1.3.6",
                     footer.getRight() - 620, y + 72, 600, 18, juce::Justification::centredRight);
 
         return img;

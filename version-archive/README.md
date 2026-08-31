@@ -2,11 +2,11 @@
 
 Standalone HTML + MongoDB backup of app releases (**not** wired into the JUCE software).
 
-Starts at **v1.3.0**. Each entry can offer:
+Starts at **v1.3.0**. Current product cut: **v1.3.6**. Each entry can offer:
 
 - Source code zip
 - macOS DMG
-- Windows EXE
+- Windows Setup / ZIP
 
 ## Quick use
 
@@ -14,9 +14,11 @@ Starts at **v1.3.0**. Each entry can offer:
 cd version-archive
 cp .env.example .env   # once — put MONGODB_URI
 npm install
-node publish-version.mjs 1.3.0 "Baseline Q21S BEM heatmap release"
+node publish-version.mjs 1.3.6 "Mic ring snap + shape-edge Snap tak"
 npm start              # http://127.0.0.1:8787
 ```
+
+Local-only (no Mongo): put files under `artifacts/vX.Y.Z/` and list them in `versions.json` — `npm start` serves downloads from disk.
 
 ## Next releases
 
@@ -28,7 +30,7 @@ npm start              # http://127.0.0.1:8787
    ```
 2. Publish the archive entry:
    ```bash
-   node publish-version.mjs 1.3.1 "Short notes about the change"
+   node publish-version.mjs 1.3.7 "Short notes about the change"
    ```
 
 Cursor rule: `.cursor/rules/version-archive.mdc` (loads when working on releases / this folder).

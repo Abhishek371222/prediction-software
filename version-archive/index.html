@@ -77,8 +77,9 @@
     <h1>Atomik version archive</h1>
     <p class="sub">
       Standalone backup index (not part of the simulation app).
-      Starting at <strong>v1.3.0</strong> — download source, macOS DMG, or Windows EXE for any saved release.
-      Windows build for v1.3.0 lives under <code>artifacts/v1.3.0/</code>.
+      Starting at <strong>v1.3.0</strong> — download source, macOS DMG, or Windows
+      installer / ZIP for any saved release. Current product cut is
+      <strong>v1.3.6</strong> (mic ring snap + shape-edge Snap tak; Q21S embedded).
     </p>
     <p class="status" id="status">Loading versions…</p>
     <div id="list"></div>
@@ -114,6 +115,7 @@
           <article class="card">
             <div class="row">
               <span class="ver">v${v.version}</span>
+              ${v.version === '1.3.6' ? '<span class="tag">latest</span>' : ''}
               ${v.version === '1.3.0' ? '<span class="tag">baseline</span>' : ''}
               <span class="notes">${(v.notes || '').replace(/</g, '&lt;')}</span>
               <span class="date">${created}</span>
@@ -121,7 +123,9 @@
             <div class="btns">
               ${btn('Download source zip', `/download/${v.version}/source`, !!d.source?.available, d.source?.size)}
               ${btn('Download macOS DMG', `/download/${v.version}/mac`, !!d.mac?.available, d.mac?.size)}
-              ${btn('Download Windows ZIP (EXE + data)', `/download/${v.version}/windows`, !!d.windows?.available, d.windows?.size)}
+              ${btn(v.version === '1.3.0' ? 'Download Windows ZIP (EXE + data)'
+                  : (v.version === '1.3.5' ? 'Download Windows Setup' : 'Download Windows EXE'),
+                  `/download/${v.version}/windows`, !!d.windows?.available, d.windows?.size)}
             </div>
           </article>`;
       }).join('');

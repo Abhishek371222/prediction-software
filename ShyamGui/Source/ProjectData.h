@@ -148,7 +148,8 @@ struct ProjectData
             if (root->hasProperty ("dBfloor"))    p.dBfloor    = (double) root->getProperty ("dBfloor");
             if (root->hasProperty ("bandedSPL"))  p.bandedSPL  = (bool)   root->getProperty ("bandedSPL");
             if (root->hasProperty ("octaveSmoothing"))       p.octaveSmoothing = (bool) root->getProperty ("octaveSmoothing");
-            if (root->hasProperty ("useMeasuredDirectivity")) p.useMeasuredDirectivity = (bool) root->getProperty ("useMeasuredDirectivity");
+            // Measured directivity is product-default and no longer optional.
+            p.useMeasuredDirectivity = true;
 
             if (auto sv = root->getProperty ("speakers"); sv.isArray())
             {

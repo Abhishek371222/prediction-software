@@ -205,7 +205,7 @@ namespace UiConfig
         // Top param chip strip height
         constexpr int paramBarHeight          = 36;
         // Plot title bar above heatmap
-        constexpr int plotHeaderHeight        = 44;
+        constexpr int plotHeaderHeight        = 58;
         // Main window title band (logo + centred title)
         constexpr int headerBandHeight        = 44;
         // ATOMIK wordmark inside the header (−20% vs prior 18 px baseline)

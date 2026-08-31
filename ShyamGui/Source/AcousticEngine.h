@@ -82,9 +82,8 @@ struct SimParams
 
     std::vector<Speaker> speakers;
 
-    // Measured directivity (optional). When useMeasuredDirectivity is true and a
-    // pattern matching the simulation frequency exists, each source radiates with
-    // its measured shape instead of the omnidirectional monopole model.
+    // Measured Q21S BEM directivity tables. Always applied when non-empty
+    // (useMeasuredDirectivity is forced on — no UI toggle).
     std::vector<DirectivityPattern> directivity;
     // Absolute BEM mid-plane fields (Heatmap.m / Q21F). Loaded for tooling;
     // the live SPL heatmap uses measured polar directivity across the full world
@@ -112,7 +111,7 @@ struct SimResult
     std::vector<float> splAbsDB;     // absolute dB SPL (unfloored, measured-calibrated)
     std::vector<float> pressure;     // normalised real pressure in [-1, 1]
     std::vector<float> interference; // coherence ratio in [0, 1] (1 = constructive)
-    double peakAbsDb = 0.0;          // max absolute SPL on the grid
+    double peakAbsDb = 0.0;          // absolute SPL at heatmap Rel. SPL = 0 dB
     bool   hasAbsoluteSpl = false;   // true when splAbsDB is measured-calibrated dB SPL
 
     // Far-field polar pattern: 720 normalised magnitudes (0..1), 0.5 deg step
@@ -141,6 +140,11 @@ class AcousticEngine
 {
 public:
     static SimResult compute (const SimParams& p);
+
+    // Point probe (no full grid). intensityDb = 10·log10(I); absDb when measured.
+    // Used for Frequency Response curves across mics / frequencies.
+    static bool sampleIntensityAt (const SimParams& p, float x, float y,
+                                   float& intensityDb, float& absDb);
 
     // dB thresholds for the spec colour contour (0, -3, ... -18).
     static constexpr double kColourStepDB = 3.0;

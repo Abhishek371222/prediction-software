@@ -100,7 +100,9 @@ inline juce::Colour gray (float t)
 }
 
 // ---------------------------------------------------------------------------
-// Discrete bands matching Rel. SPL mockup ticks (0 → -36 db, 6 db steps).
+// Discrete bands matching Rel. SPL mockup ticks (0 → −36 db, 6 db steps).
+// dB floor is display range only — it does NOT stretch colours. A level of
+// −6 dB is always the same palette stop whether floor is −36 or −54.
 // ---------------------------------------------------------------------------
 inline const juce::Colour* splPalette()
 {
@@ -111,17 +113,38 @@ inline const juce::Colour* splPalette()
         juce::Colour (0xff7f597c),  // -18 db  magenta bridge
         juce::Colour (0xff3281b9),  // -24 db
         juce::Colour (0xff0a4d74),  // -30 db
-        juce::Colour (0xff231f20)   // -36 db
+        juce::Colour (0xff231f20)   // -36 db (and quieter / below floor)
     };
     return bands;
 }
 
-// Hard-banded colour for a relative SPL value in dB (<= 0).
-inline juce::Colour splBand (float dB, float stepDB = 3.0f)
+// Design span of sevenColor / palette (0 … −36 dB).
+inline constexpr float kRelSplDesignSpanDB = 36.0f;
+inline constexpr float kRelSplStepDB       = 6.0f;
+
+// Continuous map: fixed dB→colour (0 → t=1, −36 → t=0). Floor only clips.
+inline float relDbToColourT (float dB, float floorDB) noexcept
 {
-    int idx = (int) std::floor (-dB / stepDB);
+    if (floorDB < 0.0f && dB <= floorDB)
+        return 0.0f;
+    return juce::jlimit (0.0f, 1.0f, (dB + kRelSplDesignSpanDB) / kRelSplDesignSpanDB);
+}
+
+// Hard-banded colour for a relative SPL value in dB (<= 0).
+// Fixed step size (6 dB default, or 3 dB contour bands). Floor clips only.
+inline juce::Colour splBand (float dB, float stepDB = 6.0f)
+{
+    if (stepDB < 0.5f) stepDB = 0.5f;
+    int idx = (int) std::floor ((-dB) / stepDB + 1.0e-4f);
     idx = juce::jlimit (0, 6, idx);
     return splPalette()[idx];
+}
+
+inline juce::Colour splBandForFloor (float dB, float floorDB, float stepDB = 6.0f)
+{
+    if (floorDB < 0.0f && dB <= floorDB)
+        return splPalette()[6];
+    return splBand (dB, stepDB);
 }
 
 // Diverging blue-white-red map for signed pressure t in [0,1] (0.5 = zero).

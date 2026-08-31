@@ -1,10 +1,10 @@
 #pragma once
 #include <JuceHeader.h>
 #include "AcousticEngine.h"
+#include "EmbeddedQ21SData.h"
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <cstring>
 
 #ifndef M_PI
@@ -13,7 +13,8 @@
 
 // ---------------------------------------------------------------------------
 // MeasurementData - loads Q21S BEM-derived horizontal polar readings from
-// MeasurementIntegrationPack (CSV). Polars are exported from
+// MeasurementIntegrationPack (CSV), or from EmbeddedQ21SData baked into the EXE
+// when no sidecar Data/ folder is present. Polars are exported from
 // BEM_Data_10m/Q21S_10m_PolarPlotData.xlsx (true ±5 m field, native rear).
 // Converts to on-axis-normalised linear gain:
 //     R = 10^((SPL - SPL_onAxis)/20)
@@ -406,13 +407,11 @@ namespace MeasurementData
         return setName + "_" + juce::String (hz) + "Hz_" + distTag + "m.csv";
     }
 
-    inline RawSweep loadCsvSweep (const juce::File& file)
+    inline RawSweep loadCsvSweepText (const juce::String& text)
     {
         RawSweep out;
-        if (! file.existsAsFile()) return out;
-
         juce::StringArray lines;
-        file.readLines (lines);
+        lines.addLines (text);
         for (int i = 0; i < lines.size(); ++i)
         {
             auto line = lines[i].trim();
@@ -427,7 +426,29 @@ namespace MeasurementData
         return out;
     }
 
-    // Prefer MeasurementIntegrationPack CSV; fall back to legacy .xlsx.
+    inline RawSweep loadCsvSweep (const juce::File& file)
+    {
+        if (! file.existsAsFile()) return {};
+        return loadCsvSweepText (file.loadFileAsString());
+    }
+
+    inline RawSweep loadCsvSweepEmbedded (const char* fileName)
+    {
+        if (auto* e = EmbeddedQ21S::find (fileName))
+            return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
+        return {};
+    }
+
+    inline bool hasCsvOnDiskOrEmbedded (const juce::File& packDir,
+                                        const juce::String& csvName)
+    {
+        if (packDir.isDirectory() && packDir.getChildFile (csvName).existsAsFile())
+            return true;
+        return EmbeddedQ21S::hasFile (csvName.toRawUTF8());
+    }
+
+    // Prefer MeasurementIntegrationPack CSV (disk or baked into EXE);
+    // fall back to legacy .xlsx when neither is present.
     inline MeasuredCurve loadCurvePreferPack (const juce::File& packDir,
                                               const juce::File& xlsxFolder,
                                               int source, int hz, float distanceM)
@@ -442,6 +463,11 @@ namespace MeasurementData
         {
             c = buildCurve (loadCsvSweep (csv));
             srcName = csvName;
+        }
+        else if (auto emb = loadCsvSweepEmbedded (csvName.toRawUTF8()); emb.ok)
+        {
+            c = buildCurve (emb);
+            srcName = csvName + " (embedded)";
         }
         else
         {
@@ -492,9 +518,10 @@ namespace MeasurementData
 
         auto hasSweep = [&] (int hz) -> bool
         {
-            const bool hasCsv = packDir.getChildFile (csvFileName (setName, hz, 0.5f)).existsAsFile()
-                             || packDir.getChildFile (csvFileName (setName, hz, 1.0f)).existsAsFile()
-                             || packDir.getChildFile (csvFileName (setName, hz, 2.0f)).existsAsFile();
+            const bool hasCsv =
+                   hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 0.5f))
+                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 1.0f))
+                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 2.0f));
             const bool hasXlsx = fileFor (xlsxFolder, hz, "1").existsAsFile()
                               || fileFor (xlsxFolder, hz, "0.5").existsAsFile()
                               || fileFor (xlsxFolder, hz, "2").existsAsFile();
@@ -1135,7 +1162,10 @@ namespace MeasurementData
 
         const juce::File packDir    = packDataFolder();
         const juce::File xlsxFolder = xlsxFolderForSource (source);
-        set.packPath = packDir.isDirectory() ? packDir.getFullPathName() : juce::String();
+        if (packDir.isDirectory())
+            set.packPath = packDir.getFullPathName();
+        else if (EmbeddedQ21S::numFiles > 0)
+            set.packPath = "embedded://Q21S";   // baked into EXE — no sidecar Data/
 
         const auto freqList = discoverFrequencies (packDir, xlsxFolder, source);
 
@@ -1197,7 +1227,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.3.0'");
+        line ("Version='v1.3.6'");
         line ("Author='Atomik Prediction Software'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

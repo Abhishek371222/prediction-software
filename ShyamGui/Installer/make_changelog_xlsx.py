@@ -109,9 +109,18 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.3.6", "2026-08-31", "Mic snap + shape-edge tak",
+     "Restored original mic Drag::Mic ring snap; tak when drawings meet edge-to-edge; "
+     "start.md for build/run; v1.3.6 Windows Release"],
+    ["1.3.5", "2026-08-26", "Mic tool + embedded Q21S Setup",
+     "Virtual mics, FR floating window, Show Degrees, tak snap sound; "
+     "Q21S CSVs baked into EXE; Windows Setup without Excel/Data folder"],
     ["1.3.0", "2026-08-21", "Q21S BEM heatmap + Windows/mac product",
-     "BEM polar×1/r full-grid SPL, cardioid preset, Q21S 750×784×917 mm, "
-     "plot tools, undo/redo, ATOMIK branding, heatmap docs/zip, version archive"],
+     "BEM polar×1/r full-grid SPL, cardioid, Q21S 750×784×917 mm, plot tools/shapes, "
+     "undo/redo, ATOMIK branding, version archive, Windows portable ZIP (EXE+Data)"],
+    ["1.2.x", "~2026-07", "Beta UI redesign (betav1.2.3)",
+     "Graph colors.pdf chrome: brand tokens, heatmap colour stops, light/dark sidebar; "
+     "packaged as betav1.2.3-style Release"],
     ["1.1.0", "2026-06-29", "Major feature + UX release",
      "Theming, project dashboard/.atmk, heatmap + PDF export, grid/CAD-DXF, "
      "array presets, dual datasets, responsive window, branded installer"],
@@ -124,12 +133,68 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.3.0 detailed changes
+# Sheet 2: v1.3.6 detailed changes
+# ===========================================================================
+ws136 = wb.create_sheet("v1.3.6 Changes")
+ws136.sheet_view.showGridLines = False
+banner(ws136, "v1.3.6  -  Detailed Changes",
+       "2026-08-31  |  Mic ring snap + shape-edge Snap tak", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v136 = [
+    ["Mic tool", F, "Original Drag::Mic ring snap",
+     "Cursor-follow + 1/2/4/8 m latch + tak; no sticky lock from SelectionMove/object snap", "2026-08-31"],
+    ["Plot Snap", F, "Tak when shapes meet",
+     "Sound on rising edge of annotation edge contact; not speakers/mics/centres", "2026-08-31"],
+    ["Docs", A, "start.md",
+     "Repo-root build/run instructions for Windows Debug/Release and MSBuild", "2026-08-31"],
+    ["Packaging", C, "Version → v1.3.6",
+     "App, resource, installer defines, archive HTML/json", "2026-08-31"],
+]
+write_table(ws136, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v136, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws136.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.3.5 detailed changes
+# ===========================================================================
+ws135 = wb.create_sheet("v1.3.5 Changes")
+ws135.sheet_view.showGridLines = False
+banner(ws135, "v1.3.5  -  Detailed Changes",
+       "2026-08-26  |  Mic tool + embedded Q21S Windows Setup", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v135 = [
+    ["Mic tool", A, "Virtual receivers on heatmap",
+     "Add Mic / Place on ring; ring snap 1/2/4/8 m; live relative dB; Esc cancels arm", "2026-08-26"],
+    ["Mic tool", A, "Show Degrees toggle",
+     "Angle vs Q21S facing (0° = front, CCW) shown before dB on mic labels", "2026-08-26"],
+    ["Mic tool", A, "Floating Frequency Response window",
+     "Opens when mics exist; does not shrink the plot; curves from sampleIntensityAt", "2026-08-26"],
+    ["Mic tool", A, "Tak snap sound",
+     "In-memory WAV via winmm; no .wav asset on disk", "2026-08-26"],
+    ["Packaging", A, "Embedded Q21S CSVs in EXE",
+     "EmbeddedQ21SData; heatmaps work without MeasurementIntegrationPack or Excel", "2026-08-26"],
+    ["Packaging", A, "Windows Setup v1.3.5",
+     "AtomikSimulationEngine-Setup-v1.3.5.exe — EXE + fonts only (no Excel)", "2026-08-26"],
+    ["Packaging", C, "Installer drops Excel folders",
+     "setup.iss no longer ships Factory Readings / shyamGuildMeasurements xlsx", "2026-08-26"],
+]
+write_table(ws135, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v135, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws135.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.3.0 detailed changes
 # ===========================================================================
 ws13 = wb.create_sheet("v1.3.0 Changes")
 ws13.sheet_view.showGridLines = False
 banner(ws13, "v1.3.0  -  Detailed Changes",
-       "Development window 2026-08-12 -> 2026-08-21", 5)
+       "Development window 2026-08-12 -> 2026-08-21 (portable ZIP same day)", 5)
 
 A, C, F = "Added", "Changed", "Fixed"
 v13 = [
@@ -140,9 +205,13 @@ v13 = [
     ["Docs / pack", A, "Single-sub heatmap pack",
      "docs/SINGLE_SUB_HEATMAP.md, native-Hz figures, generator script, dist_packages zip", "2026-08-21"],
     ["Archive", A, "Version archive (HTML + MongoDB)",
-     "version-archive/: list releases from v1.3.0; download source zip / macOS DMG / Windows EXE (standalone, not in-app)", "2026-08-21"],
+     "version-archive/: releases from v1.3.0; source zip / macOS DMG / Windows ZIP (EXE+Data); local artifacts serve without Mongo", "2026-08-21"],
+    ["Packaging", A, "Windows portable ZIP",
+     "EXE + MeasurementIntegrationPack\\Data (Q21S CSVs); required for other PCs — bare EXE alone cannot load heatmaps", "2026-08-21"],
     ["Plot tools", A, "Heatmap drawing tools",
      "Select, Pan, Pencil, Eraser, Ruler, Line + colour swatch; annotations in world metres", "2026-08-19"],
+    ["Plot tools", A, "Shapes + fill opacity",
+     "Rectangle, Square, Circle tools with opacity slider; undo/redo covers shapes", "2026-08-21"],
     ["Plot tools", A, "BEM / directivity field math",
      "Tightened BEM and measured-directivity field formation (commit 633fc36)", "2026-08-19"],
     ["Editing", A, "Undo / redo",
@@ -155,6 +224,10 @@ v13 = [
      "Plan drawing + hit-test use true W×D; 1/r singularity floor = depth/2", "2026-08-21"],
     ["Engine", C, "Heatmap uses 2 m BEM arc",
      "Array/SPL prediction keeps far-field arc; Measured Polar can still show nearer distances", "2026-08-21"],
+    ["Engine", C, "World 100×100 m",
+     "Was 30×30 m in v1.0; full-grid Q21S coverage prediction", "2026-08-21"],
+    ["Measurement", C, "Q21S product set / native BEM Hz",
+     "Catalogue 20,29,52,81,98,153,198,256,309,352,400,401 Hz; UI Ground Plane only", "2026-08-21"],
     ["Branding", C, "Product name",
      "Atomik Acoustic Simulation Engine -> Atomik Simulation Engine; UI/PDF/CSV/installer/file version = v1.3.0", "2026-08-19"],
     ["Branding", C, "ATOMIK-only wordmark",
@@ -169,6 +242,8 @@ v13 = [
      "Cabinet labels use hyphen; Reset renamed Set to Default", "2026-08-12"],
     ["Engine", F, "No ±5 m BEM stamp on live map",
      "Full 100×100 m map follows polar × inverse-square instead of a near-field island", "2026-08-21"],
+    ["Windows", F, "Q21S pack path (vs legacy D:\\shayam gui)",
+     "Prefer exe/repo MeasurementIntegrationPack with Q21S_52Hz_2p0m.csv marker; avoid Factory/ShyamGuild-only legacy pack", "2026-08-21"],
     ["Header", F, "Version no longer clips",
      "Was showing v1... instead of v1.3.0; layout uses real logo width", "2026-08-19"],
     ["UI", F, "Small-screen logo",
@@ -180,6 +255,31 @@ write_table(ws13, 4, ["Section", "Type", "Item", "Details", "Date"],
             type_colors=type_colors, type_col=2)
 ws13.freeze_panes = "A5"
 ws13.auto_filter.ref = f"A4:E{4 + len(v13)}"
+
+# ===========================================================================
+# Sheet: v1.2.x beta UI redesign
+# ===========================================================================
+ws12 = wb.create_sheet("v1.2.x Beta UI")
+ws12.sheet_view.showGridLines = False
+banner(ws12, "v1.2.x  -  Beta UI redesign (through betav1.2.3)",
+       "~2026-07  |  Graph colors.pdf chrome between v1.1.0 and v1.3.0", 5)
+v12 = [
+    ["Brand", C, "Graph colors.pdf tokens",
+     "Charcoal / white / ash / signal red + heatmap cool/hot stops in BrandTheme.h", "~2026-07"],
+    ["Brand", C, "Signal Red accents",
+     "Interactive accent #ED2227 for controls (later refined in 1.3.0 ATOMIK branding)", "~2026-07"],
+    ["Heatmap", C, "Colour map + Rel. SPL chrome",
+     "Cool/hot stops and legend chrome aligned to brand mockups", "~2026-07"],
+    ["UI", C, "Light / dark chrome",
+     "Sidebar density, speaker markers, plot chrome, header actions", "~2026-07"],
+    ["Packaging", A, "betav1.2.3-style Release",
+     "Signed Windows packaging of the redesign build (see Tools/make_ui_changelog_doc.py)", "~2026-07"],
+]
+write_table(ws12, 4, ["Section", "Type", "Item", "Details", "Date"],
+            v12, [16, 10, 34, 78, 13],
+            type_colors=type_colors, type_col=2)
+ws12.freeze_panes = "A5"
+ws12.auto_filter.ref = f"A4:E{4 + len(v12)}"
 
 # ===========================================================================
 # Sheet 3: v1.1.0 detailed changes
@@ -320,8 +420,10 @@ timeline = [
     ["2026-08-12", "PS-001…PS-019: 1/3-octave freqs, Ground Plane-only UI, XN18-n, -6 dB legend, PDF/CSV/PNG polish, Set to Default"],
     ["2026-08-13", "prediction-software repo initial commit (Q21S / XN18 tree)"],
     ["2026-08-19", "Plot drawing tools + BEM/directivity math (633fc36)"],
+    ["2026-07 (approx)", "v1.2.x beta UI redesign (Graph colors.pdf → betav1.2.3 packaging)"],
     ["2026-08-19", "v1.3.0 Windows build: Atomik Simulation Engine rename, ATOMIK-only logo, header v1.3.0 fix, Ctrl+Z/Y, Statistics button, single Release exe"],
-    ["2026-08-21", "Q21S BEM polar×1/r, cardioid preset, cabinet size, heatmap docs/zip, version archive; CHANGELOG date → 2026-08-21"],
+    ["2026-08-21", "Q21S BEM polar×1/r, cardioid, cabinet size, heatmap docs, version archive; plot shapes + opacity"],
+    ["2026-08-21", "Windows Q21S data-path fix + portable ZIP (EXE+MeasurementIntegrationPack); archive Windows = ZIP"],
 ]
 write_table(ws4, 4, ["Date", "Work landed"], timeline, [14, 110])
 ws4.freeze_panes = "A5"

@@ -23,6 +23,7 @@ public:
     std::function<void()> onWillEdit;          // before a user-visible mutation
     std::function<void()>    onChanged;            // any parameter changed
     std::function<void()>    onRunClicked;         // explicit recompute
+    std::function<void()>    onClearAll;           // clear SPL heatmap drawings / lines
     std::function<void(int)> onSelectionChanged;   // selected speaker index
     std::function<void()>    onSectionsChanged;    // a section expanded/collapsed (re-size viewport)
 
@@ -60,6 +61,12 @@ public:
 
     void setSpeakerPosition (int index, float x, float y);
     void selectSpeaker (int index);
+    /** Sync plot multi-select into the panel (primary drives the editor values). */
+    void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
+    /** Append speakers (e.g. paste); returns new indices. Does not fire onSelectionChanged. */
+    std::vector<int> appendSpeakers (const std::vector<Speaker>& added);
+    /** Remove speakers by index (highest first). */
+    void removeSpeakers (const std::vector<int>& indices);
     void resetToDefaults();
     void refreshUnits();    // update position labels/readouts for current unit system
 
@@ -75,6 +82,8 @@ private:
     void deleteSpeaker();
     void applyDeviceLayout (int count);   // 1/2/3 devices, same plane, 3 m apart
     void pushEdit();          // commit editor values into selected speaker
+    void pushPositionEdit();  // X/Y only — avoids quantizing snapped positions
+    void pushSharedEdit();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
     void willEdit();
 
@@ -85,6 +94,7 @@ private:
     // Scene state
     std::vector<Speaker> speakers_;
     int  selected_ = 0;
+    std::vector<int> selectedSpeakers_; // multi-select from plot; empty → use selected_
     bool updatingUI_ = false;
 
     // Frequency
@@ -116,7 +126,7 @@ private:
     juce::Label  floorLabel_;
     juce::Slider floorSlider_;
     juce::ToggleButton bandsToggle_;
-    juce::ToggleButton measuredDirToggle_;
+    // Measured directivity is always on (Q21S BEM) — no UI toggle.
 
     // Measurement dataset + distance (kept separate per set)
     juce::Label    measSetLabel_;
@@ -152,7 +162,7 @@ private:
     void setSectionVisible (const std::initializer_list<juce::Component*>& items, bool vis);
 
     // Actions
-    juce::TextButton runBtn_, resetBtn_;
+    juce::TextButton runBtn_, resetBtn_, clearAllBtn_;
 
     static juce::Colour kHdr()    { return Brand::heading(); }
     static juce::Colour kText()   { return Brand::ash(); }
