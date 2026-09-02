@@ -603,7 +603,8 @@ void RadiationPatternComponent::updateDrawPrompt()
             drawShape_ == DrawShape::Polyline  ? "POLYLINE" :
             drawShape_ == DrawShape::Circle    ? "CIRCLE" :
             drawShape_ == DrawShape::Arc       ? "ARC" :
-            drawShape_ == DrawShape::Rectangle ? "RECTANGLE" : "SQUARE";
+            drawShape_ == DrawShape::Rectangle ? "RECTANGLE" :
+            drawShape_ == DrawShape::Square    ? "SQUARE" : "TEXT BOX";
 
         const char* method =
             construction_ == Construction::LineTwoPoints      ? "2 Points" :
@@ -613,7 +614,7 @@ void RadiationPatternComponent::updateDrawPrompt()
             construction_ == Construction::CircleCenterRadius ? "Center + Radius" :
             construction_ == Construction::CircleTwoPoints    ? "2 Points (diameter)" :
             construction_ == Construction::ArcThreePoints     ? "3 Points" :
-            construction_ == Construction::RectTwoCorners     ? "2 Corners" :
+            construction_ == Construction::TextBoxTwoCorners  ? "2 Corners" :
                                                                 "2 Corners";
 
         const int n = (int) sessionPts_.size();
@@ -744,6 +745,28 @@ juce::Rectangle<float> RadiationPatternComponent::annotationAnnotBounds (
          || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
         return normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
 
+    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    {
+        const auto local = textBoxLocalRect (a);
+        const auto c = local.getCentre();
+        const juce::Point<float> corners[4] = {
+            rotateAround ({ local.getX(), local.getY() }, c, a.rotationDeg),
+            rotateAround ({ local.getRight(), local.getY() }, c, a.rotationDeg),
+            rotateAround ({ local.getRight(), local.getBottom() }, c, a.rotationDeg),
+            rotateAround ({ local.getX(), local.getBottom() }, c, a.rotationDeg)
+        };
+        float minX = corners[0].x, maxX = corners[0].x;
+        float minY = corners[0].y, maxY = corners[0].y;
+        for (const auto& p : corners)
+        {
+            minX = juce::jmin (minX, p.x);
+            maxX = juce::jmax (maxX, p.x);
+            minY = juce::jmin (minY, p.y);
+            maxY = juce::jmax (maxY, p.y);
+        }
+        return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY);
+    }
+
     float minX = a.pts.front().x, maxX = minX;
     float minY = a.pts.front().y, maxY = minY;
     for (const auto& p : a.pts)
@@ -783,9 +806,46 @@ juce::Rectangle<float> RadiationPatternComponent::selectionAnnotBounds() const
     return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY);
 }
 
+juce::Rectangle<float> RadiationPatternComponent::selectionMoveBounds() const
+{
+    bool any = false;
+    float minX = 0, minY = 0, maxX = 0, maxY = 0;
+    auto grow = [&] (juce::Rectangle<float> b)
+    {
+        if (b.isEmpty()) return;
+        if (! any)
+        {
+            minX = b.getX(); minY = b.getY();
+            maxX = b.getRight(); maxY = b.getBottom();
+            any = true;
+        }
+        else
+        {
+            minX = juce::jmin (minX, b.getX());
+            minY = juce::jmin (minY, b.getY());
+            maxX = juce::jmax (maxX, b.getRight());
+            maxY = juce::jmax (maxY, b.getBottom());
+        }
+    };
+
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        grow (annotationAnnotBounds (annotations_[(size_t) idx]));
+    }
+    for (int idx : selectedSpeakers_)
+    {
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        grow (speakerFootprintWorld (speakers_[(size_t) idx]));
+    }
+
+    if (! any) return {};
+    return juce::Rectangle<float>::leftTopRightBottom (minX, minY, maxX, maxY);
+}
+
 juce::Point<float> RadiationPatternComponent::selectionSnapReference() const
 {
-    const auto b = selectionAnnotBounds();
+    const auto b = selectionMoveBounds();
     if (! b.isEmpty())
         return { b.getX(), b.getY() };
 
@@ -794,12 +854,6 @@ juce::Point<float> RadiationPatternComponent::selectionSnapReference() const
     {
         const auto& m = mics_[(size_t) selectedMics_.front()];
         return { m.x, m.y };
-    }
-    if (! selectedSpeakers_.empty() && selectedSpeakers_.front() >= 0
-        && selectedSpeakers_.front() < (int) speakers_.size())
-    {
-        const auto& s = speakers_[(size_t) selectedSpeakers_.front()];
-        return { s.x, s.y };
     }
     return {};
 }
@@ -864,11 +918,7 @@ void RadiationPatternComponent::collectObjectSnapAxes (std::vector<float>& xs,
         {
             if (ignoreSelected && isSpeakerSelected (i)) continue;
             const auto& spk = speakers_[(size_t) i];
-            addX (spk.x);
-            addY (spk.y);
-            const float hw = 0.5f * Q21SCabinet::widthM;
-            const float hd = 0.5f * Q21SCabinet::depthM;
-            addBounds ({ spk.x - hw, spk.y - hd, hw * 2.0f, hd * 2.0f });
+            addBounds (speakerFootprintWorld (spk));
         }
     }
 }
@@ -935,6 +985,41 @@ bool RadiationPatternComponent::selectionMeetsOtherAnnotation (juce::Rectangle<f
             if (std::abs (sel.getX()     - o.getRight())  <= tol) return true; // A left  | B right
             if (std::abs (sel.getX()     - o.getX())      <= tol) return true; // lefts aligned
             if (std::abs (sel.getRight() - o.getRight())  <= tol) return true; // rights aligned
+        }
+        if (xOverlap)
+        {
+            if (std::abs (sel.getBottom() - o.getY())       <= tol) return true;
+            if (std::abs (sel.getY()      - o.getBottom())  <= tol) return true;
+            if (std::abs (sel.getY()      - o.getY())       <= tol) return true;
+            if (std::abs (sel.getBottom() - o.getBottom())  <= tol) return true;
+        }
+    }
+    return false;
+}
+
+bool RadiationPatternComponent::selectionMeetsOtherSpeaker (juce::Rectangle<float> sel) const
+{
+    if (sel.isEmpty()) return false;
+
+    const float tol = juce::jmax (0.02f, 2.5f / juce::jmax (1.0f, worldScaleX()));
+
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        if (isSpeakerSelected (i)) continue;
+        const auto o = speakerFootprintWorld (speakers_[(size_t) i]);
+        if (o.isEmpty()) continue;
+
+        const bool yOverlap = sel.getY() <= o.getBottom() + tol
+                           && sel.getBottom() >= o.getY() - tol;
+        const bool xOverlap = sel.getX() <= o.getRight() + tol
+                           && sel.getRight() >= o.getX() - tol;
+
+        if (yOverlap)
+        {
+            if (std::abs (sel.getRight() - o.getX())      <= tol) return true;
+            if (std::abs (sel.getX()     - o.getRight())  <= tol) return true;
+            if (std::abs (sel.getX()     - o.getX())      <= tol) return true;
+            if (std::abs (sel.getRight() - o.getRight())  <= tol) return true;
         }
         if (xOverlap)
         {
@@ -1172,6 +1257,15 @@ bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
         a.kind = Annotation::Kind::Line;
         a.pts = { sessionPts_[0], sessionPts_[1] };
         a.thicknessPx = 2.2f;
+        // Reject near-zero segments (e.g. accidental double-click).
+        const float minLen = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 1.0e-4f : 1.0e-3f;
+        if (a.pts[0].getDistanceFrom (a.pts[1]) <= minLen)
+        {
+            sessionPts_.pop_back();
+            updateDrawPrompt();
+            repaint();
+            return true;
+        }
         commitAnnotation (std::move (a));
         return true;
     }
@@ -1215,6 +1309,18 @@ bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
                                                    : Annotation::Kind::Rectangle;
         a.pts = { sessionPts_[0], sessionPts_[1] };
         commitAnnotation (std::move (a));
+        return true;
+    }
+
+    if (drawShape_ == DrawShape::TextBox)
+    {
+        a.kind = Annotation::Kind::TextBox;
+        a.pts = { sessionPts_[0], sessionPts_[1] };
+        a.text = "Text";
+        a.rotationDeg = 0.0f;
+        a.thicknessPx = 1.5f;
+        commitAnnotation (std::move (a));
+        promptEditTextBox ((int) annotations_.size() - 1);
         return true;
     }
 
@@ -1278,8 +1384,11 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> annotPt, float rad
                 || a.kind == Annotation::Kind::Square
                 || a.kind == Annotation::Kind::Circle
                 || a.kind == Annotation::Kind::Arc
-                || a.kind == Annotation::Kind::Polyline)
-                return pointHitsShape (annotPt, a, radius);
+                || a.kind == Annotation::Kind::Polyline
+                || a.kind == Annotation::Kind::TextBox)
+                return a.kind == Annotation::Kind::TextBox
+                    ? pointHitsTextBox (annotPt, a, radius)
+                    : pointHitsShape (annotPt, a, radius);
 
             if (a.pts.empty()) return true;
             if (a.pts.size() == 1)
@@ -1299,7 +1408,8 @@ bool RadiationPatternComponent::isFilledShapeKind (Annotation::Kind k) noexcept
 {
     return k == Annotation::Kind::Rectangle
         || k == Annotation::Kind::Square
-        || k == Annotation::Kind::Circle;
+        || k == Annotation::Kind::Circle
+        || k == Annotation::Kind::TextBox;
 }
 
 int RadiationPatternComponent::annotationHitTest (juce::Point<float> annotPt,
@@ -1315,9 +1425,12 @@ int RadiationPatternComponent::annotationHitTest (juce::Point<float> annotPt,
             || a.kind == Annotation::Kind::Square
             || a.kind == Annotation::Kind::Circle
             || a.kind == Annotation::Kind::Arc
-            || a.kind == Annotation::Kind::Polyline)
+            || a.kind == Annotation::Kind::Polyline
+            || a.kind == Annotation::Kind::TextBox)
         {
-            if (pointHitsShape (annotPt, a, radius))
+            if (a.kind == Annotation::Kind::TextBox
+                ? pointHitsTextBox (annotPt, a, radius)
+                : pointHitsShape (annotPt, a, radius))
                 return i;
             continue;
         }
@@ -1429,6 +1542,21 @@ std::vector<juce::Point<float>> RadiationPatternComponent::resizeHandlesFor (
         return h;
     }
 
+    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    {
+        const auto r = textBoxLocalRect (a);
+        const auto c = r.getCentre();
+        // 0–3: corners (rotated). 4: rotate grip above top-centre.
+        h.push_back (rotateAround ({ r.getX(), r.getY() }, c, a.rotationDeg));
+        h.push_back (rotateAround ({ r.getRight(), r.getY() }, c, a.rotationDeg));
+        h.push_back (rotateAround ({ r.getRight(), r.getBottom() }, c, a.rotationDeg));
+        h.push_back (rotateAround ({ r.getX(), r.getBottom() }, c, a.rotationDeg));
+        const float lift = juce::jmax (r.getHeight() * 0.35f,
+                                       (a.space == AnnotSpace::PolarPlot) ? 0.06f : 0.8f);
+        h.push_back (rotateAround ({ r.getCentreX(), r.getBottom() + lift }, c, a.rotationDeg));
+        return h;
+    }
+
     if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
     {
         const auto c = a.pts[0];
@@ -1481,6 +1609,24 @@ void RadiationPatternComponent::applyAnnotationResize (Annotation& a, int handle
         a.pts.resize (2);
         a.pts[0] = fixed;
         a.pts[1] = pt;
+        return;
+    }
+
+    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2 && handleIndex < 4)
+    {
+        const auto r = textBoxLocalRect (a);
+        const auto c = r.getCentre();
+        const auto localPt = rotateAround (pt, c, -a.rotationDeg);
+        const juce::Point<float> corners[4] = {
+            { r.getX(),     r.getY() },
+            { r.getRight(), r.getY() },
+            { r.getRight(), r.getBottom() },
+            { r.getX(),     r.getBottom() }
+        };
+        const auto fixed = corners[(handleIndex + 2) % 4];
+        a.pts.resize (2);
+        a.pts[0] = fixed;
+        a.pts[1] = localPt;
         return;
     }
 
@@ -1541,20 +1687,43 @@ void RadiationPatternComponent::drawSelectionOverlay (juce::Graphics& g, const A
             juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
         g.drawRect (sr, 1.5f);
     }
+    else if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    {
+        const auto handles = resizeHandlesFor (a);
+        if (handles.size() >= 4)
+        {
+            juce::Path outline;
+            auto s0 = annotateToScreen (a, handles[0]);
+            outline.startNewSubPath (s0);
+            for (int i = 1; i < 4; ++i)
+                outline.lineTo (annotateToScreen (a, handles[(size_t) i]));
+            outline.closeSubPath();
+            g.strokePath (outline, juce::PathStrokeType (1.5f));
+            if (handles.size() >= 5)
+            {
+                auto topMid = annotateToScreen (a, (handles[0] + handles[1]) * 0.5f);
+                auto rot = annotateToScreen (a, handles[4]);
+                g.drawLine (topMid.x, topMid.y, rot.x, rot.y, 1.2f);
+            }
+        }
+    }
 
     // Resize grips only when this is the sole selected drawing.
     const bool showGrips = (selectedAnnots_.size() == 1
                             && selectedMics_.empty()
                             && selectedSpeakers_.empty());
-    for (const auto& p : resizeHandlesFor (a))
+    const auto handles = resizeHandlesFor (a);
+    for (size_t hi = 0; hi < handles.size(); ++hi)
     {
+        const auto& p = handles[hi];
         auto s = annotateToScreen (a, p);
-        g.setColour (Brand::accent());
+        const bool isRotate = (a.kind == Annotation::Kind::TextBox && hi == 4);
+        g.setColour (isRotate ? Brand::white() : Brand::accent());
         if (showGrips)
             g.fillEllipse (s.x - 4.5f, s.y - 4.5f, 9.0f, 9.0f);
         else
             g.drawEllipse (s.x - 3.5f, s.y - 3.5f, 7.0f, 7.0f, 1.4f);
-        g.setColour (Brand::panelDark());
+        g.setColour (isRotate ? Brand::accent() : Brand::panelDark());
         g.drawEllipse (s.x - 4.5f, s.y - 4.5f, 9.0f, 9.0f, 1.2f);
     }
 }
@@ -1573,6 +1742,16 @@ juce::Rectangle<float> RadiationPatternComponent::annotationScreenBounds (
         return juce::Rectangle<float>::leftTopRightBottom (
             juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
             juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y)).expanded (3.0f);
+    }
+
+    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    {
+        const auto ab = annotationAnnotBounds (a);
+        auto s0 = annotateToScreen (a, { ab.getX(), ab.getY() });
+        auto s1 = annotateToScreen (a, { ab.getRight(), ab.getBottom() });
+        return juce::Rectangle<float>::leftTopRightBottom (
+            juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
+            juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y)).expanded (8.0f);
     }
 
     float minX = 1.0e9f, minY = 1.0e9f, maxX = -1.0e9f, maxY = -1.0e9f;
@@ -1682,6 +1861,63 @@ juce::Rectangle<float> RadiationPatternComponent::normalisedShapeRect (
     return juce::Rectangle<float>::leftTopRightBottom (
         juce::jmin (a.x, b.x), juce::jmin (a.y, b.y),
         juce::jmax (a.x, b.x), juce::jmax (a.y, b.y));
+}
+
+juce::Point<float> RadiationPatternComponent::rotateAround (juce::Point<float> p,
+                                                            juce::Point<float> c,
+                                                            float deg) noexcept
+{
+    const float rad = deg * (float) M_PI / 180.0f;
+    const float cs = std::cos (rad), sn = std::sin (rad);
+    const float dx = p.x - c.x, dy = p.y - c.y;
+    return { c.x + dx * cs - dy * sn, c.y + dx * sn + dy * cs };
+}
+
+juce::Rectangle<float> RadiationPatternComponent::textBoxLocalRect (const Annotation& a) noexcept
+{
+    if (a.pts.size() < 2) return {};
+    return normalisedShapeRect (a.pts[0], a.pts[1], Annotation::Kind::Rectangle);
+}
+
+bool RadiationPatternComponent::pointHitsTextBox (juce::Point<float> pt,
+                                                  const Annotation& a,
+                                                  float radius) const noexcept
+{
+    const auto local = textBoxLocalRect (a);
+    if (local.isEmpty()) return false;
+    const auto c = local.getCentre();
+    const auto unrot = rotateAround (pt, c, -a.rotationDeg);
+    return local.expanded (radius).contains (unrot);
+}
+
+void RadiationPatternComponent::promptEditTextBox (int index)
+{
+    if (index < 0 || index >= (int) annotations_.size()) return;
+    if (annotations_[(size_t) index].kind != Annotation::Kind::TextBox) return;
+
+    auto aw = std::make_shared<juce::AlertWindow> (
+        "Text Box", "Enter label text:", juce::AlertWindow::NoIcon);
+    aw->addTextEditor ("txt", annotations_[(size_t) index].text, "Text:");
+    aw->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    aw->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [safe = juce::Component::SafePointer<RadiationPatternComponent> (this),
+             index, aw] (int result)
+            {
+                if (safe == nullptr || result != 1) return;
+                if (index < 0 || index >= (int) safe->annotations_.size()) return;
+                auto& a = safe->annotations_[(size_t) index];
+                if (a.kind != Annotation::Kind::TextBox) return;
+                const auto next = aw->getTextEditorContents ("txt").trim();
+                if (next == a.text) return;
+                if (safe->onWillEdit) safe->onWillEdit();
+                a.text = next.isNotEmpty() ? next : juce::String ("Text");
+                if (safe->onEditCommitted) safe->onEditCommitted();
+                safe->repaint();
+            }),
+        false);
 }
 
 
@@ -1864,6 +2100,12 @@ void RadiationPatternComponent::updateRubberBandAt (juce::Point<float> screenPt)
 bool RadiationPatternComponent::tryFinishRubberBandAt (juce::Point<float> screenPt)
 {
     // Click-drag-release: finish 2-point shapes / ruler when the drag travelled enough.
+    // Use screen pixels — world minDist (~5 cm) is sub-pixel at Fit View, so a plain
+    // click's mouseUp used to commit an invisible micro-line and eat the first stroke.
+    constexpr float kMinDragPx = 6.0f;
+    if (screenPt.getDistanceFrom (rubberBandStartScreen_) < kMinDragPx)
+        return false;
+
     updateRubberBandAt (screenPt);
     if (! hoverValid_)
         return false;
@@ -1872,8 +2114,7 @@ bool RadiationPatternComponent::tryFinishRubberBandAt (juce::Point<float> screen
     {
         auto annot = applyOrtho (pendingStartWorld_, hoverAnnot_);
         annot = snapAnnotPoint (annot);
-        const float minDist = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 0.02f : 0.05f;
-        if (pendingStartWorld_.getDistanceFrom (annot) <= minDist)
+        if (pendingStartWorld_.getDistanceFrom (annot) <= 1.0e-6f)
             return false;
         if (onWillEdit) onWillEdit();
         Annotation a;
@@ -1899,8 +2140,7 @@ bool RadiationPatternComponent::tryFinishRubberBandAt (juce::Point<float> screen
     {
         auto p = applyOrtho (sessionPts_.back(), hoverAnnot_);
         p = snapAnnotPoint (p);
-        const float minDist = (currentAnnotSpace() == AnnotSpace::PolarPlot) ? 0.02f : 0.05f;
-        if (sessionPts_.front().getDistanceFrom (p) <= minDist)
+        if (sessionPts_.front().getDistanceFrom (p) <= 1.0e-6f)
             return false;
         acceptAnnotPoint (p);
         return true;
@@ -2002,6 +2242,79 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
     g.drawRect (sr, a.thicknessPx);
 }
 
+void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
+                                                       const Annotation& a,
+                                                       float alphaMul)
+{
+    if (a.kind != Annotation::Kind::TextBox || a.pts.size() < 2) return;
+
+    juce::Graphics::ScopedSaveState ss (g);
+    g.setOpacity (1.0f);
+
+    const auto local = textBoxLocalRect (a);
+    if (local.getWidth() < 1.0e-6f || local.getHeight() < 1.0e-6f) return;
+
+    const auto c = local.getCentre();
+    const juce::Point<float> corners[4] = {
+        rotateAround ({ local.getX(), local.getY() }, c, a.rotationDeg),
+        rotateAround ({ local.getRight(), local.getY() }, c, a.rotationDeg),
+        rotateAround ({ local.getRight(), local.getBottom() }, c, a.rotationDeg),
+        rotateAround ({ local.getX(), local.getBottom() }, c, a.rotationDeg)
+    };
+
+    juce::Path path;
+    auto s0 = annotateToScreen (a, corners[0]);
+    path.startNewSubPath (s0);
+    for (int i = 1; i < 4; ++i)
+        path.lineTo (annotateToScreen (a, corners[i]));
+    path.closeSubPath();
+
+    const float fillA = juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul;
+    const float strokeA = juce::jlimit (0.2f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+    const auto base = juce::Colour::fromFloatRGBA (a.colour.getFloatRed(),
+                                                   a.colour.getFloatGreen(),
+                                                   a.colour.getFloatBlue(),
+                                                   1.0f);
+
+    g.setColour (base.withAlpha (fillA));
+    g.fillPath (path);
+    g.setColour (base.withAlpha (strokeA));
+    g.strokePath (path, juce::PathStrokeType (juce::jmax (1.0f, a.thicknessPx)));
+
+    const auto label = a.text.isNotEmpty() ? a.text : juce::String ("Text");
+    auto sc = annotateToScreen (a, c);
+    // Screen-space rotation: world +Y is up, screen +Y is down → negate.
+    const float screenDeg = -a.rotationDeg;
+
+    auto sA = annotateToScreen (a, corners[0]);
+    auto sB = annotateToScreen (a, corners[1]);
+    auto sD = annotateToScreen (a, corners[3]);
+    const float wPx = sA.getDistanceFrom (sB);
+    const float hPx = sA.getDistanceFrom (sD);
+    if (wPx < 8.0f || hPx < 8.0f) return;
+
+    const float pad = 4.0f;
+    const float fontH = juce::jlimit (9.0f, 28.0f, hPx * 0.45f);
+    g.setFont (Brand::tech (fontH, false));
+
+    const bool lightBg = base.getPerceivedBrightness() > 0.55f;
+    const auto ink = (lightBg ? juce::Colours::black : juce::Colours::white)
+                         .withAlpha (juce::jlimit (0.35f, 1.0f, alphaMul));
+
+    {
+        juce::Graphics::ScopedSaveState textSs (g);
+        g.addTransform (juce::AffineTransform::rotation (
+            screenDeg * (float) M_PI / 180.0f, sc.x, sc.y));
+        auto box = juce::Rectangle<float> (sc.x - wPx * 0.5f + pad,
+                                           sc.y - hPx * 0.5f + pad,
+                                           juce::jmax (1.0f, wPx - pad * 2.0f),
+                                           juce::jmax (1.0f, hPx - pad * 2.0f));
+        g.setColour (ink);
+        g.drawFittedText (label, box.toNearestInt(),
+                          juce::Justification::centred, 4, 0.8f);
+    }
+}
+
 void RadiationPatternComponent::drawArcAnnotation (juce::Graphics& g,
                                                    const Annotation& a,
                                                    float alphaMul)
@@ -2080,7 +2393,8 @@ void RadiationPatternComponent::updateData (const SimResult& result, const SimPa
 {
     result_ = result;
     params_ = params;
-    hasData_ = (result_.width > 0);
+    // No active units → keep the plot empty ("Add a Q21S unit…") instead of a blank heatmap.
+    hasData_ = (result_.width > 0 && result_.activeSpeakers > 0);
     // First load, or still at default Fit View: fill the whole plot pane.
     if (! viewInit_ || std::abs (zoom_ - 1.0f) < 0.02f)
         fitView();
@@ -2855,34 +3169,40 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 
         auto box = speakerFootprintScreen (spk);
 
-        if (isSel)
-        {
-            // Vivid magenta-red selection glow — distinct from heatmap SPL reds (#ed2227 / orange).
-            const auto glow = juce::Colour (0xffff3d6e);
-            for (int ring = 4; ring >= 1; --ring)
-            {
-                const float expand = 2.0f + (float) ring * 2.5f;
-                const float a = (0.10f + 0.10f * (float) (5 - ring)) * alpha;
-                g.setColour (glow.withAlpha (a));
-                g.fillRoundedRectangle (box.expanded (expand), 3.0f);
-            }
-            g.setColour (glow.withAlpha (0.75f * alpha));
-            g.drawRoundedRectangle (box.expanded (3.5f), 2.5f, 2.2f);
-        }
-
+        // Body fill first so selection glow can sit inside the footprint.
         g.setColour (Brand::white().withAlpha (0.92f * alpha));
         g.fillRect (box);
+
+        if (isSel)
+        {
+            // Vivid magenta-red glow INSIDE the cabinet — keeps the outer border crisp.
+            const auto glow = juce::Colour (0xffff3d6e);
+            const float maxInset = juce::jmin (box.getWidth(), box.getHeight()) * 0.42f;
+            for (int ring = 1; ring <= 5; ++ring)
+            {
+                const float inset = juce::jmin (maxInset, (float) ring * 2.2f);
+                auto inner = box.reduced (inset);
+                if (inner.getWidth() < 2.0f || inner.getHeight() < 2.0f)
+                    break;
+                // Stronger near the border, softer toward the centre.
+                const float a = (0.28f - 0.045f * (float) ring) * alpha;
+                g.setColour (glow.withAlpha (juce::jmax (0.04f, a)));
+                g.drawRect (inner, 2.4f);
+            }
+            // Soft wash just inside the edge so the glow reads on hot SPL areas.
+            g.setColour (glow.withAlpha (0.22f * alpha));
+            g.fillRect (box.reduced (1.0f));
+            g.setColour (Brand::white().withAlpha (0.88f * alpha));
+            const float coreInset = juce::jmin (maxInset, 6.0f);
+            auto core = box.reduced (coreInset);
+            if (core.getWidth() > 2.0f && core.getHeight() > 2.0f)
+                g.fillRect (core);
+        }
+
+        // Sharp outline drawn last so speaker borders stay clearly visible.
         g.setColour (isSel ? juce::Colour (0xffff3d6e).withAlpha (0.98f * alpha)
                            : Brand::charcoal().withAlpha (0.85f * alpha));
         g.drawRect (box, isSel ? 2.5f : 1.4f);
-        if (isSel)
-        {
-            // Light rim so the glow stays readable on hot (red/orange) SPL areas.
-            g.setColour (juce::Colour (0xfffff0f3).withAlpha (0.9f * alpha));
-            g.drawRect (box.expanded (2.0f), 1.6f);
-            g.setColour (juce::Colour (0xffff3d6e).withAlpha (0.95f * alpha));
-            g.drawRect (box.expanded (3.5f), 1.4f);
-        }
 
         // Facing chevron on the front face (+X = right when not reversed).
         {
@@ -3503,6 +3823,13 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
                 drawSelectionOverlay (g, a);
             continue;
         }
+        if (a.kind == Annotation::Kind::TextBox)
+        {
+            drawTextBoxAnnotation (g, a);
+            if (isAnnotationSelected ((int) ai))
+                drawSelectionOverlay (g, a);
+            continue;
+        }
         if (a.kind == Annotation::Kind::Arc)
         {
             drawArcAnnotation (g, a);
@@ -3661,6 +3988,15 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
             auto s0 = annotateToScreen (preview, sessionPts_[0]);
             auto s1 = annotateToScreen (preview, hover);
             drawPendingDimLabel (g, (s0 + s1) * 0.5f, dim);
+        }
+        else if (drawShape_ == DrawShape::TextBox)
+        {
+            preview.kind = Annotation::Kind::TextBox;
+            preview.pts = { sessionPts_[0], hover };
+            preview.text = "Text";
+            preview.rotationDeg = 0.0f;
+            drawTextBoxAnnotation (g, preview, 0.85f);
+            markPts (preview.pts);
         }
     }
 }
@@ -3841,6 +4177,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             pendingStartWorld_ = annot;
             hoverAnnot_ = annot;
             hoverValid_ = true;
+            rubberBandStartScreen_ = e.position;
             drag_ = Drag::RubberBand;
             updateDrawPrompt();
         }
@@ -3882,7 +4219,10 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         if (sessionActive_ && ! sessionPts_.empty()
             && (drawShape_ == DrawShape::Polyline
                 || (int) sessionPts_.size() < pointsNeeded()))
+        {
+            rubberBandStartScreen_ = e.position;
             drag_ = Drag::RubberBand;
+        }
         else
             drag_ = Drag::None;
         return;
@@ -3905,7 +4245,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             lastMouse_ = e.position;
             selMoveStartMouse_ = annot;
             selMoveStartRef_ = selectionSnapReference();
-            selMoveStartBounds_ = selectionAnnotBounds();
+            selMoveStartBounds_ = selectionMoveBounds();
             selMoveHasBounds_ = ! selMoveStartBounds_.isEmpty();
             selMoveRefValid_ = true;
             resetSnapSoundState();
@@ -3914,7 +4254,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             repaint();
         };
 
-        // Resize grips only when a single drawing is selected (no group).
+        // Resize / rotate grips only when a single drawing is selected (no group).
         if (selectedAnnots_.size() == 1 && selectedMics_.empty() && selectedSpeakers_.empty())
         {
             const int ai = selectedAnnots_.front();
@@ -3924,12 +4264,27 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                 if (h >= 0)
                 {
                     if (onWillEdit) onWillEdit();
-                    drag_ = Drag::AnnotResize;
-                    resizeHandleIndex_ = h;
                     selectedAnnot_ = ai;
                     annotDragMoved_ = false;
                     lastAnnotDrag_ = annot;
                     lastMouse_ = e.position;
+                    auto& a = annotations_[(size_t) ai];
+                    if (a.kind == Annotation::Kind::TextBox && h == 4)
+                    {
+                        drag_ = Drag::AnnotRotate;
+                        resizeHandleIndex_ = 4;
+                        const auto local = textBoxLocalRect (a);
+                        rotateDragCentre_ = local.getCentre();
+                        rotateDragStartDeg_ = a.rotationDeg;
+                        rotateDragStartMouseDeg_ = std::atan2 (annot.y - rotateDragCentre_.y,
+                                                               annot.x - rotateDragCentre_.x)
+                                                    * 180.0f / (float) M_PI;
+                    }
+                    else
+                    {
+                        drag_ = Drag::AnnotResize;
+                        resizeHandleIndex_ = h;
+                    }
                     repaint();
                     return;
                 }
@@ -3994,11 +4349,26 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                     selectedSpeakers_.clear();
                     syncPrimarySelectionFromSets();
                     if (onWillEdit) onWillEdit();
-                    drag_ = Drag::AnnotResize;
-                    resizeHandleIndex_ = h;
                     annotDragMoved_ = false;
                     lastAnnotDrag_ = annot;
                     lastMouse_ = e.position;
+                    auto& a = annotations_[(size_t) aHit];
+                    if (a.kind == Annotation::Kind::TextBox && h == 4)
+                    {
+                        drag_ = Drag::AnnotRotate;
+                        resizeHandleIndex_ = 4;
+                        const auto local = textBoxLocalRect (a);
+                        rotateDragCentre_ = local.getCentre();
+                        rotateDragStartDeg_ = a.rotationDeg;
+                        rotateDragStartMouseDeg_ = std::atan2 (annot.y - rotateDragCentre_.y,
+                                                               annot.x - rotateDragCentre_.x)
+                                                    * 180.0f / (float) M_PI;
+                    }
+                    else
+                    {
+                        drag_ = Drag::AnnotResize;
+                        resizeHandleIndex_ = h;
+                    }
                     if (onAnnotSelectionChanged) onAnnotSelectionChanged();
                     repaint();
                     return;
@@ -4154,6 +4524,32 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (drag_ == Drag::AnnotRotate && selectedAnnot_ >= 0
+        && selectedAnnot_ < (int) annotations_.size())
+    {
+        auto cur = screenToAnnot (e.position.x, e.position.y);
+        auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox)
+        {
+            const float mouseDeg = std::atan2 (cur.y - rotateDragCentre_.y,
+                                               cur.x - rotateDragCentre_.x)
+                                     * 180.0f / (float) M_PI;
+            float next = rotateDragStartDeg_ + (mouseDeg - rotateDragStartMouseDeg_);
+            // Snap to 15° when Shift is held.
+            if (e.mods.isShiftDown())
+                next = std::round (next / 15.0f) * 15.0f;
+            // Keep in (-180, 180]
+            while (next > 180.0f) next -= 360.0f;
+            while (next <= -180.0f) next += 360.0f;
+            a.rotationDeg = next;
+            annotDragMoved_ = true;
+        }
+        lastAnnotDrag_ = cur;
+        lastMouse_ = e.position;
+        repaint();
+        return;
+    }
+
     if (drag_ == Drag::Marquee)
     {
         marqueeEndScreen_ = e.position;
@@ -4198,13 +4594,12 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
                                : hitBR && ! hitTL ? dTop
                                : (std::abs (dBot) <= std::abs (dTop) ? dBot : dTop);
 
-                const auto curB = selectionAnnotBounds();
+                const auto curB = selectionMoveBounds();
                 const auto target = desired.translated (dx, dy);
                 dAnnot = { target.getX() - curB.getX(), target.getY() - curB.getY() };
 
-                // Tak only when the moved selection newly shares an edge with
-                // another shape (the "two rectangles met" case) — not speakers/grid.
-                noteSnapSound (selectionMeetsOtherAnnotation (target),
+                noteSnapSound (selectionMeetsOtherAnnotation (target)
+                               || selectionMeetsOtherSpeaker (target),
                                { desired.getX(), desired.getY() },
                                { target.getX(), target.getY() });
             }
@@ -4355,6 +4750,7 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
                             || drag_ == Drag::Speaker || drag_ == Drag::Layer
                             || (drag_ == Drag::Annot && annotDragMoved_)
                             || (drag_ == Drag::AnnotResize && annotDragMoved_)
+                            || (drag_ == Drag::AnnotRotate && annotDragMoved_)
                             || (drag_ == Drag::SelectionMove && annotDragMoved_)
                             || (drag_ == Drag::Mic && micDragMoved_));
     drag_ = Drag::None;
@@ -4427,10 +4823,28 @@ void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
         repaint();
 }
 
-void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent&)
+void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (tool_ == Tool::Shape && drawShape_ == DrawShape::Polyline && sessionPts_.size() >= 2)
+    {
         finishPolyline (construction_ == Construction::PolylineClosed);
+        return;
+    }
+
+    if (tool_ == Tool::Select || tool_ == Tool::Shape)
+    {
+        const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+            ? (10.0f / juce::jmax (1.0f, polarRadius_))
+            : (10.0f / juce::jmax (1.0f, worldScale()));
+        const auto annot = screenToAnnot (e.position.x, e.position.y);
+        const int hit = annotationHitTest (annot, radius);
+        if (hit >= 0 && hit < (int) annotations_.size()
+            && annotations_[(size_t) hit].kind == Annotation::Kind::TextBox)
+        {
+            setSelectedAnnotation (hit);
+            promptEditTextBox (hit);
+        }
+    }
 }
 
 bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
@@ -4472,6 +4886,13 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
         if (! selectedAnnots_.empty() || ! selectedMics_.empty() || ! selectedSpeakers_.empty())
         {
             clearPlotSelection();
+            return true;
+        }
+        // Idle on a drawing tool → return to Select (cursor).
+        if (tool_ == Tool::Shape || tool_ == Tool::Pencil
+            || tool_ == Tool::Eraser || tool_ == Tool::Ruler)
+        {
+            setTool (Tool::Select);
             return true;
         }
     }

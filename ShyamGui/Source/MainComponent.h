@@ -13,6 +13,7 @@
 #include "MicReceiver.h"
 #include "FrequencyResponseComponent.h"
 #include "MicRefLockDialog.h"
+#include "CommandTerminal.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent — owns all sub-panels, runs AcousticEngine::compute on a
@@ -118,7 +119,7 @@ private:
     juce::TooltipWindow tooltipWindow_ { this, 450 };
     juce::StringArray statChips_;   // live simulation stats, shown in the Help (?) popup
 
-    juce::Label exportHeader_, viewHeader_;
+    juce::Label exportHeader_, viewHeader_, terminalHeader_;
 
     juce::TextButton     btnStats_ { "Statistics" };
     juce::TextButton     btnProject_ { "Project" };
@@ -141,11 +142,7 @@ private:
 
     juce::TextButton btnExportPNG_, btnExportCSV_;
     juce::TextButton btnViewSPL_, btnViewDirectivity_, btnViewMeasured_;
-    juce::TextButton btnViewPhase_, btnViewArrival_, btnViewSTI_;
-    juce::Label      comingSoonOverlay_;
-    enum class PlaceholderView { None, Phase, ArrivalTime, STI };
-    PlaceholderView  placeholderView_ = PlaceholderView::None;
-    void showComingSoon (const juce::String& label, PlaceholderView slot);
+    CommandTerminal  commandTerminal_;
     void updateViewButtonHighlights();
 
     SimResult lastResult_;

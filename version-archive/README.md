@@ -2,7 +2,7 @@
 
 Standalone HTML + MongoDB backup of app releases (**not** wired into the JUCE software).
 
-Starts at **v1.3.0**. Current product cut: **v1.3.6**. Each entry can offer:
+Starts at **v1.3.0**. Current product cut: **v1.3.7**. Each entry can offer:
 
 - Source code zip
 - macOS DMG
@@ -14,7 +14,7 @@ Starts at **v1.3.0**. Current product cut: **v1.3.6**. Each entry can offer:
 cd version-archive
 cp .env.example .env   # once — put MONGODB_URI
 npm install
-node publish-version.mjs 1.3.6 "Mic ring snap + shape-edge Snap tak"
+node publish-version.mjs 1.3.7 "Gain fix + text box + clean slate + drawing UX"
 npm start              # http://127.0.0.1:8787
 ```
 

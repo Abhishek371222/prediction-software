@@ -173,7 +173,7 @@ namespace ReportExport
 
         g.setColour (juce::Colours::white.withAlpha (0.80f));
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.3.6",
+        g.drawText ("Generated  " + liveStamp() + "    v1.3.7",
                     footer.getRight() - 620, y + 72, 600, 18, juce::Justification::centredRight);
 
         return img;

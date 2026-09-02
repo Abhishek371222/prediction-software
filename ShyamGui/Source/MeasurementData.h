@@ -1227,7 +1227,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.3.6'");
+        line ("Version='v1.3.7'");
         line ("Author='Atomik Prediction Software'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

@@ -109,6 +109,10 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.3.7", "2026-09-02", "Gain fix + text box + drawing UX",
+     "Gain slider affects SPL again; sidebar Delete removes all selected speakers; "
+     "text box annotations (fill + rotate); clean slate on first open; Range off by default; "
+     "Esc/Line/Shape-menu fixes; command terminal; delay max 10 ms; v1.3.7 Windows Release"],
     ["1.3.6", "2026-08-31", "Mic snap + shape-edge tak",
      "Restored original mic Drag::Mic ring snap; tak when drawings meet edge-to-edge; "
      "start.md for build/run; v1.3.6 Windows Release"],
@@ -133,7 +137,44 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.3.6 detailed changes
+# Sheet 2: v1.3.7 detailed changes
+# ===========================================================================
+ws137 = wb.create_sheet("v1.3.7 Changes")
+ws137.sheet_view.showGridLines = False
+banner(ws137, "v1.3.7  -  Detailed Changes",
+       "2026-09-02  |  Gain fix + text box + clean slate + drawing UX", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v137 = [
+    ["Speakers", F, "Gain (dB) affects SPL",
+     "Unity-gain reference normalisation; per-speaker level and array balance visible on heatmap", "2026-09-02"],
+    ["Speakers", F, "Delete all selected",
+     "Sidebar Delete removes every speaker in plot multi-selection, not just primary unit", "2026-09-02"],
+    ["Plot tools", F, "Line first stroke",
+     "Minimum drag distance prevents accidental micro-line consuming first click", "2026-09-02"],
+    ["Plot tools", F, "Esc + Shape menu",
+     "Esc returns to Select from drawing tools; cursor tool no longer opens Shape menu", "2026-09-02"],
+    ["UI", A, "Command terminal",
+     "Bottom-panel terminal replaces Phase/Arrival/STI placeholders; cls/clear supported", "2026-09-02"],
+    ["Plot tools", A, "Text box annotations",
+     "Shape menu Text Box; fill colour like shapes; rotation handle; double-click edit", "2026-09-02"],
+    ["Speakers", C, "Delay slider max 10 ms",
+     "Was 50 ms; presets unchanged", "2026-09-02"],
+    ["Project", C, "Clean slate on first open",
+     "No default speakers until user adds a Q21S unit", "2026-09-02"],
+    ["Plot", C, "Range off by default",
+     "Distance rings hidden until Range toggle is on", "2026-09-02"],
+    ["Packaging", C, "Version → v1.3.7 (refresh)",
+     "App, resource, installer defines, archive HTML/json, Windows Release EXE", "2026-09-02"],
+]
+write_table(ws137, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v137, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws137.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.3.6 detailed changes
 # ===========================================================================
 ws136 = wb.create_sheet("v1.3.6 Changes")
 ws136.sheet_view.showGridLines = False

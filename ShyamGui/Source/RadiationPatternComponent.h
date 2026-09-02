@@ -46,7 +46,7 @@ public:
 
     // Plot toolbar tools (Shape is a family; construction chosen separately).
     enum class Tool { Select, Pan, Pencil, Eraser, Ruler, Shape };
-    enum class DrawShape { Line, Polyline, Circle, Arc, Rectangle, Square };
+    enum class DrawShape { Line, Polyline, Circle, Arc, Rectangle, Square, TextBox };
     enum class Construction
     {
         LineTwoPoints,
@@ -57,7 +57,8 @@ public:
         CircleTwoPoints,
         ArcThreePoints,
         RectTwoCorners,
-        SquareTwoCorners
+        SquareTwoCorners,
+        TextBoxTwoCorners
     };
 
     void setTool (Tool t);
@@ -120,7 +121,7 @@ public:
 
     struct Annotation
     {
-        enum class Kind { Freehand, Line, Measure, Rectangle, Square, Circle, Polyline, Arc };
+        enum class Kind { Freehand, Line, Measure, Rectangle, Square, Circle, Polyline, Arc, TextBox };
         Kind kind = Kind::Freehand;
         Construction construction = Construction::LineTwoPoints;
         AnnotSpace space = AnnotSpace::World;
@@ -129,6 +130,8 @@ public:
         float thicknessPx = 2.2f;
         bool closed = false;                          // polyline
         std::vector<juce::Point<float>> pts;          // world m or polar-normalised
+        juce::String text;                            // TextBox label
+        float rotationDeg = 0.0f;                     // TextBox rotation (CCW degrees)
     };
 
     std::vector<Annotation> getAnnotations() const { return annotations_; }
@@ -205,8 +208,12 @@ private:
                                     bool ignoreSelected) const;
     /** True when sel shares an edge (or aligned edge) with another annotation. */
     bool selectionMeetsOtherAnnotation (juce::Rectangle<float> sel) const;
+    /** True when sel footprint shares an edge with another speaker cabinet. */
+    bool selectionMeetsOtherSpeaker (juce::Rectangle<float> sel) const;
     juce::Rectangle<float> annotationAnnotBounds (const Annotation& a) const;
     juce::Rectangle<float> selectionAnnotBounds() const;
+    /** Union of selected annotation + speaker footprints (for edge snap while moving). */
+    juce::Rectangle<float> selectionMoveBounds() const;
     juce::Point<float> selectionSnapReference() const;
     juce::Point<float> applyOrtho (juce::Point<float> from, juce::Point<float> to) const;
 
@@ -284,6 +291,11 @@ private:
     void beginMicDrag (int micIndex, juce::Point<float> screenPos);
     void drawShapeAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
     void drawArcAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
+    void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
+    void promptEditTextBox (int index);
+    static juce::Point<float> rotateAround (juce::Point<float> p, juce::Point<float> c, float deg) noexcept;
+    static juce::Rectangle<float> textBoxLocalRect (const Annotation& a) noexcept;
+    bool pointHitsTextBox (juce::Point<float> pt, const Annotation& a, float radius) const noexcept;
     static juce::String formatLengthLabel (float metres);
     void drawPendingDimLabel (juce::Graphics& g,
                               juce::Point<float> screenMid,
@@ -300,7 +312,7 @@ private:
     int                 measuredHz_ = 80;
     float               measuredDistanceM_ = 0.5f;
     bool                showGrid_ = true;
-    bool                showDistanceRings_ = true;
+    bool                showDistanceRings_ = false;
     bool                showMicDegrees_ = false;
     LayoutLayer*        layout_ = nullptr;
     bool                layoutEditMode_ = false;
@@ -317,7 +329,7 @@ private:
     bool  polarFrameValid_ = false;
 
     enum class Drag { None, Pan, Speaker, Layer, Pencil, Erase, RubberBand,
-                      Annot, AnnotResize, SelectionMove, Marquee, Mic } drag_ = Drag::None;
+                      Annot, AnnotResize, AnnotRotate, SelectionMove, Marquee, Mic } drag_ = Drag::None;
     Tool               tool_ = Tool::Select;
     DrawShape          drawShape_ = DrawShape::Line;
     Construction       construction_ = Construction::LineTwoPoints;
@@ -330,6 +342,9 @@ private:
     juce::Point<float> lastAnnotDrag_ { 0, 0 };
     bool               annotDragMoved_ = false;
     int                resizeHandleIndex_ = -1;
+    float              rotateDragStartDeg_ = 0.0f;
+    float              rotateDragStartMouseDeg_ = 0.0f;
+    juce::Point<float> rotateDragCentre_ { 0, 0 };
     juce::Point<float> marqueeStartScreen_ { 0, 0 };
     juce::Point<float> marqueeEndScreen_ { 0, 0 };
     juce::Point<float> selMoveStartMouse_ { 0, 0 };
@@ -382,6 +397,8 @@ private:
     // Legacy two-click (ruler) still uses these
     bool                    pendingAnchor_ = false;
     juce::Point<float>      pendingStartWorld_ { 0, 0 };
+    /** Screen position when a rubber-band (line / shape / ruler) drag began. */
+    juce::Point<float>      rubberBandStartScreen_ { 0, 0 };
 
     // Select-tool SPL readout under the cursor (heatmap probe)
     bool                    showSplProbe_ = false;

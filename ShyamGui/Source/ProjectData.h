@@ -49,8 +49,7 @@ struct ProjectData
 
     // -----------------------------------------------------------------------
     // Older builds parked the factory array on the lower edge (y = 10 m,
-    // x ≈ 10…20). New defaults use the world centre (50, 50). Remap only that
-    // legacy factory pattern so Add / Reset / New Project all match.
+    // x ≈ 10…20). Remap only that legacy pattern when loading old projects.
     static void migrateLegacyCornerDefaults (std::vector<Speaker>& speakers)
     {
         if (speakers.empty() || speakers.size() > 3) return;
@@ -78,7 +77,7 @@ struct ProjectData
     {
         ProjectData p;
         p.meta = m;
-        p.speakers.push_back ({ 50.0f, 50.0f, 0.0f, 0.0f, false, false, true });
+        // Clean slate — no speakers until the user adds units.
         return p;
     }
 
@@ -171,8 +170,6 @@ struct ProjectData
                 }
             }
         }
-        if (p.speakers.empty())
-            p.speakers.push_back ({ 50.0f, 50.0f, 0.0f, 0.0f, false, false, true });
         migrateLegacyCornerDefaults (p.speakers);
         return p;
     }

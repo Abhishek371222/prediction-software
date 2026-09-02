@@ -93,7 +93,7 @@ private:
 
     // Scene state
     std::vector<Speaker> speakers_;
-    int  selected_ = 0;
+    int  selected_ = -1;
     std::vector<int> selectedSpeakers_; // multi-select from plot; empty → use selected_
     bool updatingUI_ = false;
 

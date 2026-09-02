@@ -56,9 +56,8 @@ ControlPanel::ControlPanel()
         addAndMakeVisible (b);
     };
 
-    // Default scene — two units near the centre of the 100 m world.
-    speakers_.push_back ({ 45.0f, 50.0f, 0.0f, 0.0f, false, false, true });
-    speakers_.push_back ({ 55.0f, 50.0f, 0.0f, 0.0f, false, false, true });
+    // Clean slate — no units until the user adds one or applies a layout/preset.
+    selected_ = -1;
 
     auto addSection = [&] (SectionHeader& h, bool& open)
     {
@@ -136,7 +135,7 @@ ControlPanel::ControlPanel()
     styleSlider (xSlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
-    styleSlider (delaySlider_, 0.0, 50.0, 0.1,  0.0);
+    styleSlider (delaySlider_, 0.0, 10.0, 0.1,  0.0);
     xSlider_.onValueChange     = [this] { pushPositionEdit(); };
     ySlider_.onValueChange     = [this] { pushPositionEdit(); };
     gainSlider_.onValueChange  = [this] { pushSharedEdit(); };
@@ -347,7 +346,8 @@ void ControlPanel::refreshEditors()
     xSlider_.setEnabled (has); ySlider_.setEnabled (has);
     gainSlider_.setEnabled (has); delaySlider_.setEnabled (has);
     polarityToggle_.setEnabled (has); orientationToggle_.setEnabled (has);
-    enabledToggle_.setEnabled (has); deleteBtn_.setEnabled (has);
+    enabledToggle_.setEnabled (has);
+    deleteBtn_.setEnabled (has || ! selectedSpeakers_.empty());
     updatingUI_ = false;
 }
 
@@ -366,13 +366,15 @@ void ControlPanel::addSpeaker()
 
 void ControlPanel::deleteSpeaker()
 {
-    if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
-    speakers_.erase (speakers_.begin() + selected_);
-    if (selected_ >= (int) speakers_.size()) selected_ = (int) speakers_.size() - 1;
-    rebuildSpeakerBox();
-    refreshEditors();
-    if (onSelectionChanged) onSelectionChanged (selected_);
-    notifyChanged();
+    std::vector<int> targets = selectedSpeakers_;
+    if (targets.empty())
+    {
+        if (selected_ < 0 || selected_ >= (int) speakers_.size())
+            return;
+        targets.push_back (selected_);
+    }
+
+    removeSpeakers (targets);
 }
 
 void ControlPanel::applyDeviceLayout (int count)
@@ -694,9 +696,8 @@ void ControlPanel::removeSpeakers (const std::vector<int>& indices)
 void ControlPanel::resetToDefaults()
 {
     speakers_.clear();
-    speakers_.push_back ({ 45.0f, 50.0f, 0.0f, 0.0f, false, false, true });
-    speakers_.push_back ({ 55.0f, 50.0f, 0.0f, 0.0f, false, false, true });
-    selected_ = 0;
+    selectedSpeakers_.clear();
+    selected_ = -1;
     updatingUI_ = true;
     {
         int defId = 1;
@@ -721,9 +722,8 @@ void ControlPanel::resetToDefaults()
 void ControlPanel::applyProject (const ProjectData& p)
 {
     speakers_ = p.speakers;
-    if (speakers_.empty())
-        speakers_.push_back ({ 50.0f, 50.0f, 0.0f, 0.0f, false, false, true });
-    selected_ = 0;
+    selectedSpeakers_.clear();
+    selected_ = speakers_.empty() ? -1 : 0;
 
     updatingUI_ = true;
     int freqId = 4;

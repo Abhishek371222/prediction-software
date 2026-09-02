@@ -155,7 +155,7 @@ public:
         styleTool (btnPencil_,  kPencilSVG,  "Pencil: choose a colour, then draw freehand", true);
         styleTool (btnEraser_,  kEraserSVG,  "Eraser: scrub to remove drawings", true);
         styleTool (btnRuler_,   kRulerSVG,   "Ruler: click two points to measure distance", true);
-        styleTool (btnShape_,   kShapeSVG,   "Shape: Line, Polyline, Circle, Arc, Rectangle, or Square", true);
+        styleTool (btnShape_,   kShapeSVG,   "Shape: Line, Polyline, Circle, Arc, Rectangle, Square, or Text Box", true);
         styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the heatmap", false);
         styleTool (btnZoomIn_,  kZoomInSVG,  "Zoom in");
         styleTool (btnZoomOut_, kZoomOutSVG, "Zoom out");
@@ -278,7 +278,7 @@ public:
         fillAlpha_.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 18);
         fillAlpha_.setNumDecimalPlacesToDisplay (0);
         fillAlpha_.setTextValueSuffix ("%");
-        fillAlpha_.setTooltip ("Opacity of the selected shape "
+        fillAlpha_.setTooltip ("Opacity of the selected shape / text-box background "
                                "(or of the next shape you draw if nothing is selected)");
         fillAlpha_.setColour (juce::Slider::trackColourId, Brand::border());
         fillAlpha_.setColour (juce::Slider::thumbColourId, Brand::accent());
@@ -300,7 +300,7 @@ public:
         rangeBtn_.setComponentID ("plotRange");
         rangeBtn_.setTooltip ("Show or hide 1 m, 2 m, 4 m, and 8 m range markers");
         rangeBtn_.setClickingTogglesState (true);
-        rangeBtn_.setToggleState (true, juce::dontSendNotification);
+        rangeBtn_.setToggleState (false, juce::dontSendNotification);
         rangeBtn_.setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());
         rangeBtn_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.35f));
         rangeBtn_.setColour (juce::TextButton::textColourOffId,  AppSettings::get().isDark() ? Brand::white()
@@ -382,6 +382,7 @@ public:
         addShape ("Arc",       3, { { "3 Points", 6 } });
         addShape ("Rectangle", 4, { { "2 Corners", 7 } });
         addShape ("Square",    5, { { "2 Corners", 8 } });
+        addShape ("Text Box",  6, { { "2 Corners", 9 } });
 
         root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnShape_),
             [onPick] (int result)

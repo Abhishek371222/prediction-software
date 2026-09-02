@@ -35,7 +35,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.3.6", juce::dontSendNotification);
+    versionLabel_.setText ("v1.3.7", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -68,8 +68,9 @@ MainComponent::MainComponent (ProjectData project)
         l.setJustificationType (juce::Justification::centredLeft);
         addAndMakeVisible (l);
     };
-    configHdr (exportHeader_, "SAVE / EXPORT");
-    configHdr (viewHeader_,   "VIEW MODE");
+    configHdr (exportHeader_,   "SAVE / EXPORT");
+    configHdr (viewHeader_,     "VIEW MODE");
+    configHdr (terminalHeader_, "TERMINAL");
 
     styleActionBtn (btnExportPNG_, "SAVE IMAGE (PNG)", Brand::exportPill());
     styleActionBtn (btnExportCSV_, "EXPORT SPL (CSV)", Brand::exportPill());
@@ -81,25 +82,13 @@ MainComponent::MainComponent (ProjectData project)
     styleActionBtn (btnViewSPL_,         "SPL HEAT MAP", Brand::idleViewPill());
     styleActionBtn (btnViewDirectivity_, "DIRECTIVITY", Brand::idleViewPill());
     styleActionBtn (btnViewMeasured_,    "MEASURED POLAR", Brand::idleViewPill());
-    styleActionBtn (btnViewPhase_,        "PHASE", Brand::idleViewPill());
-    styleActionBtn (btnViewArrival_,      "ARRIVAL TIME", Brand::idleViewPill());
-    styleActionBtn (btnViewSTI_,          "STI MAP", Brand::idleViewPill());
-    for (auto* b : { &btnViewSPL_, &btnViewDirectivity_, &btnViewMeasured_,
-                     &btnViewPhase_, &btnViewArrival_, &btnViewSTI_ })
+    for (auto* b : { &btnViewSPL_, &btnViewDirectivity_, &btnViewMeasured_ })
         addAndMakeVisible (*b);
     btnViewSPL_.onClick         = [this] { setViewMode (ViewMode::SPL); };
     btnViewDirectivity_.onClick = [this] { setViewMode (ViewMode::Directivity); };
     btnViewMeasured_.onClick    = [this] { setViewMode (ViewMode::MeasuredPolar); };
-    btnViewPhase_.onClick       = [this] { showComingSoon ("Phase view", PlaceholderView::Phase); };
-    btnViewArrival_.onClick     = [this] { showComingSoon ("Arrival time map", PlaceholderView::ArrivalTime); };
-    btnViewSTI_.onClick         = [this] { showComingSoon ("STI map", PlaceholderView::STI); };
 
-    comingSoonOverlay_.setJustificationType (juce::Justification::centred);
-    comingSoonOverlay_.setFont (Brand::tech (Brand::Type::sectionHdr + 6.0f, true));
-    comingSoonOverlay_.setColour (juce::Label::textColourId, Brand::ash());
-    comingSoonOverlay_.setColour (juce::Label::backgroundColourId, Brand::panelDark());
-    comingSoonOverlay_.setInterceptsMouseClicks (false, false);
-    addChildComponent (comingSoonOverlay_);
+    addAndMakeVisible (commandTerminal_);
 
     btnStats_.setComponentID ("headerStats");
     btnStats_.setButtonText ("Statistics");
@@ -171,17 +160,21 @@ MainComponent::MainComponent (ProjectData project)
     };
     plotHeader_.btnShape_.onClick = [this]
     {
-        // Always open the Shape → Construction menu; keep Shape tool active.
+        // Radio-group untoggles also fire onClick (e.g. clicking Select). Only
+        // open the construction menu when Shape is being turned ON / re-clicked.
+        if (! plotHeader_.btnShape_.getToggleState())
+            return;
+
         plotHeader_.showShapeMenu ([this] (int shapeId, int constructionId)
         {
             using DS = RadiationPatternComponent::DrawShape;
             using C  = RadiationPatternComponent::Construction;
             static const DS shapes[] = {
-                DS::Line, DS::Polyline, DS::Circle, DS::Arc, DS::Rectangle, DS::Square
+                DS::Line, DS::Polyline, DS::Circle, DS::Arc, DS::Rectangle, DS::Square, DS::TextBox
             };
             if (shapeId < 0 || shapeId >= (int) (sizeof (shapes) / sizeof (shapes[0])))
                 return;
-            if (constructionId < 0 || constructionId > (int) C::SquareTwoCorners)
+            if (constructionId < 0 || constructionId > (int) C::TextBoxTwoCorners)
                 return;
             patternComp_.setDrawShape (shapes[shapeId], (C) constructionId);
             patternComp_.setAddMicArmed (false);
@@ -189,10 +182,6 @@ MainComponent::MainComponent (ProjectData project)
             plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
             patternComp_.grabKeyboardFocus();
         });
-        // If the radio toggle flipped off due to another tool, re-assert Shape.
-        if (! plotHeader_.btnShape_.getToggleState()
-            && patternComp_.getTool() == RadiationPatternComponent::Tool::Shape)
-            plotHeader_.btnShape_.setToggleState (true, juce::dontSendNotification);
     };
     plotHeader_.btnMic_.onClick = [this]
     {
@@ -447,9 +436,8 @@ MainComponent::MainComponent (ProjectData project)
     highlightViewBtn (currentView_);
     updatePlotChrome();
 
-    // Load the project's scene + show its identity.
-    if (! project_.speakers.empty())
-        controlPanel_.applyProject (project_);
+    // Load the project's scene (may be empty — clean slate for new projects).
+    controlPanel_.applyProject (project_);
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
@@ -460,7 +448,11 @@ MainComponent::MainComponent (ProjectData project)
     grabKeyboardFocus();
     editBaseline_ = takeEditSnapshot();
 
-    runSimulation();   // first compute already has the measured directivity tables
+    // Only compute when the scene has units; empty projects stay a blank plot.
+    if (! controlPanel_.getSpeakers().empty())
+        runSimulation();
+    else
+        syncRenderer();
 }
 
 MainComponent::~MainComponent()
@@ -773,6 +765,7 @@ void MainComponent::lookAndFeelChanged()
     versionLabel_.setColour (juce::Label::textColourId, Brand::muted());
     exportHeader_.setColour (juce::Label::textColourId, Brand::heading());
     viewHeader_.setColour   (juce::Label::textColourId, Brand::heading());
+    terminalHeader_.setColour (juce::Label::textColourId, Brand::heading());
 
     btnStats_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
     btnStats_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
@@ -787,10 +780,10 @@ void MainComponent::lookAndFeelChanged()
                         isExport ? Brand::exportPill() : Brand::idleViewPill(), false);
     };
     for (auto* b : { &btnExportPNG_, &btnExportCSV_,
-                     &btnViewSPL_, &btnViewDirectivity_, &btnViewMeasured_,
-                     &btnViewPhase_, &btnViewArrival_, &btnViewSTI_ })
+                     &btnViewSPL_, &btnViewDirectivity_, &btnViewMeasured_ })
         restyle (*b);
     updateViewButtonHighlights();
+    commandTerminal_.lookAndFeelChanged();
     refreshHeaderIcons(); // also restyles Stats for light/dark mockup
     syncSidebarToggleChrome();
     logo_ = Brand::createLogo (Brand::text());
@@ -923,7 +916,7 @@ void MainComponent::resized()
 
     exportHeader_.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::bottomSectionTitle)));
     viewHeader_.setFont (exportHeader_.getFont());
-    comingSoonOverlay_.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::sectionHdr + 6.0f)));
+    terminalHeader_.setFont (exportHeader_.getFont());
 
     const int titleH    = Brand::UI::headerBandH;
     const int paramH    = Brand::UI::paramBarH;
@@ -1059,9 +1052,8 @@ void MainComponent::resized()
     plotHeader_.setBounds (plotX, bodyTop, centreW, plotHdrH);
     patternComp_.setBounds (plotX, bodyTop + plotHdrH, centreW,
                             juce::jmax (40, bodyH - plotHdrH));
-    comingSoonOverlay_.setBounds (patternComp_.getBounds());
 
-    // Bottom panel — v1.1: narrow Export column + two equal View Mode columns.
+    // Bottom panel — Export | View Mode | Terminal (VS Code–style cmd panel).
     const int secHdrH    = Brand::UI::bottomSectionHeaderH;
     const int sectionGap = Brand::UI::bottomSectionGap;
     const int viewColGap = Brand::UI::bottomViewColGap;
@@ -1079,22 +1071,20 @@ void MainComponent::resized()
     btnExportCSV_.setBounds (bx, ey, exportW, exportBtnH);
     bx += exportW + sectionGap;
 
-    // Two equal View Mode columns; header spans both (v1.1).
+    // Left: view-mode buttons. Right: command terminal (replaces Phase/Arrival/STI).
     const int remainW  = centreW - exportW - sectionGap;
     const int viewColW = (remainW - viewColGap) / 2;
-    const int viewSpan = remainW;
+    const int termW    = remainW - viewColW - viewColGap;
 
-    viewHeader_.setBounds (bx, bottomTop, viewSpan, secHdrH);
+    viewHeader_.setBounds (bx, bottomTop, viewColW, secHdrH);
     int vy = contentTop;
     btnViewSPL_.setBounds         (bx, vy, viewColW, btnH); vy += btnH + btnGap;
     btnViewDirectivity_.setBounds (bx, vy, viewColW, btnH); vy += btnH + btnGap;
     btnViewMeasured_.setBounds    (bx, vy, viewColW, btnH);
     bx += viewColW + viewColGap;
 
-    vy = contentTop;
-    btnViewPhase_.setBounds    (bx, vy, viewColW, btnH); vy += btnH + btnGap;
-    btnViewArrival_.setBounds  (bx, vy, viewColW, btnH); vy += btnH + btnGap;
-    btnViewSTI_.setBounds      (bx, vy, viewColW, btnH);
+    terminalHeader_.setBounds (bx, bottomTop, termW, secHdrH);
+    commandTerminal_.setBounds (bx, contentTop, termW, contentH);
 
     statusStrip_.setBounds (pad, H - statusH, juce::jmax (0, W - pad * 2), statusH);
     layoutPrefsPanel();
@@ -1157,6 +1147,7 @@ void MainComponent::applyResult (const SimResult& r)
     patternComp_.updateData (r, lastParams_);
     syncRenderer();
     updateSettingsBar();
+    refreshFrequencyResponse();
     statusStrip_.setStatus ("Ready", true);
     statusStrip_.setLastRun ("Last run: "
         + juce::Time::getCurrentTime().formatted ("%d %b %Y  %H:%M:%S"));
@@ -1335,8 +1326,6 @@ void MainComponent::updateSettingsBar()
 void MainComponent::setViewMode (ViewMode mode)
 {
     currentView_ = mode;
-    placeholderView_ = PlaceholderView::None;
-    comingSoonOverlay_.setVisible (false);
     updateViewButtonHighlights();
 
     // Measured Polar: push readings, then recompute so a native BEM mid-plane
@@ -1715,22 +1704,9 @@ void MainComponent::updateViewButtonHighlights()
     styleExport (btnExportPNG_);
     styleExport (btnExportCSV_);
 
-    const bool place = (placeholderView_ != PlaceholderView::None);
-    styleView (btnViewSPL_,         ! place && currentView_ == ViewMode::SPL);
-    styleView (btnViewDirectivity_, ! place && currentView_ == ViewMode::Directivity);
-    styleView (btnViewMeasured_,    ! place && currentView_ == ViewMode::MeasuredPolar);
-    styleView (btnViewPhase_,       place && placeholderView_ == PlaceholderView::Phase);
-    styleView (btnViewArrival_,     place && placeholderView_ == PlaceholderView::ArrivalTime);
-    styleView (btnViewSTI_,         place && placeholderView_ == PlaceholderView::STI);
-}
-
-void MainComponent::showComingSoon (const juce::String& label, PlaceholderView slot)
-{
-    placeholderView_ = slot;
-    comingSoonOverlay_.setText (label + "\nComing soon", juce::dontSendNotification);
-    comingSoonOverlay_.setVisible (true);
-    comingSoonOverlay_.toFront (false);
-    updateViewButtonHighlights();
+    styleView (btnViewSPL_,         currentView_ == ViewMode::SPL);
+    styleView (btnViewDirectivity_, currentView_ == ViewMode::Directivity);
+    styleView (btnViewMeasured_,    currentView_ == ViewMode::MeasuredPolar);
 }
 
 void MainComponent::highlightViewBtn (ViewMode mode)
@@ -1986,7 +1962,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.3.6");
+            line ("# Atomik Simulation Engine v1.3.7");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

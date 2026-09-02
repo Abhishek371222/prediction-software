@@ -7,7 +7,7 @@ class TwoSpeakerApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName()    override { return "Atomik Simulation Engine"; }
-    const juce::String getApplicationVersion() override { return "1.3.6"; }
+    const juce::String getApplicationVersion() override { return "1.3.7"; }
     bool moreThanOneInstanceAllowed()          override { return true; }
 
     void initialise (const juce::String& /*commandLine*/) override

@@ -156,7 +156,9 @@ SimResult AcousticEngine::compute (const SimParams& p)
     std::vector<double> theta ((size_t) srcs.size());
 
     double maxI = 0.0;
+    double maxIUnity = 0.0;
     double maxAbsRe = 0.0;
+    double maxAbsReUnity = 0.0;
 
     for (int row = 0; row < N; ++row)
     {
@@ -175,21 +177,26 @@ SimResult AcousticEngine::compute (const SimParams& p)
             }
 
             cd     centre (0.0, 0.0);
+            cd     centreUnity (0.0, 0.0);
             double incoh = 0.0;
             for (size_t i = 0; i < srcs.size(); ++i)
             {
                 const auto& s = srcs[i];
                 const double D = dirFactor (pat, k, s.facing, theta[i]);
-                const double amp = s.gainLin * D / rSpread[i];
+                const double ampBase = D / rSpread[i];
+                const double amp = s.gainLin * ampBase;
                 const double phase = -(k * rGeom[i] + omega * s.delaySec) + s.polPhase;
                 centre += std::polar (amp, phase);
+                centreUnity += std::polar (ampBase, phase);
                 incoh  += amp;
             }
 
             double Iband = 0.0;
+            double IbandUnity = 0.0;
             for (int m = 0; m < mCount; ++m)
             {
                 cd sm (0.0, 0.0);
+                cd smUnity (0.0, 0.0);
                 const double km = kBand[(size_t) m];
                 const double wm = omegaBand[(size_t) m];
                 const DirectivityPattern* pm = patBand[(size_t) m];
@@ -197,26 +204,34 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 {
                     const auto& s = srcs[i];
                     const double D = dirFactor (pm, km, s.facing, theta[i]);
-                    const double amp = s.gainLin * D / rSpread[i];
+                    const double ampBase = D / rSpread[i];
+                    const double amp = s.gainLin * ampBase;
                     const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
                     sm += std::polar (amp, phase);
+                    smUnity += std::polar (ampBase, phase);
                 }
                 Iband += std::norm (sm);
+                IbandUnity += std::norm (smUnity);
             }
             Iband /= (double) mCount;
+            IbandUnity /= (double) mCount;
 
             const size_t idx = (size_t) row * N + col;
             P[idx]    = centre;
             Iavg[idx] = Iband;
             Iabs[idx] = incoh;
 
-            maxI     = std::max (maxI, Iband);
-            maxAbsRe = std::max (maxAbsRe, std::abs (centre.real()));
+            maxI         = std::max (maxI, Iband);
+            maxIUnity    = std::max (maxIUnity, IbandUnity);
+            maxAbsRe     = std::max (maxAbsRe, std::abs (centre.real()));
+            maxAbsReUnity = std::max (maxAbsReUnity, std::abs (centreUnity.real()));
         }
     }
 
-    if (maxI < 1e-300)     maxI = 1.0;
-    if (maxAbsRe < 1e-300) maxAbsRe = 1.0;
+    if (maxI < 1e-300)          maxI = 1.0;
+    if (maxIUnity < 1e-300)     maxIUnity = 1.0;
+    if (maxAbsRe < 1e-300)      maxAbsRe = 1.0;
+    if (maxAbsReUnity < 1e-300) maxAbsReUnity = 1.0;
 
     const double floorDB = p.dBfloor;
     const bool hasAbs = (pat != nullptr && pat->hasAbsolute);
@@ -224,25 +239,24 @@ SimResult AcousticEngine::compute (const SimParams& p)
     const double Iref = 1.0 / (Rref * Rref);
     const double onAxisAbs = hasAbs ? (double) pat->onAxisSplDb : 0.0;
 
-    // Absolute peak MUST be the level at the relative heatmap peak (rel = 0 dB).
-    // Using peakAbs = onAxis + 10·log10(maxI/Iref) then abs = peakAbs + rel locks
-    // the colour map and reported Peak to the same cell (avoids float/path drift).
     const double peakAbs = hasAbs
         ? (onAxisAbs + 10.0 * std::log10 (std::max (maxI, 1e-300) / Iref))
         : 0.0;
 
     for (size_t i = 0; i < P.size(); ++i)
     {
-        const double rel = 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / maxI);
+        // Normalise to unity-gain peak so per-speaker gain and level changes are visible.
+        const double rel = 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / maxIUnity);
         res.splRelDB[i] = (float) rel;
         res.splDB[i]    = (float) std::max (rel, floorDB);
 
         if (hasAbs)
-            res.splAbsDB[i] = (float) (peakAbs + rel);
+            res.splAbsDB[i] = (float) (onAxisAbs
+                                       + 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / Iref));
         else
             res.splAbsDB[i] = (float) rel;
 
-        res.pressure[i] = (float) (P[i].real() / maxAbsRe);
+        res.pressure[i] = (float) (P[i].real() / maxAbsReUnity);
 
         const double coh = std::abs (P[i]);
         res.interference[i] = (Iabs[i] > 1e-300)
@@ -269,7 +283,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         const double rFar = std::max (res.worldW, res.worldH) * 5.0;
         res.polarMag.assign (nPolar, 0.0f);
 
-        double maxMag = 0.0;
+        double maxMagUnity = 0.0;
         for (int i = 0; i < nPolar; ++i)
         {
             const double angle = i * (2.0 * M_PI / nPolar);
@@ -277,23 +291,26 @@ SimResult AcousticEngine::compute (const SimParams& p)
             const double Yf = cy + rFar * std::sin (angle);
 
             cd sum (0.0, 0.0);
+            cd sumUnity (0.0, 0.0);
             for (const auto& s : srcs)
             {
                 const double rg = std::sqrt ((Xf - s.x) * (Xf - s.x) + (Yf - s.y) * (Yf - s.y));
                 const double rs = std::max (rg, kCabHalfW);
                 const double th = std::atan2 (Yf - s.y, Xf - s.x);
                 const double D  = dirFactor (pat, k, s.facing, th);
-                const double amp = s.gainLin * D / rs;
+                const double ampBase = D / rs;
+                const double amp = s.gainLin * ampBase;
                 const double phase = -(k * rg + omega * s.delaySec) + s.polPhase;
                 sum += std::polar (amp, phase);
+                sumUnity += std::polar (ampBase, phase);
             }
 
             const double mag = std::abs (sum);
             res.polarMag[i]  = (float) mag;
-            maxMag = std::max (maxMag, mag);
+            maxMagUnity = std::max (maxMagUnity, std::abs (sumUnity));
         }
-        if (maxMag > 1e-300)
-            for (auto& v : res.polarMag) v = (float) (v / maxMag);
+        if (maxMagUnity > 1e-300)
+            for (auto& v : res.polarMag) v = (float) (v / maxMagUnity);
     }
 
     return res;
