@@ -113,7 +113,17 @@ ControlPanel::ControlPanel()
     addAndMakeVisible (speakerBox_);
     styleBtn (addBtn_,    "+ Add");
     styleBtn (deleteBtn_, "Delete");
-    addBtn_.onClick    = [this] { willEdit(); addSpeaker(); };
+    addBtn_.setTooltip ("Add Q21S: click the plot where you want the unit");
+    addBtn_.onClick    = [this]
+    {
+        if (onAddSpeakerRequest)
+            onAddSpeakerRequest();
+        else
+        {
+            willEdit();
+            addSpeaker();
+        }
+    };
     deleteBtn_.onClick = [this] { willEdit(); deleteSpeaker(); };
 
     // --- Device-layout presets (same plane) -------------------------------
@@ -301,18 +311,31 @@ void ControlPanel::refreshUnits()
     const juce::String u = Units::lengthUnit();
     xLabel_.setText ("X Position (" + u + ")", juce::dontSendNotification);
     yLabel_.setText ("Y Position (" + u + ")", juce::dontSendNotification);
+    layoutWidthLabel_.setText ("Width (" + u + ")", juce::dontSendNotification);
 
     std::function<juce::String (double)> toText =
         [] (double metres) { return juce::String (Units::metresToDisplay (metres), 1); };
     std::function<double (const juce::String&)> fromText =
         [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
 
-    for (auto* s : { &xSlider_, &ySlider_ })
+    for (auto* s : { &xSlider_, &ySlider_, &layoutWidthSlider_ })
     {
         s->textFromValueFunction = toText;
         s->valueFromTextFunction = fromText;
         s->updateText();
     }
+
+    // Distance combo stores metres internally; only the item text converts.
+    const int sel = measDistBox_.getSelectedId();
+    updatingUI_ = true;
+    measDistBox_.clear (juce::dontSendNotification);
+    for (int i = 0; i < (int) measDistances_.size(); ++i)
+        measDistBox_.addItem (Units::metres ((double) measDistances_[(size_t) i], 1), i + 1);
+    if (sel > 0 && sel <= (int) measDistances_.size())
+        measDistBox_.setSelectedId (sel, juce::dontSendNotification);
+    else if (! measDistances_.empty())
+        measDistBox_.setSelectedId (1, juce::dontSendNotification);
+    updatingUI_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,11 +376,18 @@ void ControlPanel::refreshEditors()
 
 void ControlPanel::addSpeaker()
 {
+    // Fallback when click-to-place is not wired (tests / legacy).
+    addSpeakerAt ((float) (50.0 + speakers_.size()), 50.0f);
+}
+
+void ControlPanel::addSpeakerAt (float x, float y)
+{
     Speaker s;
-    s.x = (float) (50.0 + speakers_.size());
-    s.y = 50.0f;
+    s.x = x;
+    s.y = y;
     speakers_.push_back (s);
     selected_ = (int) speakers_.size() - 1;
+    selectedSpeakers_ = { selected_ };
     rebuildSpeakerBox();
     refreshEditors();
     if (onSelectionChanged) onSelectionChanged (selected_);
@@ -783,7 +813,7 @@ void ControlPanel::setAvailableDistances (const std::vector<float>& distancesM, 
     for (int i = 0; i < (int) distancesM.size(); ++i)
     {
         const float d = distancesM[(size_t) i];
-        measDistBox_.addItem (juce::String (d, 1) + " m", i + 1);
+        measDistBox_.addItem (Units::metres ((double) d, 1), i + 1);
         if (std::abs (d - prev) < 1.0e-3f) { preferId = i + 1; keptPrev = true; }
     }
     if (! keptPrev)

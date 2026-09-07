@@ -26,6 +26,8 @@ public:
     std::function<void()>    onClearAll;           // clear SPL heatmap drawings / lines
     std::function<void(int)> onSelectionChanged;   // selected speaker index
     std::function<void()>    onSectionsChanged;    // a section expanded/collapsed (re-size viewport)
+    /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
+    std::function<void()>    onAddSpeakerRequest;
 
     std::function<void(int)> onMeasurementSourceChanged;  // 0 = Open Field, 1 = GYLT
     std::function<void(float)> onMeasurementDistanceChanged;  // metres
@@ -65,6 +67,8 @@ public:
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
     /** Append speakers (e.g. paste); returns new indices. Does not fire onSelectionChanged. */
     std::vector<int> appendSpeakers (const std::vector<Speaker>& added);
+    /** Place a new Q21S at world metres (click-to-place). */
+    void addSpeakerAt (float x, float y);
     /** Remove speakers by index (highest first). */
     void removeSpeakers (const std::vector<int>& indices);
     void resetToDefaults();

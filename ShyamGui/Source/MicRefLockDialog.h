@@ -51,7 +51,7 @@ public:
         ringLabel_.setColour (juce::Label::textColourId, Brand::muted());
         addAndMakeVisible (ringLabel_);
         for (int i = 0; i < MicRingSnap::kNumRings; ++i)
-            ringBox_.addItem (juce::String ((int) MicRingSnap::kRingsM[i]) + " m", i + 1);
+            ringBox_.addItem (Units::metres ((double) MicRingSnap::kRingsM[i], 0), i + 1);
         ringBox_.setSelectedId (2, juce::dontSendNotification); // 2 m default
         addAndMakeVisible (ringBox_);
 

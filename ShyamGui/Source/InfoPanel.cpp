@@ -70,7 +70,7 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
                         + juce::String (Units::metresToDisplay (p.worldH), 0) + " " + u);
     setRowVal (kFreq,   juce::String ((int) r.frequency) + " Hz");
     setRowVal (kLambda, juce::String (Units::metresToDisplay (r.lambda), 3) + " " + u);
-    setRowVal (kWaveNo, juce::String (r.k, 3) + " rad/m");
+    setRowVal (kWaveNo, juce::String (Units::waveNumberToDisplay (r.k), 3) + " " + Units::waveNumberUnit());
     setRowVal (kActive, juce::String (r.activeSpeakers) + " / " + juce::String ((int) p.speakers.size()));
 
     const auto& rel = r.splRelDB.empty() ? r.splDB : r.splRelDB;
@@ -100,9 +100,9 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
         setRowVal (kPos,      "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
                               + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u
                               + "  ·  "
-                              + juce::String ((int) std::lround (Q21SCabinet::widthM * 1000.0f)) + "×"
-                              + juce::String ((int) std::lround (Q21SCabinet::heightM * 1000.0f)) + "×"
-                              + juce::String ((int) std::lround (Q21SCabinet::depthM * 1000.0f)) + " mm");
+                              + Units::mm (Q21SCabinet::widthM * 1000.0, 0) + "×"
+                              + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + "×"
+                              + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
         setRowVal (kGain,     juce::String (s.gainDB, 0) + " dB");
         setRowVal (kDelay,    juce::String (s.delayMs, 1) + " ms");
         setRowVal (kPolarity, s.polarityInverted ? "Reverse" : "Normal");

@@ -35,7 +35,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.3.7", juce::dontSendNotification);
+    versionLabel_.setText ("v1.3.8", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -72,6 +72,20 @@ MainComponent::MainComponent (ProjectData project)
     configHdr (viewHeader_,     "VIEW MODE");
     configHdr (terminalHeader_, "TERMINAL");
 
+    btnTerminalDock_.setButtonText ("Undock");
+    btnTerminalDock_.setTooltip ("Undock terminal to a floating window");
+    btnTerminalDock_.setColour (juce::TextButton::buttonColourId, Brand::plotToolbar());
+    btnTerminalDock_.setColour (juce::TextButton::textColourOffId,
+                                AppSettings::get().isDark() ? Brand::white() : Brand::text());
+    btnTerminalDock_.onClick = [this]
+    {
+        if (isTerminalDocked())
+            undockTerminal();
+        else
+            dockTerminal();
+    };
+    addAndMakeVisible (btnTerminalDock_);
+
     styleActionBtn (btnExportPNG_, "SAVE IMAGE (PNG)", Brand::exportPill());
     styleActionBtn (btnExportCSV_, "EXPORT SPL (CSV)", Brand::exportPill());
     addAndMakeVisible (btnExportPNG_);
@@ -89,6 +103,19 @@ MainComponent::MainComponent (ProjectData project)
     btnViewMeasured_.onClick    = [this] { setViewMode (ViewMode::MeasuredPolar); };
 
     addAndMakeVisible (commandTerminal_);
+    commandTerminal_.onExecuteCommand = [this] (const juce::String& verb, const juce::String& args)
+    {
+        return handleTerminalCommand (verb, args);
+    };
+    commandTerminal_.onSessionInput = [this] (const juce::String& line)
+    {
+        return handleTerminalSessionLine (line);
+    };
+    commandTerminal_.onSessionCancel = [this]
+    {
+        cancelCurrentCommand (false);
+        preferTerminalFocus();
+    };
 
     btnStats_.setComponentID ("headerStats");
     btnStats_.setButtonText ("Statistics");
@@ -100,20 +127,43 @@ MainComponent::MainComponent (ProjectData project)
 
     btnProject_.setComponentID ("headerNewProject");
     btnProject_.setButtonText (juce::String ("Project") + juce::String::fromUTF8 (" \xe2\x96\xbe"));
-    btnProject_.setTooltip ("Open or create a project");
+    btnProject_.setTooltip ("Project: save (Ctrl+S), open, or create");
     btnProject_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
     btnProject_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
     btnProject_.onClick = [this] { showProjectMenu(); };
     addAndMakeVisible (btnProject_);
 
+    toggleAutosave_.setButtonText ("AutoSave");
+    toggleAutosave_.setTooltip ("AutoSave on/off (writes automatically when dirty)");
+    toggleAutosave_.setToggleState (AppSettings::get().autosaveEnabled(),
+                                    juce::dontSendNotification);
+    toggleAutosave_.onClick = [this]
+    {
+        const bool on = toggleAutosave_.getToggleState();
+        AppSettings::get().setAutosaveEnabled (on);
+        if (on)
+        {
+            if (! autoSaveTimer_.isTimerRunning())
+                autoSaveTimer_.startTimer (15000);
+        }
+        else
+        {
+            autoSaveTimer_.stopTimer();
+        }
+    };
+    addAndMakeVisible (toggleAutosave_);
+
+    btnInfo_.setTooltip ("Keyboard shortcuts");
     btnHelp_.setTooltip ("Help");
     btnPrefsIcon_.setTooltip ("Preferences");
     btnMore_.setTooltip ("More options");
+    addAndMakeVisible (btnInfo_);
     addAndMakeVisible (btnHelp_);
     addAndMakeVisible (btnPrefsIcon_);
     addAndMakeVisible (btnMore_);
     btnPrefsIcon_.onClick = [this] { openPreferences(); };
     btnMore_.onClick      = [this] { showOverflowMenu(); };
+    btnInfo_.onClick      = [this] { showKeyboardShortcuts(); };
     btnHelp_.onClick      = [this]
     {
         const juce::String stats = statChips_.isEmpty()
@@ -174,10 +224,11 @@ MainComponent::MainComponent (ProjectData project)
             };
             if (shapeId < 0 || shapeId >= (int) (sizeof (shapes) / sizeof (shapes[0])))
                 return;
-            if (constructionId < 0 || constructionId > (int) C::TextBoxTwoCorners)
+            if (constructionId < 0 || constructionId > (int) C::TextBoxClick)
                 return;
             patternComp_.setDrawShape (shapes[shapeId], (C) constructionId);
             patternComp_.setAddMicArmed (false);
+            patternComp_.setAddSpeakerArmed (false);
             plotHeader_.setActiveTool (PlotHeaderBar::ActiveTool::Shape);
             plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
             patternComp_.grabKeyboardFocus();
@@ -190,6 +241,7 @@ MainComponent::MainComponent (ProjectData project)
         {
             if (itemId == 1)
             {
+                patternComp_.setAddSpeakerArmed (false);
                 patternComp_.setAddMicArmed (true);
                 plotHeader_.setMicArmed (true);
                 plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
@@ -382,6 +434,13 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.selectOnlySpeaker (idx);
         patternComp_.repaint();
     };
+    controlPanel_.onAddSpeakerRequest = [this]
+    {
+        patternComp_.setAddSpeakerArmed (true);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        statusStrip_.setStatus ("Click the plot to place a Q21S", true);
+        patternComp_.grabKeyboardFocus();
+    };
 
     patternComp_.onSpeakerSelected = [this] (int idx)
     {
@@ -392,6 +451,22 @@ MainComponent::MainComponent (ProjectData project)
             plotHeader_.setOrthoSpacingM ((double) patternComp_.getOrthoSpacingM());
             plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         }
+    };
+    patternComp_.onPlaceSpeakerAt = [this] (float x, float y)
+    {
+        willEdit();
+        controlPanel_.addSpeakerAt (x, y);
+        syncRenderer();
+        scheduleRecompute();
+        commitEdit();
+        statusStrip_.setStatus ("Q21S placed — click again to add another (Esc cancels)", true);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+    };
+    patternComp_.onAddSpeakerArmedChanged = [this]
+    {
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        if (! patternComp_.isAddSpeakerArmed())
+            statusStrip_.setStatus ("Ready", true);
     };
     patternComp_.onPasteSpeakers = [this] (std::vector<Speaker> added)
     {
@@ -433,6 +508,10 @@ MainComponent::MainComponent (ProjectData project)
     measPoll_.fn = [this] { pollMeasurements(); };
     measPoll_.startTimer (1000);
 
+    autoSaveTimer_.fn = [this] { autosaveIfNeeded(); };
+    if (AppSettings::get().autosaveEnabled())
+        autoSaveTimer_.startTimer (15000);   // check every 15 s; writes when dirty
+
     highlightViewBtn (currentView_);
     updatePlotChrome();
 
@@ -441,6 +520,7 @@ MainComponent::MainComponent (ProjectData project)
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
+    plotHeader_.refreshUnits();
 
     setSize (1340, 820);   // after all child components exist (setSize calls resized)
     setWantsKeyboardFocus (true);
@@ -448,11 +528,21 @@ MainComponent::MainComponent (ProjectData project)
     grabKeyboardFocus();
     editBaseline_ = takeEditSnapshot();
 
-    // Only compute when the scene has units; empty projects stay a blank plot.
+    // Only compute when the scene has units; empty projects show the world grid.
     if (! controlPanel_.getSpeakers().empty())
         runSimulation();
     else
+    {
+        lastParams_ = controlPanel_.getParams();
+        patternComp_.updateData (SimResult{}, lastParams_);
         syncRenderer();
+    }
+
+    // Restore floating terminal if the user left it undocked last session.
+    if (AppSettings::get().terminalUndocked())
+        undockTerminal();
+    else
+        syncTerminalDockChrome();
 }
 
 MainComponent::~MainComponent()
@@ -462,8 +552,16 @@ MainComponent::~MainComponent()
         keyHost_->removeKeyListener (this);
     AppSettings::get().removeChangeListener (this);
     measPoll_.stopTimer();
+    autoSaveTimer_.stopTimer();
     stopTimer();
     stopThread (3000);
+    // Re-parent terminal onto this component before windows die.
+    if (terminalFloat_ != nullptr)
+    {
+        terminalFloat_->clearContentComponent();
+        terminalFloat_.reset();
+        addChildComponent (commandTerminal_);
+    }
     frWindow_.reset();
 }
 
@@ -556,6 +654,7 @@ void MainComponent::applyEditSnapshot (const EditSnapshot& s)
                               controlPanel_.getSelectedIndex());
     restoringEdit_ = false;
     editBaseline_ = s;
+    markProjectDirty();
     refreshFrequencyResponse();
     resized();
 }
@@ -575,6 +674,74 @@ void MainComponent::commitEdit()
 {
     if (restoringEdit_) return;
     editBaseline_ = takeEditSnapshot();
+    markProjectDirty();
+}
+
+void MainComponent::markProjectDirty()
+{
+    projectDirty_ = true;
+    updateSaveIndicator();
+}
+
+void MainComponent::updateSaveIndicator()
+{
+    if (projectDirty_)
+        statusStrip_.setStatus ("Unsaved changes", false);
+    else
+        statusStrip_.setStatus ("Ready", true);
+}
+
+juce::File MainComponent::autosaveFileForProject() const
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                   .getChildFile ("Atomik")
+                   .getChildFile ("Autosave");
+    dir.createDirectory();
+    const auto base = juce::File::createLegalFileName (
+        project_.displayName().isNotEmpty() ? project_.displayName() : "Untitled");
+    return dir.getChildFile (base + ".atmk");
+}
+
+bool MainComponent::writeProjectToFile (const juce::File& f, bool quiet)
+{
+    if (f == juce::File()) return false;
+    ProjectData p = currentProject();
+    if (! p.saveToFile (f))
+    {
+        if (! quiet)
+            statusStrip_.setStatus ("Could not save project.", false);
+        return false;
+    }
+    project_ = p;
+    project_.file = f;
+    projectDirty_ = false;
+    AppSettings::get().addRecentProject (f);
+    if (! quiet)
+        statusStrip_.setStatus ("Project saved: " + f.getFileName(), true);
+    else
+        statusStrip_.setStatus ("Autosaved: " + f.getFileName(), true);
+    return true;
+}
+
+void MainComponent::autosaveIfNeeded()
+{
+    if (! AppSettings::get().autosaveEnabled())
+        return;
+    if (! projectDirty_) return;
+    // Don't interrupt an open file dialog / modal.
+    if (juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0)
+        return;
+
+    const auto now = juce::Time::currentTimeMillis();
+    if (lastAutosaveMs_ > 0 && (now - lastAutosaveMs_) < 30000)
+        return; // at most once per 30 s
+
+    juce::File target = project_.file;
+    if (target == juce::File())
+        target = autosaveFileForProject();
+
+    if (writeProjectToFile (target, true))
+        lastAutosaveMs_ = now;
 }
 
 void MainComponent::undoEdit()
@@ -607,17 +774,53 @@ void MainComponent::parentHierarchyChanged()
 
 bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
 {
+    // Esc: always return to the cursor tool from Shape / Pencil / Ruler / etc.
+    // (also works when focus is on the toolbar or sidebar, not only the plot).
+    if (key.isKeyCode (juce::KeyPress::escapeKey))
+    {
+        if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+            if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
+                return false; // leave terminal / text fields alone
+
+        if (prefsPanel_ != nullptr && prefsPanel_->isVisible())
+        {
+            prefsPanel_->setVisible (false);
+            return true;
+        }
+
+        cancelCurrentCommand();
+        return true;
+    }
+
     // Prefer live modifiers — Caps Lock / drawing-tool focus can leave KeyPress mods stale.
     const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
     const bool chord = mods.isCommandDown() || mods.isCtrlDown();
     if (! chord || mods.isAltDown())
         return false;
 
-    if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
-        if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
-            return false; // leave text-field native undo alone
+    const int code = key.getKeyCode();
+    const auto textCh = key.getTextCharacter();
+
+    // Ctrl+[ or Ctrl+\ — cancel current command (same as Esc for tools).
+    if (code == '[' || textCh == '[' || code == '\\' || textCh == '\\')
+    {
+        cancelCurrentCommand();
+        return true;
+    }
 
     const auto letter = shortcutLetter (key);
+
+    // Ctrl/Cmd+S — save (works even while editing a text box).
+    if (letter == 's')
+    {
+        saveProject();
+        return true;
+    }
+
+    if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+        if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
+            return false; // leave text-field native undo / copy alone
+
     if (letter == 'z')
     {
         if (mods.isShiftDown())
@@ -636,12 +839,667 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
         patternComp_.copySelection();
         return true;
     }
+    if (letter == 'x')
+    {
+        patternComp_.cutSelection();
+        return true;
+    }
     if (letter == 'v')
     {
         patternComp_.pasteClipboard();
         return true;
     }
+    if (letter == 'd')
+    {
+        // Toggle coordinate / SPL readout under the cursor.
+        const bool on = ! plotHeader_.btnSplProbe_.getToggleState();
+        plotHeader_.btnSplProbe_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setShowSplProbe (on);
+        statusStrip_.setStatus (on ? "Coordinate display on" : "Coordinate display off", true);
+        return true;
+    }
+    if (letter == 'g')
+    {
+        const bool on = ! AppSettings::get().showGrid();
+        AppSettings::get().setShowGrid (on); // persists + applyGridPref via broadcast
+        statusStrip_.setStatus (on ? "Grid on" : "Grid off", true);
+        return true;
+    }
+    if (letter == 'f')
+    {
+        const bool on = ! plotHeader_.btnSnap_.getToggleState();
+        plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setDrawGridSnap (on);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        statusStrip_.setStatus (on ? "Snap on" : "Snap off", true);
+        return true;
+    }
     return false;
+}
+
+void MainComponent::cancelCurrentCommand (bool focusPlot)
+{
+    terminalSessionKind_ = TerminalSessionKind::None;
+    if (patternComp_.isAddMicArmed())
+        patternComp_.setAddMicArmed (false);
+    if (patternComp_.isAddSpeakerArmed())
+        patternComp_.setAddSpeakerArmed (false);
+    patternComp_.cancelDrawSession();
+    patternComp_.clearPlotSelection();
+    applyPlotTool (RadiationPatternComponent::Tool::Select, false, focusPlot);
+}
+
+void MainComponent::preferTerminalFocus()
+{
+    if (terminalFloat_ != nullptr)
+    {
+        terminalFloat_->setMinimised (false);
+        terminalFloat_->toFront (true);
+    }
+    commandTerminal_.focusInput();
+}
+
+void MainComponent::syncTerminalDockChrome()
+{
+    const bool docked = isTerminalDocked();
+    btnTerminalDock_.setButtonText (docked ? "Undock" : "Dock");
+    btnTerminalDock_.setTooltip (docked
+        ? "Undock terminal to a floating window"
+        : "Dock terminal back into the main window");
+    btnTerminalDock_.setColour (juce::TextButton::buttonColourId, Brand::plotToolbar());
+    btnTerminalDock_.setColour (juce::TextButton::textColourOffId,
+                                AppSettings::get().isDark() ? Brand::white() : Brand::text());
+    terminalHeader_.setText (docked ? "TERMINAL" : "TERMINAL (floating)",
+                             juce::dontSendNotification);
+}
+
+void MainComponent::undockTerminal()
+{
+    if (terminalFloat_ != nullptr)
+        return;
+
+    removeChildComponent (&commandTerminal_);
+
+    terminalFloat_ = std::make_unique<TerminalFloatWindow> (
+        commandTerminal_,
+        [this] { dockTerminal(); });
+
+    if (auto* top = getTopLevelComponent())
+    {
+        const int margin = 24;
+        terminalFloat_->setTopLeftPosition (
+            top->getX() + juce::jmax (margin, top->getWidth() - terminalFloat_->getWidth() - margin),
+            top->getY() + juce::jmax (margin, top->getHeight() - terminalFloat_->getHeight() - margin));
+    }
+
+    terminalFloat_->setVisible (true);
+    terminalFloat_->toFront (true);
+    AppSettings::get().setTerminalUndocked (true);
+    syncTerminalDockChrome();
+    resized();
+    commandTerminal_.focusInput();
+}
+
+void MainComponent::dockTerminal()
+{
+    if (terminalFloat_ == nullptr)
+    {
+        // Already docked — still refresh chrome.
+        if (! commandTerminal_.getParentComponent())
+            addAndMakeVisible (commandTerminal_);
+        AppSettings::get().setTerminalUndocked (false);
+        syncTerminalDockChrome();
+        resized();
+        return;
+    }
+
+    terminalFloat_->clearContentComponent();
+    terminalFloat_.reset();
+    addAndMakeVisible (commandTerminal_);
+    AppSettings::get().setTerminalUndocked (false);
+    syncTerminalDockChrome();
+    resized();
+    commandTerminal_.focusInput();
+}
+
+void MainComponent::showKeyboardShortcuts()
+{
+    const juce::String body =
+        "Manage workflow\n"
+        "\n"
+        "Ctrl+C    Copy object\n"
+        "Ctrl+X    Cut object\n"
+        "Ctrl+V    Paste object\n"
+        "\n"
+        "Ctrl+Z    Undo last action\n"
+        "Ctrl+Y    Redo last action\n"
+        "Ctrl+[    Cancel current command (or Ctrl+\\)\n"
+        "Esc       Cancel current command\n"
+        "Ctrl+D    Toggle coordinate display\n"
+        "Ctrl+G    Toggle Grid\n"
+        "Ctrl+F    Toggle Snap\n"
+        "\n"
+        "Ctrl+S    Save project";
+
+    juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
+                                            "Keyboard Shortcuts",
+                                            body);
+}
+
+bool MainComponent::parseAnnotPoint (const juce::String& text, juce::Point<float>& out)
+{
+    auto s = text.trim();
+    if (s.isEmpty()) return false;
+
+    // Accept "x,y" or "x y" or "x;y"
+    s = s.replaceCharacter (';', ' ').replaceCharacter (',', ' ');
+    juce::StringArray parts;
+    parts.addTokens (s, " \t", "");
+    parts.removeEmptyStrings();
+    if (parts.size() < 2) return false;
+
+    const float x = (float) parts[0].getDoubleValue();
+    const float y = (float) parts[1].getDoubleValue();
+    if (! std::isfinite (x) || ! std::isfinite (y)) return false;
+    out = { x, y };
+    return true;
+}
+
+MainComponent::TerminalResult MainComponent::armDrawCommand (const juce::String& verb)
+{
+    using DS = RadiationPatternComponent::DrawShape;
+    using C  = RadiationPatternComponent::Construction;
+    using T  = RadiationPatternComponent::Tool;
+
+    patternComp_.setAddMicArmed (false);
+    patternComp_.setAddSpeakerArmed (false);
+    terminalSessionKind_ = TerminalSessionKind::Draw;
+
+    auto startSession = [this] (const juce::String& firstPrompt) -> TerminalResult
+    {
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        preferTerminalFocus();
+        return TerminalResult::continueSession (firstPrompt);
+    };
+
+    if (verb == "pencil")
+    {
+        terminalSessionKind_ = TerminalSessionKind::None;
+        applyPlotTool (T::Pencil, false, false);
+        preferTerminalFocus();
+        return TerminalResult::ok ("PENCIL — draw freehand on the plot (Esc cancels).");
+    }
+    if (verb == "eraser")
+    {
+        terminalSessionKind_ = TerminalSessionKind::None;
+        applyPlotTool (T::Eraser, false, false);
+        preferTerminalFocus();
+        return TerminalResult::ok ("ERASER — drag on shapes to erase (Esc cancels).");
+    }
+    if (verb == "dist" || verb == "ruler")
+    {
+        terminalSessionKind_ = TerminalSessionKind::Dist;
+        applyPlotTool (T::Ruler, false, false);
+        return startSession ("Specify first point:");
+    }
+    if (verb == "line")
+    {
+        patternComp_.setDrawShape (DS::Line, C::LineTwoPoints);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify first point:");
+    }
+    if (verb == "pline")
+    {
+        patternComp_.setDrawShape (DS::Polyline, C::PolylinePoints);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify start point:");
+    }
+    if (verb == "circle")
+    {
+        patternComp_.setDrawShape (DS::Circle, C::CircleCenterRadius);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify center point:");
+    }
+    if (verb == "arc")
+    {
+        patternComp_.setDrawShape (DS::Arc, C::ArcThreePoints);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify start point of arc:");
+    }
+    if (verb == "rectang")
+    {
+        patternComp_.setDrawShape (DS::Rectangle, C::RectTwoCorners);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify first corner:");
+    }
+    if (verb == "square")
+    {
+        patternComp_.setDrawShape (DS::Square, C::SquareTwoCorners);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify first corner:");
+    }
+    if (verb == "text")
+    {
+        patternComp_.setDrawShape (DS::TextBox, C::TextBoxClick);
+        applyPlotTool (T::Shape, false, false);
+        return startSession ("Specify insertion point:");
+    }
+
+    terminalSessionKind_ = TerminalSessionKind::None;
+    return TerminalResult::fail ("Unknown draw command.");
+}
+
+MainComponent::TerminalResult MainComponent::beginMoveCommand()
+{
+    if (! patternComp_.hasCopyableSelection())
+        return TerminalResult::fail ("Nothing selected. Select objects on the plot, then type MOVE.");
+
+    terminalSessionKind_ = TerminalSessionKind::MoveBase;
+    return TerminalResult::continueSession ("Specify base point:");
+}
+
+MainComponent::TerminalResult MainComponent::beginZoomCommand (const juce::String& args)
+{
+    const auto a = args.trim().toLowerCase();
+    if (a == "e" || a == "extents" || a == "all" || a == "fit")
+    {
+        patternComp_.resetView();
+        return TerminalResult::ok ("Zoom Extents.");
+    }
+    if (a == "i" || a == "in" || a == "+")
+    {
+        patternComp_.zoomIn();
+        return TerminalResult::ok ("Zoom In.");
+    }
+    if (a == "o" || a == "out" || a == "-")
+    {
+        patternComp_.zoomOut();
+        return TerminalResult::ok ("Zoom Out.");
+    }
+
+    terminalSessionKind_ = TerminalSessionKind::Zoom;
+    return TerminalResult::continueSession ("Enter an option [Extents/In/Out]:");
+}
+
+MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const juce::String& line)
+{
+    auto trimmed = line.trim();
+    const auto lower = trimmed.toLowerCase();
+
+    if (lower == "cancel" || lower == "esc")
+    {
+        terminalSessionKind_ = TerminalSessionKind::None;
+        cancelCurrentCommand (false);
+        preferTerminalFocus();
+        return TerminalResult::endSession ("Command canceled.");
+    }
+
+    if (terminalSessionKind_ == TerminalSessionKind::Zoom)
+    {
+        const auto r = beginZoomCommand (trimmed);
+        if (r.kind == TerminalResult::Kind::ContinueSession)
+            return TerminalResult::fail ("Invalid option. Use E (Extents), I (In), or O (Out).");
+        terminalSessionKind_ = TerminalSessionKind::None;
+        preferTerminalFocus();
+        return TerminalResult::endSession (r.message.isNotEmpty() ? r.message : juce::String ("Zoom."));
+    }
+
+    if (terminalSessionKind_ == TerminalSessionKind::MoveBase)
+    {
+        juce::Point<float> pt;
+        if (! parseAnnotPoint (trimmed, pt))
+            return TerminalResult::fail ("Invalid point. Use x,y (e.g. 10,20).");
+        terminalMoveBase_ = pt;
+        terminalSessionKind_ = TerminalSessionKind::MoveSecond;
+        return TerminalResult::continueSession ("Specify second point:");
+    }
+
+    if (terminalSessionKind_ == TerminalSessionKind::MoveSecond)
+    {
+        juce::Point<float> pt;
+        if (! parseAnnotPoint (trimmed, pt))
+            return TerminalResult::fail ("Invalid point. Use x,y (e.g. 10,20).");
+        const auto d = pt - terminalMoveBase_;
+        if (patternComp_.onWillEdit) patternComp_.onWillEdit();
+        // World and annot space share metres on SPL view; polar uses normalized — still apply same delta in annot space.
+        patternComp_.moveSelectionBy (d, d);
+        if (patternComp_.onEditCommitted) patternComp_.onEditCommitted();
+        patternComp_.repaint();
+        terminalSessionKind_ = TerminalSessionKind::None;
+        preferTerminalFocus();
+        return TerminalResult::endSession ("Move completed.");
+    }
+
+    // Draw / Dist sessions
+    if (patternComp_.getTool() == RadiationPatternComponent::Tool::Shape
+        && patternComp_.getDrawShape() == RadiationPatternComponent::DrawShape::Polyline)
+    {
+        if (trimmed.isEmpty() || lower == "finish" || lower == "done" || lower == "enter")
+        {
+            if (patternComp_.finishPolylineCommand (false))
+            {
+                plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+                applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+                terminalSessionKind_ = TerminalSessionKind::None;
+                preferTerminalFocus();
+                return TerminalResult::endSession ("Polyline created.");
+            }
+            return TerminalResult::fail ("Need at least 2 points before FINISH.");
+        }
+        // Close option — only while PLINE session (not CIRCLE alias)
+        if (lower == "close" || (lower == "c" && terminalSessionKind_ == TerminalSessionKind::Draw))
+        {
+            if (patternComp_.finishPolylineCommand (true))
+            {
+                plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+                applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+                terminalSessionKind_ = TerminalSessionKind::None;
+                preferTerminalFocus();
+                return TerminalResult::endSession ("Closed polyline created.");
+            }
+            return TerminalResult::fail ("Need at least 2 points before CLOSE.");
+        }
+    }
+
+    if (trimmed.isEmpty()
+        && patternComp_.getDrawShape() == RadiationPatternComponent::DrawShape::Line
+        && patternComp_.drawSessionPointCount() >= 2)
+    {
+        // LINE: Enter after 2+ points — already committed by feed; treat as finish
+        applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+        terminalSessionKind_ = TerminalSessionKind::None;
+        preferTerminalFocus();
+        return TerminalResult::endSession ("Line created.");
+    }
+
+    juce::Point<float> pt;
+    if (! parseAnnotPoint (trimmed, pt))
+        return TerminalResult::fail ("Invalid point. Use x,y (e.g. 10,20).");
+
+    const auto shapeBefore = patternComp_.getDrawShape();
+    const auto toolBefore = patternComp_.getTool();
+    const int ptsBefore = patternComp_.drawSessionPointCount();
+
+    if (! patternComp_.feedAnnotPoint (pt))
+        return TerminalResult::fail ("Could not accept point.");
+
+    plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+
+    const bool stillActive = patternComp_.isDrawSessionActive();
+    if (! stillActive)
+    {
+        juce::String done = "Done.";
+        if (toolBefore == RadiationPatternComponent::Tool::Ruler)
+            done = "Distance measured.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Line)
+            done = "Line created.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Circle)
+            done = "Circle created.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Arc)
+            done = "Arc created.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Rectangle)
+            done = "Rectangle created.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Square)
+            done = "Square created.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::TextBox)
+            done = "Text box placed — type in the plot.";
+        else if (shapeBefore == RadiationPatternComponent::DrawShape::Polyline)
+            done = "Polyline created.";
+
+        applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+        terminalSessionKind_ = TerminalSessionKind::None;
+        preferTerminalFocus();
+        return TerminalResult::endSession (done);
+    }
+
+    // Still collecting points — AutoCAD-style next prompts
+    juce::String next = "Specify next point:";
+    if (shapeBefore == RadiationPatternComponent::DrawShape::Line)
+        next = "Specify next point:";
+    else if (shapeBefore == RadiationPatternComponent::DrawShape::Polyline)
+        next = "Specify next point or [Close/Undo]:";
+    else if (shapeBefore == RadiationPatternComponent::DrawShape::Circle && ptsBefore == 0)
+        next = "Specify radius point:";
+    else if (shapeBefore == RadiationPatternComponent::DrawShape::Circle)
+        next = "Specify radius point:";
+    else if (shapeBefore == RadiationPatternComponent::DrawShape::Arc)
+        next = ptsBefore == 0 ? "Specify second point of arc:"
+             : ptsBefore == 1 ? "Specify end point of arc:"
+                              : "Specify next point:";
+    else if (shapeBefore == RadiationPatternComponent::DrawShape::Rectangle
+          || shapeBefore == RadiationPatternComponent::DrawShape::Square)
+        next = "Specify other corner:";
+    else if (toolBefore == RadiationPatternComponent::Tool::Ruler)
+        next = "Specify second point:";
+
+    const auto prompt = patternComp_.getDrawPrompt();
+    return TerminalResult::continueSession (next.isNotEmpty() ? next : prompt);
+}
+
+MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::String& verb,
+                                                                   const juce::String& args)
+{
+    auto toggleFlag = [&args] (bool currentlyOn) -> bool
+    {
+        const auto a = args.trim().toLowerCase();
+        if (a == "on" || a == "1" || a == "true")  return true;
+        if (a == "off" || a == "0" || a == "false") return false;
+        return ! currentlyOn;
+    };
+
+    if (verb == "help")
+        return TerminalResult::ok (CommandTerminal::builtinHelpText());
+
+    if (verb == "cancel")
+    {
+        terminalSessionKind_ = TerminalSessionKind::None;
+        cancelCurrentCommand (false);
+        preferTerminalFocus();
+        return TerminalResult::ok ("Command canceled.");
+    }
+
+    if (verb == "undo")
+    {
+        undoEdit();
+        return TerminalResult::ok ("Undo.");
+    }
+    if (verb == "redo")
+    {
+        redoEdit();
+        return TerminalResult::ok ("Redo.");
+    }
+
+    if (verb == "copy")
+    {
+        if (! patternComp_.copySelection())
+            return TerminalResult::fail ("Nothing selected to copy.");
+        return TerminalResult::ok ("Copied to clipboard.");
+    }
+    if (verb == "cut")
+    {
+        if (! patternComp_.cutSelection())
+            return TerminalResult::fail ("Nothing selected to cut.");
+        return TerminalResult::ok ("Cut to clipboard.");
+    }
+    if (verb == "paste")
+    {
+        if (! patternComp_.pasteClipboard())
+            return TerminalResult::fail ("Clipboard is empty.");
+        return TerminalResult::ok ("Pasted.");
+    }
+    if (verb == "erase")
+    {
+        if (! patternComp_.deleteSelection())
+            return TerminalResult::fail ("Nothing selected to erase.");
+        return TerminalResult::ok ("Erased.");
+    }
+
+    if (verb == "move")
+        return beginMoveCommand();
+
+    if (verb == "zoom")
+        return beginZoomCommand (args);
+
+    if (verb == "grid")
+    {
+        const bool on = toggleFlag (AppSettings::get().showGrid());
+        AppSettings::get().setShowGrid (on);
+        return TerminalResult::ok (on ? "Grid on." : "Grid off.");
+    }
+    if (verb == "snap")
+    {
+        const bool on = toggleFlag (plotHeader_.btnSnap_.getToggleState());
+        plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setDrawGridSnap (on);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        return TerminalResult::ok (on ? "Snap on." : "Snap off.");
+    }
+    if (verb == "coords")
+    {
+        const bool on = toggleFlag (plotHeader_.btnSplProbe_.getToggleState());
+        plotHeader_.btnSplProbe_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setShowSplProbe (on);
+        return TerminalResult::ok (on ? "Coordinate display on." : "Coordinate display off.");
+    }
+    if (verb == "ortho")
+    {
+        const bool on = toggleFlag (plotHeader_.btnOrtho_.getToggleState());
+        plotHeader_.btnOrtho_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setOrtho (on);
+        if (on)
+            patternComp_.applyOrthoSpeakerLayout();
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        return TerminalResult::ok (on ? "Ortho on." : "Ortho off.");
+    }
+
+    if (verb == "save")
+    {
+        saveProject();
+        return TerminalResult::ok ("Save requested.");
+    }
+    if (verb == "saveas")
+    {
+        saveProjectAs();
+        return TerminalResult::ok ("Save As…");
+    }
+    if (verb == "open")
+    {
+        openProjectInCurrentWindow();
+        return TerminalResult::ok ("Open project…");
+    }
+
+    if (verb == "run")
+    {
+        runSimulation();
+        return TerminalResult::ok ("Simulation started.");
+    }
+
+    if (verb == "fit")
+    {
+        patternComp_.resetView();
+        return TerminalResult::ok ("Zoom Extents.");
+    }
+    if (verb == "zoomin")
+    {
+        patternComp_.zoomIn();
+        return TerminalResult::ok ("Zoom In.");
+    }
+    if (verb == "zoomout")
+    {
+        patternComp_.zoomOut();
+        return TerminalResult::ok ("Zoom Out.");
+    }
+
+    if (verb == "select")
+    {
+        applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+        preferTerminalFocus();
+        return TerminalResult::ok ("Select tool.");
+    }
+    if (verb == "pan")
+    {
+        applyPlotTool (RadiationPatternComponent::Tool::Pan, false, false);
+        preferTerminalFocus();
+        return TerminalResult::ok ("Pan tool.");
+    }
+
+    if (verb == "viewspl")
+    {
+        setViewMode (ViewMode::SPL);
+        return TerminalResult::ok ("View: SPL Heat Map.");
+    }
+    if (verb == "viewdir")
+    {
+        setViewMode (ViewMode::Directivity);
+        return TerminalResult::ok ("View: Directivity.");
+    }
+    if (verb == "viewmeas")
+    {
+        setViewMode (ViewMode::MeasuredPolar);
+        return TerminalResult::ok ("View: Measured Polar.");
+    }
+
+    if (verb == "color" || verb == "colour")
+    {
+        showDrawColourPicker();
+        return TerminalResult::ok ("Colour picker opened.");
+    }
+    if (verb == "opacity")
+    {
+        const auto a = args.trim();
+        if (a.isEmpty())
+            return TerminalResult::fail ("Usage: OPACITY <0-100>");
+        const float pct = (float) a.getDoubleValue();
+        if (! std::isfinite (pct))
+            return TerminalResult::fail ("Invalid opacity.");
+        patternComp_.setDrawFillAlpha (juce::jlimit (0.0f, 1.0f, pct / 100.0f));
+        plotHeader_.setFillAlpha01 (patternComp_.getDrawFillAlpha());
+        return TerminalResult::ok ("Opacity set to " + juce::String ((int) std::lround (pct)) + "%.");
+    }
+
+    if (verb == "addmic")
+    {
+        if (args.trim().isEmpty())
+        {
+            patternComp_.setAddSpeakerArmed (false);
+            patternComp_.setAddMicArmed (true);
+            applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+            preferTerminalFocus();
+            return TerminalResult::ok ("ADDMIC — click the plot to place a mic (Esc cancels).");
+        }
+        juce::Point<float> pt;
+        if (! parseAnnotPoint (args, pt))
+            return TerminalResult::fail ("Usage: MIC  or  MIC x,y");
+        if (! patternComp_.placeMicAtWorld (pt.x, pt.y))
+            return TerminalResult::fail ("Could not place mic.");
+        return TerminalResult::ok ("Mic placed.");
+    }
+    if (verb == "addspeaker")
+    {
+        if (args.trim().isEmpty())
+        {
+            patternComp_.setAddMicArmed (false);
+            patternComp_.setAddSpeakerArmed (true);
+            applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
+            preferTerminalFocus();
+            return TerminalResult::ok ("ADDSPEAKER — click the plot to place a speaker (Esc cancels).");
+        }
+        juce::Point<float> pt;
+        if (! parseAnnotPoint (args, pt))
+            return TerminalResult::fail ("Usage: SPK  or  SPK x,y");
+        controlPanel_.addSpeakerAt (pt.x, pt.y);
+        return TerminalResult::ok ("Speaker placed.");
+    }
+
+    if (verb == "line" || verb == "pline" || verb == "circle" || verb == "arc"
+        || verb == "rectang" || verb == "square" || verb == "text"
+        || verb == "dist" || verb == "ruler"
+        || verb == "pencil" || verb == "eraser")
+    {
+        return armDrawCommand (verb);
+    }
+
+    return TerminalResult::fail ("Unknown command \"" + verb.toUpperCase() + "\".");
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
@@ -657,15 +1515,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
 void MainComponent::saveProject()
 {
     if (project_.file == juce::File()) { saveProjectAs(); return; }
-    ProjectData p = currentProject();
-    if (p.saveToFile (project_.file))
-    {
-        project_ = p;
-        AppSettings::get().addRecentProject (project_.file);
-        statusStrip_.setStatus ("Project saved: " + project_.file.getFileName(), true);
-    }
-    else
-        statusStrip_.setStatus ("Could not save project.", false);
+    writeProjectToFile (project_.file, false);
 }
 
 void MainComponent::saveProjectAs()
@@ -683,13 +1533,7 @@ void MainComponent::saveProjectAs()
             auto f = fc.getResult();
             if (f == juce::File()) return;
             f = f.withFileExtension ("atmk");
-            ProjectData p = currentProject();
-            if (p.saveToFile (f))
-            {
-                project_ = p;
-                AppSettings::get().addRecentProject (f);
-                statusStrip_.setStatus ("Project saved: " + f.getFileName(), true);
-            }
+            writeProjectToFile (f, false);
         });
 }
 
@@ -709,10 +1553,24 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
     // Unit-system change: re-render the read-out panels with converted values.
     {
         controlPanel_.refreshUnits();
+        plotHeader_.refreshUnits();
+        patternComp_.refreshUnits();
         updateSettingsBar();
     }
 
     applyGridPref();   // grid show/hide may have changed
+    // Autosave on/off may have changed via header toggle.
+    {
+        const bool on = AppSettings::get().autosaveEnabled();
+        toggleAutosave_.setToggleState (on, juce::dontSendNotification);
+        if (on)
+        {
+            if (! autoSaveTimer_.isTimerRunning())
+                autoSaveTimer_.startTimer (15000);
+        }
+        else
+            autoSaveTimer_.stopTimer();
+    }
     resized();         // sidebar collapse may have changed
     repaint();
 }
@@ -771,6 +1629,8 @@ void MainComponent::lookAndFeelChanged()
     btnStats_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
     btnProject_.setColour (juce::TextButton::buttonColourId,   Brand::statsBtn());
     btnProject_.setColour (juce::TextButton::textColourOffId,  Brand::statsText());
+    toggleAutosave_.setColour (juce::ToggleButton::textColourId, Brand::text());
+    toggleAutosave_.setColour (juce::ToggleButton::tickColourId, Brand::accent());
 
     auto restyle = [] (juce::TextButton& b)
     {
@@ -784,6 +1644,9 @@ void MainComponent::lookAndFeelChanged()
         restyle (*b);
     updateViewButtonHighlights();
     commandTerminal_.lookAndFeelChanged();
+    if (terminalFloat_ != nullptr)
+        terminalFloat_->lookAndFeelChanged();
+    syncTerminalDockChrome();
     refreshHeaderIcons(); // also restyles Stats for light/dark mockup
     syncSidebarToggleChrome();
     logo_ = Brand::createLogo (Brand::text());
@@ -939,7 +1802,8 @@ void MainComponent::resized()
     int rx = W - rightPad;
     btnMore_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
     btnPrefsIcon_.setBounds  (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
-    btnHelp_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap * 2;
+    btnHelp_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
+    btnInfo_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap * 2;
 
     const auto statsFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::headerStatsButton));
     const int headerBtnGap = UiConfig::Scale::px (8);
@@ -950,8 +1814,19 @@ void MainComponent::resized()
     };
     const int statsW = headerTextBtnW (btnStats_);
     const int projectW = headerTextBtnW (btnProject_);
-    btnStats_.setBounds      (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH); rx -= statsW + headerBtnGap;
-    btnProject_.setBounds (rx - projectW, headerBtnTop, projectW, Brand::UI::headerIconH); rx -= projectW;
+    const int toggleW = juce::jmax (UiConfig::Scale::px (120),
+                                    juce::roundToInt (statsFont.getStringWidthFloat (toggleAutosave_.getButtonText())
+                                                     + UiConfig::Scale::px (52)));
+
+    // Right-to-left: Project | AutoSave | Stats.
+    btnProject_.setBounds (rx - projectW, headerBtnTop, projectW, Brand::UI::headerIconH);
+    rx -= projectW + headerBtnGap;
+
+    toggleAutosave_.setBounds (rx - toggleW, headerBtnTop, toggleW, Brand::UI::headerIconH);
+    rx -= toggleW + headerBtnGap;
+
+    btnStats_.setBounds (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH);
+    rx -= statsW;
 
     {
         // Logo | title + version | flexible space | header buttons.
@@ -1071,10 +1946,16 @@ void MainComponent::resized()
     btnExportCSV_.setBounds (bx, ey, exportW, exportBtnH);
     bx += exportW + sectionGap;
 
-    // Left: view-mode buttons. Right: command terminal (replaces Phase/Arrival/STI).
+    // Left: view-mode buttons. Right: command terminal (or dock strip when floating).
     const int remainW  = centreW - exportW - sectionGap;
-    const int viewColW = (remainW - viewColGap) / 2;
-    const int termW    = remainW - viewColW - viewColGap;
+    const int dockBtnW = UiConfig::Scale::px (72);
+    const bool termDocked = isTerminalDocked();
+    const int floatStripW = termDocked ? 0
+        : juce::jmin (UiConfig::Scale::px (200), juce::jmax (dockBtnW + UiConfig::Scale::px (100), remainW / 3));
+    const int viewColW = termDocked
+        ? (remainW - viewColGap) / 2
+        : juce::jmax (UiConfig::Scale::px (120), remainW - floatStripW - viewColGap);
+    const int termW = termDocked ? (remainW - viewColW - viewColGap) : 0;
 
     viewHeader_.setBounds (bx, bottomTop, viewColW, secHdrH);
     int vy = contentTop;
@@ -1083,8 +1964,21 @@ void MainComponent::resized()
     btnViewMeasured_.setBounds    (bx, vy, viewColW, btnH);
     bx += viewColW + viewColGap;
 
-    terminalHeader_.setBounds (bx, bottomTop, termW, secHdrH);
-    commandTerminal_.setBounds (bx, contentTop, termW, contentH);
+    terminalHeader_.setVisible (true);
+    btnTerminalDock_.setVisible (true);
+
+    if (termDocked)
+    {
+        terminalHeader_.setBounds (bx, bottomTop, juce::jmax (0, termW - dockBtnW - 4), secHdrH);
+        btnTerminalDock_.setBounds (bx + termW - dockBtnW, bottomTop + 1, dockBtnW, secHdrH - 2);
+        commandTerminal_.setBounds (bx, contentTop, termW, contentH);
+    }
+    else
+    {
+        // Floating window holds the terminal; keep Dock control in the panel.
+        terminalHeader_.setBounds (bx, bottomTop, juce::jmax (0, floatStripW - dockBtnW - 4), secHdrH);
+        btnTerminalDock_.setBounds (bx + floatStripW - dockBtnW, bottomTop + 1, dockBtnW, secHdrH - 2);
+    }
 
     statusStrip_.setBounds (pad, H - statusH, juce::jmax (0, W - pad * 2), statusH);
     layoutPrefsPanel();
@@ -1172,17 +2066,19 @@ void MainComponent::updatePlotChrome()
     title += "  |  " + juce::String ((int) p.frequency) + " Hz";
     if (currentView_ == ViewMode::MeasuredPolar)
     {
-        title += "  |  Measured @ " + juce::String (measDistanceM_, 1) + " m";
+        title += "  |  Measured @ " + Units::metres ((double) measDistanceM_, 1);
     }
     else if (lastResult_.usedMeasuredDirectivity)
     {
         const float simDist = MeasurementData::farFieldDirectivityDistance (measured_, measDistanceM_);
-        title += "  |  Measured @ " + juce::String (simDist, 1) + " m";
+        title += "  |  Measured @ " + Units::metres ((double) simDist, 1);
     }
     plotHeader_.setTitle (title);
 }
 
-void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool, bool openColourPicker)
+void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool,
+                                   bool openColourPicker,
+                                   bool focusPlot)
 {
     patternComp_.setTool (tool);
     using T = RadiationPatternComponent::Tool;
@@ -1194,7 +2090,8 @@ void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool, bool op
                               : tool == T::Ruler  ? A::Ruler
                                                  : A::Shape);
     plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
-    patternComp_.grabKeyboardFocus();
+    if (focusPlot)
+        patternComp_.grabKeyboardFocus();
     if (openColourPicker)
         showDrawColourPicker();
 }
@@ -1294,7 +2191,7 @@ void MainComponent::updateSettingsBar()
         const int hz = (int) (controlPanel_.getParams().frequency + 0.5);
         chips.add ("f = " + juce::String (hz) + " Hz");
         chips.add (MeasurementData::sourceName (measSource_));
-        chips.add (juce::String (measDistanceM_, 1) + " m");
+        chips.add (Units::metres ((double) measDistanceM_, 1));
         chips.add ("View: Measured Polar");
     }
     else
@@ -1310,7 +2207,7 @@ void MainComponent::updateSettingsBar()
         if (lastResult_.usedMeasuredDirectivity)
         {
             const float simDist = MeasurementData::farFieldDirectivityDistance (measured_, measDistanceM_);
-            juce::String m = "Measured @ " + juce::String (simDist, 1) + " m";
+            juce::String m = "Measured @ " + Units::metres ((double) simDist, 1);
             if (lastResult_.measuredDirectivityHz > 0
                 && lastResult_.measuredDirectivityHz != (int) p.frequency)
                 m += " (" + juce::String (lastResult_.measuredDirectivityHz) + " Hz pattern)";
@@ -1389,16 +2286,19 @@ void MainComponent::refreshHeaderIcons()
         return {};
     };
 
-    // Help badge: bake disk/mark colours into SVG so the idle fill always shows
+    // Help / Info badges: bake disk/mark colours into SVG so the idle fill always shows
     // (replaceColour on SVG #fff can leave a white disk = invisible on light header).
-    auto makeHelp = [&] (juce::Colour disk, juce::Colour mark) -> std::unique_ptr<juce::Drawable>
+    auto makeBadge = [&] (const juce::String& markPath, juce::Colour disk, juce::Colour mark)
+        -> std::unique_ptr<juce::Drawable>
     {
         const auto svg = juce::String()
             + R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#)SVG"
             + hexRgb (disk)
             + R"SVG("/><path fill="#)SVG"
             + hexRgb (mark)
-            + R"SVG(" d="M10.2 8.6c.35-1.15 1.3-1.9 2.7-1.9 1.55 0 2.65.95 2.65 2.35 0 .95-.45 1.55-1.35 2.15-.85.55-1.15.95-1.15 1.7v.45h-1.55v-.55c0-1.15.4-1.7 1.3-2.3.7-.45 1-0.85 1-1.4 0-.7-.55-1.15-1.35-1.15-.8 0-1.35.45-1.55 1.2l-1.7-.4zm1.95 7.55c.65 0 1.14-.5 1.15-1.15s-.5-1.15-1.15-1.15-1.15.5-1.15 1.15.5 1.15 1.15 1.15z"/></svg>)SVG";
+            + R"SVG(" d=")SVG"
+            + markPath
+            + R"SVG("/></svg>)SVG";
         if (auto xml = juce::parseXML (svg))
             return juce::Drawable::createFromSVG (*xml);
         return {};
@@ -1407,9 +2307,13 @@ void MainComponent::refreshHeaderIcons()
     const bool dark = AppSettings::get().isDark();
     const auto ink    = dark ? Brand::white() : Brand::text();
     const auto inkHi  = Brand::accent();
-    // Always-visible help disk: charcoal on light header, white on dark.
-    const auto helpDisk = dark ? Brand::white() : juce::Colour (0xff333131);
-    const auto helpMark = dark ? Brand::charcoal() : Brand::white();
+    // Always-visible badge disk: charcoal on light header, white on dark.
+    const auto badgeDisk = dark ? Brand::white() : juce::Colour (0xff333131);
+    const auto badgeMark = dark ? Brand::charcoal() : Brand::white();
+    static const juce::String kHelpMarkPath =
+        "M10.2 8.6c.35-1.15 1.3-1.9 2.7-1.9 1.55 0 2.65.95 2.65 2.35 0 .95-.45 1.55-1.35 2.15-.85.55-1.15.95-1.15 1.7v.45h-1.55v-.55c0-1.15.4-1.7 1.3-2.3.7-.45 1-0.85 1-1.4 0-.7-.55-1.15-1.35-1.15-.8 0-1.35.45-1.55 1.2l-1.7-.4zm1.95 7.55c.65 0 1.15-.5 1.15-1.15s-.5-1.15-1.15-1.15-1.15.5-1.15 1.15.5 1.15 1.15 1.15z";
+    static const juce::String kInfoMarkPath =
+        "M11.1 10.2h1.8v7.1h-1.8zm0-3.9h1.8V8h-1.8z";
 
     auto style = [&] (juce::DrawableButton& b, const char* svg, bool twoTone)
     {
@@ -1421,14 +2325,18 @@ void MainComponent::refreshHeaderIcons()
         b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::btnIn().withAlpha (0.35f));
     };
 
+    auto styleBadge = [&] (juce::DrawableButton& b, const juce::String& markPath)
     {
-        btnHelp_.setEdgeIndent (Brand::UI::headerIconIndent);
-        const auto c0 = makeHelp (helpDisk, helpMark);
-        const auto c1 = makeHelp (Brand::accent(), Brand::white());
-        btnHelp_.setImages (c0.get(), c1.get(), c1.get());
-        btnHelp_.setColour (juce::DrawableButton::backgroundColourId,   juce::Colours::transparentBlack);
-        btnHelp_.setColour (juce::DrawableButton::backgroundOnColourId, Brand::btnIn().withAlpha (0.35f));
-    }
+        b.setEdgeIndent (Brand::UI::headerIconIndent);
+        const auto c0 = makeBadge (markPath, badgeDisk, badgeMark);
+        const auto c1 = makeBadge (markPath, Brand::accent(), Brand::white());
+        b.setImages (c0.get(), c1.get(), c1.get());
+        b.setColour (juce::DrawableButton::backgroundColourId,   juce::Colours::transparentBlack);
+        b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::btnIn().withAlpha (0.35f));
+    };
+
+    styleBadge (btnInfo_, kInfoMarkPath);
+    styleBadge (btnHelp_, kHelpMarkPath);
     style (btnPrefsIcon_, HeaderIcons::kGear, false);
     style (btnMore_,      HeaderIcons::kMenu, false);
 }
@@ -1577,6 +2485,9 @@ void MainComponent::refreshFrequencyResponse()
 void MainComponent::showProjectMenu()
 {
     juce::PopupMenu m;
+    m.addItem (4, "Save Project\tCtrl+S", true, false);
+    m.addItem (5, "Save Project As…", true, false);
+    m.addSeparator();
     m.addItem (1, "Open Project (New Window)");
     m.addItem (2, "Open Project (Current Window)");
     m.addSeparator();
@@ -1587,6 +2498,8 @@ void MainComponent::showProjectMenu()
             if      (r == 1) openProjectInNewWindow();
             else if (r == 2) openProjectInCurrentWindow();
             else if (r == 3) launchNewProjectInstance();
+            else if (r == 4) saveProject();
+            else if (r == 5) saveProjectAs();
         });
 }
 
@@ -1678,6 +2591,8 @@ void MainComponent::loadProjectFile (const juce::File& f)
     undoStack_.clear();
     redoStack_.clear();
     editBaseline_ = takeEditSnapshot();
+    projectDirty_ = false;
+    lastAutosaveMs_ = 0;
     refreshFrequencyResponse();
     resized();
 
@@ -1962,7 +2877,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.3.7");
+            line ("# Atomik Simulation Engine v1.3.8");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));
@@ -2046,7 +2961,7 @@ void MainComponent::setMeasurementDistance (float distanceM)
     patternComp_.setMeasuredDistance (measDistanceM_);
     patternComp_.setMeasuredData (measured_);
 
-    statusStrip_.setStatus ("Polar distance: " + juce::String (measDistanceM_, 1) + " m", true);
+    statusStrip_.setStatus ("Polar distance: " + Units::metres ((double) measDistanceM_, 1), true);
     updateSettingsBar();
 
     // UI distance drives Measured Polar only. SPL prediction keeps the far-field

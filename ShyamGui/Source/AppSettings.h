@@ -64,6 +64,26 @@ public:
         sendChangeMessage();
     }
 
+    bool autosaveEnabled() const noexcept { return autosaveEnabled_; }
+
+    void setAutosaveEnabled (bool b)
+    {
+        if (b == autosaveEnabled_) return;
+        autosaveEnabled_ = b;
+        store();
+        sendChangeMessage();
+    }
+
+    bool terminalUndocked() const noexcept { return terminalUndocked_; }
+
+    void setTerminalUndocked (bool b)
+    {
+        if (b == terminalUndocked_) return;
+        terminalUndocked_ = b;
+        store();
+        // No sendChangeMessage — layout is driven explicitly by MainComponent.
+    }
+
     // --- Recent projects (most-recent first, capped) -----------------------
     juce::StringArray recentProjects() const
     {
@@ -127,6 +147,8 @@ private:
         units_ = (UnitSystem) props_->getIntValue ("units", (int) UnitSystem::SI);
         showGrid_ = props_->getBoolValue ("showGrid", true);
         sidebarCollapsed_ = props_->getBoolValue ("sidebarCollapsed", false);
+        autosaveEnabled_ = props_->getBoolValue ("autosaveEnabled", true);
+        terminalUndocked_ = props_->getBoolValue ("terminalUndocked", false);
     }
 
     void store()
@@ -136,6 +158,8 @@ private:
         props_->setValue ("units", (int) units_);
         props_->setValue ("showGrid", showGrid_);
         props_->setValue ("sidebarCollapsed", sidebarCollapsed_);
+        props_->setValue ("autosaveEnabled", autosaveEnabled_);
+        props_->setValue ("terminalUndocked", terminalUndocked_);
         props_->saveIfNeeded();
     }
 
@@ -144,6 +168,8 @@ private:
     UnitSystem units_ = UnitSystem::SI;
     bool       showGrid_ = true;
     bool       sidebarCollapsed_ = false;
+    bool       autosaveEnabled_ = true;
+    bool       terminalUndocked_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AppSettings)
 };
@@ -182,5 +208,66 @@ namespace Units
     inline juce::String metres (double m, int decimals = 1)
     {
         return juce::String (metresToDisplay (m), decimals) + " " + lengthUnit();
+    }
+
+    // Small-length formatter (cabinet dims, etc.): mm or in.
+    inline juce::String mm (double millimetres, int decimals = 0)
+    {
+        return juce::String (mmToDisplay (millimetres), decimals) + " " + smallLengthUnit();
+    }
+
+    // Grid / ruler / dim labels: picks mm·cm·m (SI) or in·ft (Imperial).
+    inline juce::String formatLengthSmart (double metresVal)
+    {
+        if (imperial())
+        {
+            const double ft = metresVal * 3.280839895;
+            const double a  = std::abs (ft);
+            if (a < 1.0e-12)
+                return "0";
+            if (a + 1.0e-12 < 1.0)
+            {
+                const double inches = metresVal * 39.37007874;
+                if (std::abs (inches - std::round (inches)) < 1.0e-6)
+                    return juce::String ((int) std::lround (inches)) + " in";
+                return juce::String (inches, 1) + " in";
+            }
+            if (std::abs (ft - std::round (ft)) < 1.0e-6)
+                return juce::String ((int) std::lround (ft)) + " ft";
+            return juce::String (ft, 2) + " ft";
+        }
+
+        const double a = std::abs (metresVal);
+        if (a < 1.0e-12)
+            return "0";
+        if (a + 1.0e-12 < 0.01)
+            return juce::String ((int) std::lround (metresVal * 1000.0)) + " mm";
+        if (a + 1.0e-12 < 1.0)
+        {
+            const double cm = metresVal * 100.0;
+            if (std::abs (cm - std::round (cm)) < 1.0e-6)
+                return juce::String ((int) std::lround (cm)) + " cm";
+            return juce::String (metresVal, 3) + " m";
+        }
+        if (std::abs (metresVal - std::round (metresVal)) < 1.0e-6)
+            return juce::String ((int) std::lround (metresVal)) + " m";
+        return juce::String (metresVal, 2) + " m";
+    }
+
+    // Wave number k (stored as rad/m) → display unit matching length system.
+    inline double waveNumberToDisplay (double kPerMetre)
+    {
+        return imperial() ? kPerMetre / 3.280839895 : kPerMetre;
+    }
+    inline juce::String waveNumberUnit() { return juce::String ("rad/") + lengthUnit(); }
+
+    // ---- Snap increment (metres) — SI: 100 mm; Imperial: 1 ft ---------------
+    inline double snapStepMetres()
+    {
+        return imperial() ? 0.3048 : 0.1;   // international foot / 0.1 m
+    }
+    inline juce::String snapStepLabel()
+    {
+        return imperial() ? "1 ft" : "100 mm";
     }
 }

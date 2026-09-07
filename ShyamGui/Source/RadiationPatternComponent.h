@@ -30,6 +30,9 @@ public:
 
     void setShowDistanceRings (bool b) { showDistanceRings_ = b; repaint(); }
     bool showDistanceRings() const noexcept { return showDistanceRings_; }
+
+    /** Re-format length prompts / overlays after SI ↔ Imperial toggle. */
+    void refreshUnits() { updateDrawPrompt(); repaint(); }
     void setShowMicDegrees (bool b) { showMicDegrees_ = b; repaint(); }
     bool showMicDegrees() const noexcept { return showMicDegrees_; }
 
@@ -58,7 +61,7 @@ public:
         ArcThreePoints,
         RectTwoCorners,
         SquareTwoCorners,
-        TextBoxTwoCorners
+        TextBoxClick          // one click places a default box and opens typing
     };
 
     void setTool (Tool t);
@@ -89,6 +92,13 @@ public:
     /** Commit numeric length/radius/angle for the current rubber-band step. */
     bool commitNumericValue (double value);
 
+    /** Terminal / scripted DRAW: feed a point in annotation space (world m or polar-norm). */
+    bool feedAnnotPoint (juce::Point<float> annotPt);
+    /** Finish an open polyline (Enter / FINISH). forceClose closes to first point. */
+    bool finishPolylineCommand (bool forceClose = false);
+    bool isDrawSessionActive() const noexcept { return sessionActive_ || pendingAnchor_; }
+    int  drawSessionPointCount() const noexcept { return (int) sessionPts_.size(); }
+
     juce::String getDrawPrompt() const;
 
     void setDrawColour (juce::Colour c);
@@ -103,10 +113,15 @@ public:
     void clearAnnotations();
     void cancelDrawSession();
     void clearMics();
+    /** Clear drawing / mic / speaker selection on the plot (hides text-box chrome). */
+    void clearPlotSelection();
 
     // Virtual mics (MIC.md)
     void setAddMicArmed (bool armed);
     bool isAddMicArmed() const noexcept { return addMicArmed_; }
+    /** "+ Add" Q21S: arm click-to-place on the world plot. */
+    void setAddSpeakerArmed (bool armed);
+    bool isAddSpeakerArmed() const noexcept { return addSpeakerArmed_; }
     std::vector<MicReceiver> getMics() const { return mics_; }
     void setMics (std::vector<MicReceiver> m);
     int  getSelectedMic() const noexcept { return selectedMic_; }
@@ -140,9 +155,15 @@ public:
     bool hasCopyableSelection() const noexcept;
     bool hasClipboardContent() const noexcept;
     bool copySelection();
+    bool cutSelection();
     bool pasteClipboard();
     bool deleteSelection();
+    /** Translate current selection (annotations in annot space; mics/speakers in world). */
+    void moveSelectionBy (juce::Point<float> deltaAnnot, juce::Point<float> deltaWorld);
     void showSelectionContextMenu (juce::Point<int> screenPos);
+    /** Right-click Properties for a Q21S under the cursor (index, or -1). */
+    void showSelectionContextMenu (juce::Point<int> screenPos, int speakerUnderCursor);
+    void showSpeakerProperties (int speakerIndex);
 
     std::function<void(int)>               onSpeakerSelected;
     std::function<void(int, float, float)> onSpeakerMoved;
@@ -157,6 +178,9 @@ public:
     std::function<void()>                  onAnnotSelectionChanged; // opacity slider sync
     std::function<void()>                  onMicsChanged;
     std::function<void()>                  onAddMicArmedChanged;
+    std::function<void()>                  onAddSpeakerArmedChanged;
+    /** Place a new speaker at world (x, y) metres — MainComponent → ControlPanel. */
+    std::function<void(float, float)>      onPlaceSpeakerAt;
     std::function<bool(const juce::KeyPress&)> onKeyPressed;
 
     void paint (juce::Graphics&) override;
@@ -175,6 +199,8 @@ private:
     void buildImage();
     void fitView();
     void clampViewToField();
+    /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
+    void ensureWorldExtents() noexcept;
 
     juce::Rectangle<int> plotArea() const;
     float worldScaleX() const;
@@ -263,16 +289,22 @@ private:
     static bool pointHitsShape (juce::Point<float> pt,
                                 const Annotation& a,
                                 float radius) noexcept;
+    static bool pointHitsShapeBorder (juce::Point<float> pt,
+                                      const Annotation& a,
+                                      float radius) noexcept;
+    static bool pointHitsShapeFill (juce::Point<float> pt,
+                                    const Annotation& a,
+                                    float radius) noexcept;
     static bool isFilledShapeKind (Annotation::Kind k) noexcept;
     int  annotationHitTest (juce::Point<float> annotPt, float radius) const;
+    int  annotationBorderHitTest (juce::Point<float> annotPt, float radius) const;
+    int  annotationFillHitTest (juce::Point<float> annotPt, float radius) const;
     void setSelectedAnnotation (int index);
-    void clearPlotSelection();
     bool isAnnotationSelected (int index) const;
     bool isMicSelected (int index) const;
     bool isSpeakerSelected (int index) const;
     void syncPrimarySelectionFromSets();
     void moveSelectedAnnotationBy (juce::Point<float> deltaAnnot);
-    void moveSelectionBy (juce::Point<float> deltaAnnot, juce::Point<float> deltaWorld);
     void drawSelectionOverlay (juce::Graphics& g, const Annotation& a);
     static std::vector<juce::Point<float>> resizeHandlesFor (const Annotation& a);
     int  resizeHandleHitTest (const Annotation& a, juce::Point<float> annotPt,
@@ -291,11 +323,20 @@ private:
     void beginMicDrag (int micIndex, juce::Point<float> screenPos);
     void drawShapeAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
     void drawArcAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
-    void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
-    void promptEditTextBox (int index);
+    void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a,
+                                float alphaMul = 1.0f, bool showBorder = false);
+    void beginTextBoxEdit (int index);
+    void endTextBoxEdit (bool commit);
+    void layoutTextBoxEditor();
+    bool isEditingTextBox() const noexcept { return textEdit_ != nullptr && textEditIndex_ >= 0; }
+    juce::Rectangle<int> textBoxEditorScreenBounds (const Annotation& a) const;
     static juce::Point<float> rotateAround (juce::Point<float> p, juce::Point<float> c, float deg) noexcept;
     static juce::Rectangle<float> textBoxLocalRect (const Annotation& a) noexcept;
+    /** Small circular triple-arrow rotate glyph (screen space). */
+    static void drawTextBoxRotateIcon (juce::Graphics& g, juce::Point<float> centre, float radius);
     bool pointHitsTextBox (juce::Point<float> pt, const Annotation& a, float radius) const noexcept;
+    bool pointHitsTextBoxBorder (juce::Point<float> pt, const Annotation& a, float radius) const noexcept;
+    bool pointHitsTextBoxFill (juce::Point<float> pt, const Annotation& a, float radius) const noexcept;
     static juce::String formatLengthLabel (float metres);
     void drawPendingDimLabel (juce::Graphics& g,
                               juce::Point<float> screenMid,
@@ -377,10 +418,16 @@ private:
     juce::Colour            drawColour_ { 0xffffcc00 };
     float                   drawFillAlpha_ = 0.35f;
 
+    // In-place TextBox editor (Word / PowerPoint style)
+    std::unique_ptr<juce::TextEditor> textEdit_;
+    int                               textEditIndex_ = -1;
+    bool                              textEditClosing_ = false;
+
     // Virtual mics
     std::vector<MicReceiver> mics_;
     int                      selectedMic_ = -1;           // primary
     bool                     addMicArmed_ = false;
+    bool                     addSpeakerArmed_ = false;
     int                      nextMicId_ = 1;
     juce::Point<float>       lastMicDragWorld_ { 0, 0 };
     bool                     micDragMoved_ = false;

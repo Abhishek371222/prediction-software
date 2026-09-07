@@ -15,39 +15,54 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.3.5** | 2026-08-26 | Mic receivers + FR window, Show Degrees, embedded Q21S (no Excel on target), Windows Setup |
 | **1.3.6** | 2026-08-31 | Mic ring snap restored; shape-edge Snap tak; start.md |
 | **1.3.7** | 2026-09-02 | Gain fix; multi-delete; text box; clean slate; drawing UX |
+| **1.3.8** | 2026-09-04 | Command line: aliases, typed points, MOVE/ZOOM, dock/undock |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
 
+## [1.3.8] - 2026-09-04
+
+**Atomik Simulation Engine v1.3.8** — full command-line workflow: short aliases and
+full names share one handler, typed-point drawing, MOVE/ZOOM sessions, dockable
+terminal, and branded HELP.
+
+### Added
+- **Command registry** — short form and full name resolve to the same command
+  (e.g. `L`/`LINE`, `PE`/`PENCIL`, `SPK`/`ADDSPEAKER`).
+- **Typed-point DRAW** — after `LINE`/`CIRCLE`/… enter `x,y` (metres) or click the plot.
+- **MOVE** / **ZOOM** sessions — base/second point; zoom `[Extents/In/Out]`.
+- **Dock / Undock** floating terminal window.
+- **HELP** / `?` — Atomik-branded command list.
+
+### Changed
+- Terminal prompts use CAD-style wording (“Specify first point:”).
+- Esc / cancel keeps focus on the terminal when undocked (no longer loses the float).
+- Version strings / file version resource → **v1.3.8**.
+- **Windows Release** `Atomik Simulation Engine v1.3.8.exe` (Q21S embedded).
+
+---
+
 ## [1.3.7] - 2026-09-02
 
 **Atomik Simulation Engine v1.3.7** — gain slider affects SPL again, sidebar Delete
-removes all selected speakers, text boxes with fill and rotation, clean slate on first
-open, and drawing-tool UX fixes (Esc, Line first stroke, Shape menu).
+removes all selected speakers, delay capped at 10 ms, VS Code–style command terminal.
 
 ### Fixed
 - **Gain (dB)**: per-speaker gain now changes heatmap level and array balance (unity-gain
   reference normalisation instead of peak self-normalisation).
 - **Delete**: sidebar Delete removes every speaker in the plot multi-selection, not just
   the primary unit.
-- **Line tool**: first line no longer lost to an accidental micro-drag on mouse-up.
-- **Esc**: returns to the cursor (Select) tool when Shape / Pencil / Eraser / Ruler is active.
-- **Shape menu**: switching to the cursor tool no longer pops the Shape construction menu.
 
 ### Added
 - **Command terminal** in the bottom panel (replaces Phase / Arrival / STI placeholders);
   `cls` / `clear` supported.
-- **Text box** annotations — place from the Shape menu, set fill like other shapes,
-  rotate via handle, double-click to edit text.
 
 ### Changed
 - **Delay (ms)** slider maximum **50 → 10**.
-- **Clean slate**: app opens with no speakers until you add a Q21S unit.
-- **Range** (distance rings) **off by default** until toggled on.
 - Version strings / file version resource → **v1.3.7**.
-- **Windows Release** `Atomik Simulation Engine v1.3.7.exe` refreshed (Q21S embedded).
+- **Windows Release** `Atomik Simulation Engine v1.3.7.exe` (Q21S embedded).
 
 ---
 

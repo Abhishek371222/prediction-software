@@ -47,6 +47,11 @@ private:
     void openPreferences();
     void saveProject();
     void saveProjectAs();
+    void markProjectDirty();
+    void updateSaveIndicator();
+    bool writeProjectToFile (const juce::File& f, bool quiet);
+    void autosaveIfNeeded();
+    juce::File autosaveFileForProject() const;
     ProjectData currentProject() const;   // metadata + live scene
     void exportPdfReport();
     void buildAndWriteReport (const juce::File& f);
@@ -62,7 +67,11 @@ private:
     void highlightViewBtn (ViewMode mode);
     void syncRenderer();
     void showDrawColourPicker();
-    void applyPlotTool (RadiationPatternComponent::Tool tool, bool openColourPicker = false);
+    void applyPlotTool (RadiationPatternComponent::Tool tool,
+                        bool openColourPicker = false,
+                        bool focusPlot = true);
+    void preferTerminalFocus();
+    void cancelCurrentCommand (bool focusPlot = true);
 
     struct EditSnapshot
     {
@@ -75,6 +84,18 @@ private:
     void undoEdit();
     void redoEdit();
     bool handleEditShortcut (const juce::KeyPress&);
+    void showKeyboardShortcuts();
+    using TerminalResult = CommandTerminal::CommandResult;
+    TerminalResult handleTerminalCommand (const juce::String& verb, const juce::String& args);
+    TerminalResult handleTerminalSessionLine (const juce::String& line);
+    TerminalResult armDrawCommand (const juce::String& verb);
+    TerminalResult beginMoveCommand();
+    TerminalResult beginZoomCommand (const juce::String& args);
+    static bool parseAnnotPoint (const juce::String& text, juce::Point<float>& out);
+
+    enum class TerminalSessionKind { None, Draw, Dist, MoveBase, MoveSecond, Zoom };
+    TerminalSessionKind terminalSessionKind_ = TerminalSessionKind::None;
+    juce::Point<float>  terminalMoveBase_ { 0, 0 };
     EditSnapshot takeEditSnapshot() const;
     void applyEditSnapshot (const EditSnapshot&);
     static juce::juce_wchar shortcutLetter (const juce::KeyPress&);
@@ -120,9 +141,17 @@ private:
     juce::StringArray statChips_;   // live simulation stats, shown in the Help (?) popup
 
     juce::Label exportHeader_, viewHeader_, terminalHeader_;
+    juce::TextButton btnTerminalDock_ { "Undock" };
+    void undockTerminal();
+    void dockTerminal();
+    void syncTerminalDockChrome();
+    bool isTerminalDocked() const noexcept { return terminalFloat_ == nullptr; }
+    std::unique_ptr<TerminalFloatWindow> terminalFloat_;
 
     juce::TextButton     btnStats_ { "Statistics" };
     juce::TextButton     btnProject_ { "Project" };
+    juce::ToggleButton   toggleAutosave_ { "AutoSave" };
+    juce::DrawableButton btnInfo_  { "info", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnHelp_  { "help", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnPrefsIcon_ { "prefs", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnMore_  { "more", juce::DrawableButton::ImageFitted };
@@ -177,6 +206,9 @@ private:
         void timerCallback() override { if (fn) fn(); }
     };
     LambdaTimer measPoll_;
+    LambdaTimer autoSaveTimer_;
+    bool        projectDirty_ = false;
+    juce::int64 lastAutosaveMs_ = 0;
 
     static juce::Colour kBg() { return Brand::base(); }
 

@@ -2,7 +2,7 @@
 
 Standalone HTML + MongoDB backup of app releases (**not** wired into the JUCE software).
 
-Starts at **v1.3.0**. Current product cut: **v1.3.7**. Each entry can offer:
+Starts at **v1.3.0**. Current product cut: **v1.3.8**. Each entry can offer:
 
 - Source code zip
 - macOS DMG
@@ -14,7 +14,7 @@ Starts at **v1.3.0**. Current product cut: **v1.3.7**. Each entry can offer:
 cd version-archive
 cp .env.example .env   # once — put MONGODB_URI
 npm install
-node publish-version.mjs 1.3.7 "Gain fix + text box + clean slate + drawing UX"
+node publish-version.mjs 1.3.8 "Command line aliases + typed points + MOVE/ZOOM"
 npm start              # http://127.0.0.1:8787
 ```
 
@@ -30,7 +30,7 @@ Local-only (no Mongo): put files under `artifacts/vX.Y.Z/` and list them in `ver
    ```
 2. Publish the archive entry:
    ```bash
-   node publish-version.mjs 1.3.7 "Short notes about the change"
+   node publish-version.mjs 1.3.8 "Short notes about the change"
    ```
 
 Cursor rule: `.cursor/rules/version-archive.mdc` (loads when working on releases / this folder).

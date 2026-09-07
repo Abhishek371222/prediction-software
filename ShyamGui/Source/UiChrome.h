@@ -178,8 +178,9 @@ public:
                   "Ortho: align selected speakers horizontally or vertically "
                   "with linked centre-to-centre spacing (Figma-style). Off = normal.");
         styleMod (btnSnap_,
-                  "Snap: stick to the visible grid and to nearby edges/corners "
-                  "(other shapes, mics, speakers). Turn on before drawing or moving.");
+                  "Snap: lock to " + juce::String (Units::snapStepLabel())
+                      + " steps and to nearby edges/corners "
+                        "(other shapes, mics, speakers). Turn on before drawing or moving.");
         styleMod (btnSplProbe_,
                   "SPL: show dB SPL under the cursor on the heatmap "
                   "(Select tool). Turn off for a cleaner view.");
@@ -217,6 +218,10 @@ public:
         orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 18);
         orthoGapSlider_.setNumDecimalPlacesToDisplay (1);
         orthoGapSlider_.setTextValueSuffix (" m");
+        orthoGapSlider_.textFromValueFunction =
+            [] (double metres) { return juce::String (Units::metresToDisplay (metres), 1); };
+        orthoGapSlider_.valueFromTextFunction =
+            [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
         orthoGapSlider_.setTooltip ("Linked centre-to-centre spacing — changing it updates all gaps");
         orthoGapSlider_.setColour (juce::Slider::trackColourId, Brand::border());
         orthoGapSlider_.setColour (juce::Slider::thumbColourId, Brand::accent());
@@ -382,7 +387,8 @@ public:
         addShape ("Arc",       3, { { "3 Points", 6 } });
         addShape ("Rectangle", 4, { { "2 Corners", 7 } });
         addShape ("Square",    5, { { "2 Corners", 8 } });
-        addShape ("Text Box",  6, { { "2 Corners", 9 } });
+        // Text Box: one click — no construction submenu.
+        root.addItem (1000 + 6 * 100 + 9, "Text Box");
 
         root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnShape_),
             [onPick] (int result)
@@ -445,6 +451,20 @@ public:
         orthoGapSlider_.setValue (m, juce::dontSendNotification);
     }
     double getOrthoSpacingM() const noexcept { return orthoGapSlider_.getValue(); }
+
+    void refreshUnits()
+    {
+        orthoGapSlider_.textFromValueFunction =
+            [] (double metres) { return juce::String (Units::metresToDisplay (metres), 1); };
+        orthoGapSlider_.valueFromTextFunction =
+            [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
+        orthoGapSlider_.setTextValueSuffix (" " + juce::String (Units::lengthUnit()));
+        orthoGapSlider_.updateText();
+        btnSnap_.setTooltip (
+            "Snap: lock to " + juce::String (Units::snapStepLabel())
+                + " steps and to nearby edges/corners "
+                  "(other shapes, mics, speakers). Turn on before drawing or moving.");
+    }
 
     std::function<void()> onOrthoOptionsChanged;
 
@@ -676,6 +696,8 @@ namespace HeaderIcons
 {
     // Filled badge: disk = #fff (recolour to charcoal), mark = #000 (recolour to white)
     static constexpr const char* kHelp = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path fill="#000" d="M10.2 8.6c.35-1.15 1.3-1.9 2.7-1.9 1.55 0 2.65.95 2.65 2.35 0 .95-.45 1.55-1.35 2.15-.85.55-1.15.95-1.15 1.7v.45h-1.55v-.55c0-1.15.4-1.7 1.3-2.3.7-.45 1-0.85 1-1.4 0-.7-.55-1.15-1.35-1.15-.8 0-1.35.45-1.55 1.2l-1.7-.4zm1.95 7.55c.65 0 1.15-.5 1.15-1.15s-.5-1.15-1.15-1.15-1.15.5-1.15 1.15.5 1.15 1.15 1.15z"/></svg>)SVG";
+    // Filled badge with lowercase “i” (info / keyboard shortcuts).
+    static constexpr const char* kInfo = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path fill="#000" d="M11.1 10.2h1.8v7.1h-1.8zm0-3.9h1.8V8h-1.8z"/></svg>)SVG";
     static constexpr const char* kGear = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.63-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 00-.6.22L2.77 8.84a.5.5 0 00.12.64l2.03 1.58c-.04.31-.07.63-.07.94s.03.63.07.94L2.89 14.5a.5.5 0 00-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>)SVG";
     static constexpr const char* kMenu = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2" fill="#fff"/><circle cx="12" cy="12" r="2" fill="#fff"/><circle cx="12" cy="19" r="2" fill="#fff"/></svg>)SVG";
     // Three-line hamburger for sidebar collapse / expand.

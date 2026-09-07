@@ -109,6 +109,9 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.3.8", "2026-09-04", "Command line + aliases",
+     "Command registry (short=full); typed-point DRAW; MOVE/ZOOM sessions; "
+     "dock/undock terminal; Atomik HELP; Esc keeps float focused; v1.3.8 Windows Release"],
     ["1.3.7", "2026-09-02", "Gain fix + text box + drawing UX",
      "Gain slider affects SPL again; sidebar Delete removes all selected speakers; "
      "text box annotations (fill + rotate); clean slate on first open; Range off by default; "
@@ -137,7 +140,38 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.3.7 detailed changes
+# Sheet 2: v1.3.8 detailed changes
+# ===========================================================================
+ws138 = wb.create_sheet("v1.3.8 Changes")
+ws138.sheet_view.showGridLines = False
+banner(ws138, "v1.3.8  -  Detailed Changes",
+       "2026-09-04  |  Command line aliases + typed points + MOVE/ZOOM", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v138 = [
+    ["Terminal", A, "Command registry",
+     "Short form and full name share one handler (L/LINE, PE/PENCIL, SPK/ADDSPEAKER, …)", "2026-09-04"],
+    ["Terminal", A, "Typed-point DRAW",
+     "After LINE/CIRCLE/… enter x,y (metres) or click the plot", "2026-09-04"],
+    ["Terminal", A, "MOVE / ZOOM sessions",
+     "MOVE base/second point; ZOOM [Extents/In/Out]", "2026-09-04"],
+    ["Terminal", A, "Dock / Undock",
+     "Floating terminal window; state remembered", "2026-09-04"],
+    ["Terminal", A, "HELP / ?",
+     "Atomik-branded command list (no third-party CAD branding)", "2026-09-04"],
+    ["Terminal", F, "Undocked Esc / finish",
+     "Completing or cancelling a command no longer loses the floating terminal", "2026-09-04"],
+    ["Packaging", C, "Version → v1.3.8",
+     "App, resource, archive HTML/json, Windows Release EXE", "2026-09-04"],
+]
+write_table(ws138, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v138, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws138.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.3.7 detailed changes
 # ===========================================================================
 ws137 = wb.create_sheet("v1.3.7 Changes")
 ws137.sheet_view.showGridLines = False
@@ -174,7 +208,7 @@ write_table(ws137, 4,
 ws137.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 3: v1.3.6 detailed changes
+# Sheet 4: v1.3.6 detailed changes
 # ===========================================================================
 ws136 = wb.create_sheet("v1.3.6 Changes")
 ws136.sheet_view.showGridLines = False

@@ -20,7 +20,8 @@ PreferencesComponent::PreferencesComponent()
     configHdr (unitsLabel_,    "Unit system", Brand::Type::prefsLabel,      false);
 
     unitsNote_.setText ("SI: m / mm / kg / " + Units::degree() + "C        "
-                        "Imperial: ft / in / lbs / " + Units::degree() + "F",
+                        "Imperial: ft / in / lbs / " + Units::degree() + "F\n"
+                        "Snap step: SI = 100 mm (0.1 m)    Imperial = 1 ft",
                         juce::dontSendNotification);
     unitsNote_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::prefsNote)));
     unitsNote_.setColour (juce::Label::textColourId, Brand::ash());
