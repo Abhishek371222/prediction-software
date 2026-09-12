@@ -7,6 +7,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Active frequency catalogue — defaults to Q21S; setActiveFrequencyCatalogue()
+// repoints both on a measurement-source switch (see AcousticEngine.h).
+const double* kSupportedFrequencies    = kQ21SFrequencies;
+int           kNumSupportedFrequencies = kNumQ21SFrequencies;
+
 static constexpr double kSpeedOfSound = 343.0;
 static constexpr double kCabHalfW     = (double) Q21SCabinet::halfExtentM;
 static constexpr double kPistonRadius = 0.13;

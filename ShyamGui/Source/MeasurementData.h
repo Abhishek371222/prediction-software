@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "AcousticEngine.h"
 #include "EmbeddedQ21SData.h"
+#include "Embedded15W750Data.h"
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -375,15 +376,21 @@ namespace MeasurementData
 
     // Measurement environments. Product default is Q21S BEM polars (OpenField).
     // Legacy Room (Gylt) maps to ShyamGuild CSVs — kept for pack compatibility.
-    enum Source { OpenField = 0, Gylt = 1 };   // Q21S / Room (legacy)
+    // W750 = 15W750 (15" sealed) BEM polars — a fully separate device: its own
+    // CSV file prefix, frequency catalogue and embedded pack, never merged
+    // with Q21S. Values match AcousticEngine::MeasurementSourceId.
+    enum Source { OpenField = 0, Gylt = 1, W750 = 2 };   // Q21S / Room (legacy) / 15W750
 
     inline const char* packSetName (int source)
     {
+        if (source == W750) return "15W750";
         return source == Gylt ? "ShyamGuild" : "Q21S";
     }
 
     // Quality flags: Q21S BEM arcs @ 0.5/1.0/2.0 m for 1/3-oct catalogue (20–200).
     // >200 Hz / 500 Hz: display OK; weaker for model (BEM ceiling / extrapolation).
+    // Uses each model's own catalogue explicitly (not the mutable "active"
+    // pointer) so trust checks never depend on UI selection order.
     inline bool isTrustedForModel (int source, int hz, float distanceM = 0.5f)
     {
         if (source == Gylt)
@@ -392,9 +399,10 @@ namespace MeasurementData
             if (distanceM > 1.5f) return false;           // room gain at 2 m
             return hz == 80 || hz == 200 || hz == 500;
         }
-        // Q21S BEM 10 m field — native xlsx bands only (20…401).
-        for (int i = 0; i < kNumSupportedFrequencies; ++i)
-            if ((int) std::lround (kSupportedFrequencies[i]) == hz)
+        const double* freqs; int nFreqs;
+        frequencyCatalogue (source, freqs, nFreqs);   // Q21S or 15W750 — isolated
+        for (int i = 0; i < nFreqs; ++i)
+            if ((int) std::lround (freqs[i]) == hz)
                 return true;
         return false;
     }
@@ -432,18 +440,28 @@ namespace MeasurementData
         return loadCsvSweepText (file.loadFileAsString());
     }
 
-    inline RawSweep loadCsvSweepEmbedded (const char* fileName)
+    // Each model bakes into its own namespace (EmbeddedQ21S / Embedded15W750) —
+    // looked up by source so the two embedded packs never cross-match.
+    inline RawSweep loadCsvSweepEmbedded (int source, const char* fileName)
     {
+        if (source == W750)
+        {
+            if (auto* e = Embedded15W750::find (fileName))
+                return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
+            return {};
+        }
         if (auto* e = EmbeddedQ21S::find (fileName))
             return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
         return {};
     }
 
     inline bool hasCsvOnDiskOrEmbedded (const juce::File& packDir,
-                                        const juce::String& csvName)
+                                        const juce::String& csvName,
+                                        int source)
     {
         if (packDir.isDirectory() && packDir.getChildFile (csvName).existsAsFile())
             return true;
+        if (source == W750) return Embedded15W750::hasFile (csvName.toRawUTF8());
         return EmbeddedQ21S::hasFile (csvName.toRawUTF8());
     }
 
@@ -464,7 +482,7 @@ namespace MeasurementData
             c = buildCurve (loadCsvSweep (csv));
             srcName = csvName;
         }
-        else if (auto emb = loadCsvSweepEmbedded (csvName.toRawUTF8()); emb.ok)
+        else if (auto emb = loadCsvSweepEmbedded (source, csvName.toRawUTF8()); emb.ok)
         {
             c = buildCurve (emb);
             srcName = csvName + " (embedded)";
@@ -519,9 +537,9 @@ namespace MeasurementData
         auto hasSweep = [&] (int hz) -> bool
         {
             const bool hasCsv =
-                   hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 0.5f))
-                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 1.0f))
-                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 2.0f));
+                   hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 0.5f), source)
+                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 1.0f), source)
+                || hasCsvOnDiskOrEmbedded (packDir, csvFileName (setName, hz, 2.0f), source);
             const bool hasXlsx = fileFor (xlsxFolder, hz, "1").existsAsFile()
                               || fileFor (xlsxFolder, hz, "0.5").existsAsFile()
                               || fileFor (xlsxFolder, hz, "2").existsAsFile();
@@ -537,10 +555,12 @@ namespace MeasurementData
             return out;
         }
 
-        // Q21S / OpenField — full software catalogue
-        for (int i = 0; i < kNumSupportedFrequencies; ++i)
+        // Q21S or 15W750 — each model's own catalogue only (never blended).
+        const double* freqs; int nFreqs;
+        frequencyCatalogue (source, freqs, nFreqs);
+        for (int i = 0; i < nFreqs; ++i)
         {
-            const int hz = (int) std::lround (kSupportedFrequencies[i]);
+            const int hz = (int) std::lround (freqs[i]);
             if (hasSweep (hz))
                 out.push_back (hz);
         }
@@ -615,7 +635,7 @@ namespace MeasurementData
 
     inline const char* sourceName (int source)
     {
-        juce::ignoreUnused (source);
+        if (source == W750) return "15W750";
         // Product UI: Ground Plane measured set (Room removed from UI).
         return "Ground Plane";
     }
@@ -730,6 +750,13 @@ namespace MeasurementData
             return resolveSourceFolder (
                 juce::File ("D:\\shayam gui\\shyamGuildMeasurements"),
                 { "shyamGuildMeasurements" });
+
+        if (source == W750)
+            // 15W750: separate raw-BEM folder — never falls back to Q21S's.
+            return resolveSourceFolder (
+                juce::File ("D:\\shayam gui\\BEM_Data_15W750_10m"),
+                { "BEM_Data_15W750_10m", "../BEM_Data_15W750_10m", "ShyamGui/../BEM_Data_15W750_10m" },
+                "64Hz.xlsx");
 
         // Q21S: canonical BEM 10 m workbook folder (per-Hz xlsx pack).
         return resolveSourceFolder (
@@ -1076,9 +1103,14 @@ namespace MeasurementData
         std::vector<DirectivityPattern> out;
         if (! set.ok) return out;
 
-        for (int i = 0; i < kNumSupportedFrequencies; ++i)
+        // Use set.source (not the mutable "active" global) so tables always
+        // match the data they were built from, even mid UI-source-switch.
+        const double* freqs; int nFreqs;
+        frequencyCatalogue (set.source, freqs, nFreqs);
+
+        for (int i = 0; i < nFreqs; ++i)
         {
-            const int hz = (int) std::lround (kSupportedFrequencies[i]);
+            const int hz = (int) std::lround (freqs[i]);
             const auto syn = curveForFrequency (set, hz, distanceM);
             if (! syn.ok || ! syn.curve.ok || syn.curve.angleDeg.size() < 2) continue;
 
@@ -1137,16 +1169,22 @@ namespace MeasurementData
         return out;
     }
 
-    inline std::vector<BemFieldPattern> loadBemFieldTables (const MeasuredSet& /*set*/)
+    inline std::vector<BemFieldPattern> loadBemFieldTables (const MeasuredSet& set)
     {
         std::vector<BemFieldPattern> out;
         const juce::File packDir = packDataFolder();
         if (! packDir.isDirectory()) return out;
 
-        for (size_t i = 0; i < kNumSupportedFrequencies; ++i)
+        // Field-file prefix + catalogue both come from set.source, so a
+        // 15W750 set only ever loads "15W750_Field_*" files, never Q21S's.
+        const juce::String setName = packSetName (set.source);
+        const double* freqs; int nFreqs;
+        frequencyCatalogue (set.source, freqs, nFreqs);
+
+        for (int i = 0; i < nFreqs; ++i)
         {
-            const int hz = (int) std::lround (kSupportedFrequencies[i]);
-            const auto f = packDir.getChildFile ("Q21S_Field_" + juce::String (hz) + "Hz.q21f");
+            const int hz = (int) std::lround (freqs[i]);
+            const auto f = packDir.getChildFile (setName + "_Field_" + juce::String (hz) + "Hz.q21f");
             if (! f.existsAsFile()) continue;
             auto bp = loadBemFieldFile (f);
             if (bp.ok) out.push_back (std::move (bp));

@@ -110,8 +110,8 @@ public:
         return out;
     }
 
-    // --- Measurement dataset (0 = Q21S / OpenField, 1 = Room / ShyamGuild legacy)
-    // Default = Q21S BEM polar set from MeasurementIntegrationPack.
+    // --- Measurement dataset (0 = Q21S / OpenField, 1 = Room / ShyamGuild legacy,
+    // 2 = 15W750). Default = Q21S BEM polar set from MeasurementIntegrationPack.
     int measurementSource() const
     {
         return props_ != nullptr ? props_->getIntValue ("measurementSource", 0) : 0;

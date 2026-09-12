@@ -178,20 +178,22 @@ ControlPanel::ControlPanel()
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
-    // Figma's SIMULATION section ends with a "Measurement set" row. Only one
-    // dataset ships today, so the box has a single entry and reads as a
-    // statement of which set is in use rather than a real choice.
+    // Figma's SIMULATION section ends with a "Measurement set" row. It now
+    // selects which device's measured dataset drives the simulation; the two
+    // sets are fully isolated and never blended.
     configTxt (measSetLabel_, "Measurement set");
     measSetBox_.setComponentID ("ctrlCombo");
     measSetBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
     measSetBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
-    measSetBox_.addItem ("Ground Plane", 1);
+    measSetBox_.addItem ("Ground Plane", 1);   // Q21S   — id = source(0) + 1
+    measSetBox_.addItem ("15W750",       3);   // 15W750 — id = source(2) + 1
     measSetBox_.setSelectedId (1, juce::dontSendNotification);
     measSetBox_.onChange = [this]
     {
         if (updatingUI_) return;
+        const int idx = measSetBox_.getSelectedId() - 1;
         if (onMeasurementSourceChanged)
-            onMeasurementSourceChanged (measSetBox_.getSelectedId() - 1);
+            onMeasurementSourceChanged (idx);
     };
     addAndMakeVisible (measSetLabel_);
     addAndMakeVisible (measSetBox_);
@@ -344,6 +346,36 @@ void ControlPanel::refreshUnits()
     else if (! measDistances_.empty())
         measDistBox_.setSelectedId (1, juce::dontSendNotification);
     updatingUI_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// Q21S and 15W750 are two fully separate devices: switching sources repoints
+// the active frequency catalogue (AcousticEngine::setActiveFrequencyCatalogue)
+// and rebuilds freqBox_ from that catalogue only, so the dropdown can never
+// show a blend of both models' frequencies.
+int ControlPanel::setMeasurementSource (int idx)
+{
+    // Selecting an id the box does not contain leaves the ComboBox blank with
+    // no error, so fall back to the first entry and report what we landed on.
+    const int wanted = idx + 1;
+    const int useId  = measSetBox_.indexOfItemId (wanted) >= 0
+                     ? wanted : measSetBox_.getItemId (0);
+    idx = juce::jmax (0, useId - 1);
+
+    setActiveFrequencyCatalogue (idx);
+
+    updatingUI_ = true;
+    measSetBox_.setSelectedId (useId, juce::dontSendNotification);
+
+    freqBox_.clear (juce::dontSendNotification);
+    for (int i = 0; i < kNumSupportedFrequencies; ++i)
+        freqBox_.addItem (juce::String (kSupportedFrequencies[i]) + " Hz", i + 1);
+    int defId = 1;
+    for (int i = 0; i < kNumSupportedFrequencies; ++i)
+        if (kSupportedFrequencies[i] == 52) { defId = i + 1; break; }   // Q21S default; no-op miss for 15W750
+    freqBox_.setSelectedId (defId, juce::dontSendNotification);
+    updatingUI_ = false;
+    return idx;
 }
 
 // ---------------------------------------------------------------------------
