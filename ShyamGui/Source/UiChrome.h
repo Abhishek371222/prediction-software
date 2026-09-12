@@ -23,6 +23,7 @@ public:
 
     bool isExpanded() const { return expanded_; }
 
+    void setTitle (const juce::String& t) { title_ = t; repaint(); }
     void setTitleFontSize (float px) { titleFontSize_ = px; repaint(); }
     void setChevronScale (float s)   { chevronScale_ = s; repaint(); }
 

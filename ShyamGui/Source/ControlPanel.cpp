@@ -88,7 +88,25 @@ ControlPanel::ControlPanel()
     }
     freqBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
     freqBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
-    freqBox_.onChange = [this] { willEdit(); notifyChanged(); };
+    freqBox_.onChange = [this]
+    {
+        if (updatingUI_) return;
+        // Always persist the new frequency for the currently-viewed model.
+        const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
+                                     freqBox_.getSelectedId() - 1);
+        if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
+            savedFreqHz_[currentMeasSource_] = kSupportedFrequencies[fi];
+
+        // Only drive a simulation recompute when the browsed model (section 2)
+        // matches the active simulation model (section 4). If the user is
+        // browsing a different model, frequency edits are silently saved for
+        // that model but don't disturb the current heatmap.
+        if (currentMeasSource_ != activeSimSource_)
+            return;
+
+        willEdit();
+        notifyChanged();
+    };
     addAndMakeVisible (freqBox_);
 
     // Frequency stepping via < > removed — v1.1 uses a full-width dropdown only.
@@ -97,6 +115,25 @@ ControlPanel::ControlPanel()
 
     // --- Speaker selector --------------------------------------------------
     addSection (speakersHdr_, secSpeakersOpen_);
+
+    // Model picker — drives measurement source + frequency catalogue.
+    configTxt (speakerModelLabel_, "Speaker Model");
+    speakerModelBox_.addItem ("Q21S",   1);   // source 0
+    speakerModelBox_.addItem ("15W750", 3);   // source 2
+    speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
+    speakerModelBox_.setComponentID ("ctrlCombo");
+    speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    speakerModelBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
+    speakerModelBox_.onChange = [this]
+    {
+        if (updatingUI_) return;
+        const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = 15W750
+        // Do NOT sync measSetBox_ here — section 2 and section 4 are independent.
+        updateModelDependentLabels();
+        if (onMeasurementModelChanged) onMeasurementModelChanged (src);
+    };
+    addAndMakeVisible (speakerModelBox_);
+
     speakerBox_.setComponentID ("ctrlCombo");
     speakerBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
     speakerBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
@@ -191,7 +228,13 @@ ControlPanel::ControlPanel()
     measSetBox_.onChange = [this]
     {
         if (updatingUI_) return;
-        const int idx = measSetBox_.getSelectedId() - 1;
+        const int id  = measSetBox_.getSelectedId();
+        const int idx = id - 1;
+        activeSimSource_ = idx;   // section 4 drives the active simulation source
+        updatingUI_ = true;
+        speakerModelBox_.setSelectedId (id, juce::dontSendNotification);
+        updatingUI_ = false;
+        updateModelDependentLabels();
         if (onMeasurementSourceChanged)
             onMeasurementSourceChanged (idx);
     };
@@ -353,38 +396,89 @@ void ControlPanel::refreshUnits()
 // the active frequency catalogue (AcousticEngine::setActiveFrequencyCatalogue)
 // and rebuilds freqBox_ from that catalogue only, so the dropdown can never
 // show a blend of both models' frequencies.
-int ControlPanel::setMeasurementSource (int idx)
+int ControlPanel::setMeasurementSource (int idx, bool updateActiveSim)
 {
     // Selecting an id the box does not contain leaves the ComboBox blank with
     // no error, so fall back to the first entry and report what we landed on.
+    // The model box is the visible selector, so it is the one to validate
+    // against -- the Measurement set row in section 4 is hidden.
     const int wanted = idx + 1;
-    const int useId  = measSetBox_.indexOfItemId (wanted) >= 0
-                     ? wanted : measSetBox_.getItemId (0);
+    const int useId  = speakerModelBox_.indexOfItemId (wanted) >= 0
+                     ? wanted : speakerModelBox_.getItemId (0);
     idx = juce::jmax (0, useId - 1);
 
-    setActiveFrequencyCatalogue (idx);
+    // Save outgoing model's current frequency before the catalogue changes.
+    const int outFi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
+                                    freqBox_.getSelectedId() - 1);
+    const double outgoingHz = kSupportedFrequencies[outFi];
+    if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
+        savedFreqHz_[currentMeasSource_] = outgoingHz;
+
+    currentMeasSource_ = idx;
+    if (updateActiveSim) activeSimSource_ = idx;
+    setActiveFrequencyCatalogue (idx);   // kSupportedFrequencies now points to new model
 
     updatingUI_ = true;
-    measSetBox_.setSelectedId (useId, juce::dontSendNotification);
+    if (updateActiveSim)
+        measSetBox_.setSelectedId (useId, juce::dontSendNotification);
+    speakerModelBox_.setSelectedId (useId, juce::dontSendNotification);
 
+    // Rebuild the frequency dropdown from the new model's catalogue.
     freqBox_.clear (juce::dontSendNotification);
     for (int i = 0; i < kNumSupportedFrequencies; ++i)
         freqBox_.addItem (juce::String (kSupportedFrequencies[i]) + " Hz", i + 1);
-    int defId = 1;
+
+    // Target frequency: if this model was visited before, restore its saved Hz.
+    // If first visit (savedFreqHz_ == -1), pick the nearest available frequency
+    // to where the user just was — so the heatmap doesn't jump unnecessarily.
+    const double saved = (idx >= 0 && idx < 3) ? savedFreqHz_[idx] : -1.0;
+    double targetHz = kSupportedFrequencies[0];
+    if (saved >= 0.0)
+    {
+        targetHz = saved;
+    }
+    else
+    {
+        double bestDist = 1.0e9;
+        for (int i = 0; i < kNumSupportedFrequencies; ++i)
+        {
+            const double d = std::abs (kSupportedFrequencies[i] - outgoingHz);
+            if (d < bestDist) { bestDist = d; targetHz = kSupportedFrequencies[i]; }
+        }
+    }
+
+    int restoreId = 1;
     for (int i = 0; i < kNumSupportedFrequencies; ++i)
-        if (kSupportedFrequencies[i] == 52) { defId = i + 1; break; }   // Q21S default; no-op miss for 15W750
-    freqBox_.setSelectedId (defId, juce::dontSendNotification);
+        if (std::abs (kSupportedFrequencies[i] - targetHz) < 0.5) { restoreId = i + 1; break; }
+    freqBox_.setSelectedId (restoreId, juce::dontSendNotification);
+
     updatingUI_ = false;
+    updateModelDependentLabels();
     return idx;
 }
 
 // ---------------------------------------------------------------------------
+juce::String ControlPanel::activeModelName() const
+{
+    return (speakerModelBox_.getSelectedId() == 3) ? "15W750" : "Q21S";
+}
+
+void ControlPanel::updateModelDependentLabels()
+{
+    const juce::String name = activeModelName();
+    speakersHdr_.setTitle ("2. " + name + " Units");
+    editHdr_.setTitle ("3. SELECTED " + name);
+    addBtn_.setTooltip ("Add " + name + ": click the plot where you want the unit");
+    rebuildSpeakerBox();
+}
+
 void ControlPanel::rebuildSpeakerBox()
 {
     updatingUI_ = true;
     speakerBox_.clear (juce::dontSendNotification);
+    const juce::String name = activeModelName();
     for (int i = 0; i < (int) speakers_.size(); ++i)
-        speakerBox_.addItem ("Q21S-" + juce::String (i + 1), i + 1);
+        speakerBox_.addItem (name + "-" + juce::String (i + 1), i + 1);
     if (selected_ >= (int) speakers_.size()) selected_ = (int) speakers_.size() - 1;
     if (selected_ < 0 && ! speakers_.empty()) selected_ = 0;
     if (selected_ >= 0) speakerBox_.setSelectedId (selected_ + 1, juce::dontSendNotification);
@@ -784,6 +878,11 @@ void ControlPanel::resetToDefaults()
     speakers_.clear();
     selectedSpeakers_.clear();
     selected_ = -1;
+    savedFreqHz_[0] = -1.0;
+    savedFreqHz_[1] = -1.0;
+    savedFreqHz_[2] = -1.0;
+    currentMeasSource_ = 0;
+    activeSimSource_   = 0;
     updatingUI_ = true;
     {
         int defId = 1;
@@ -791,7 +890,8 @@ void ControlPanel::resetToDefaults()
             if (kSupportedFrequencies[i] == 52) { defId = i + 1; break; }
         freqBox_.setSelectedId (defId, juce::dontSendNotification);   // 52 Hz
     }
-    measSetBox_.setSelectedId (1, juce::dontSendNotification); // Ground Plane
+    measSetBox_.setSelectedId      (1, juce::dontSendNotification); // Ground Plane / Q21S
+    speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     setAvailableDistances ({ 0.5f, 1.0f, 2.0f }, 0.5f);
     resSlider_.setValue (400.0, juce::dontSendNotification);
     floorSlider_.setValue (-36.0, juce::dontSendNotification);
@@ -832,9 +932,23 @@ void ControlPanel::applyProject (const ProjectData& p)
 SimParams ControlPanel::getParams() const
 {
     SimParams p;
-    const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
-                                 freqBox_.getSelectedId() - 1);
-    p.frequency  = kSupportedFrequencies[fi];
+    // freqBox_ may be showing the OTHER model's catalogue because the user is
+    // browsing in section 2. The running simulation must keep its own model's
+    // frequency, never borrow the one currently on screen.
+    double freq;
+    if (currentMeasSource_ == activeSimSource_)
+    {
+        const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
+                                     freqBox_.getSelectedId() - 1);
+        freq = kSupportedFrequencies[fi];
+    }
+    else
+    {
+        const double saved = (activeSimSource_ >= 0 && activeSimSource_ < 3)
+                             ? savedFreqHz_[activeSimSource_] : -1.0;
+        freq = (saved >= 0.0) ? saved : kSupportedFrequencies[0];
+    }
+    p.frequency  = freq;
     // Fixed 100 x 100 m domain. Tying it to the visible region instead made
     // every zoom and pan a re-solve, which was slow and moved the goalposts
     // for placement and for the Rel. SPL normalisation. The view's job is to
@@ -911,11 +1025,12 @@ void ControlPanel::applyColours()
 {
     auto txt = { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
                  &resLabel_, &floorLabel_, &measDistLabel_,
+                 &speakerModelLabel_,
                  &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ };
     for (auto* l : txt) l->setColour (juce::Label::textColourId, Brand::text());
     layoutLabel_.setColour (juce::Label::textColourId, Brand::text());
 
-    for (auto* b : { &freqBox_, &speakerBox_, &presetBox_, &measDistBox_ })
+    for (auto* b : { &freqBox_, &speakerModelBox_, &speakerBox_, &presetBox_, &measDistBox_ })
     {
         b->setColour (juce::ComboBox::backgroundColourId, kBtnIn());
         b->setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
@@ -985,6 +1100,7 @@ void ControlPanel::updateScaledChrome()
 
     for (auto* l : { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
                      &resLabel_, &floorLabel_, &measDistLabel_, &measSetLabel_,
+                     &speakerModelLabel_,
                      &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ })
         l->setFont (Brand::tech (labelSz));
 
@@ -1085,12 +1201,18 @@ void ControlPanel::resized()
     setSectionVisible ({ &freqBox_ }, secFreqOpen_);
     sectionBreak();
 
-    // 2. Q21S Units — Figma shows only the device row (dropdown | + Add |
-    // Delete). The "Quick Layout" helper + 1/2/3 Devices buttons have no slot
-    // in the mock, so they're hidden here (handlers/logic untouched).
+    // 2. <model> units -- a Model row (Q21S / 15W750) sits above the device
+    // row (dropdown | + Add | Delete), and the header title tracks the model.
+    // The "Quick Layout" helper + 1/2/3 Devices buttons have no slot in the
+    // Figma mock, so they stay hidden here (handlers/logic untouched).
     section (speakersHdr_, secSpeakersOpen_);
-    ifOpen (secSpeakersOpen_, [&] { speakerUnitRow(); });
-    setSectionVisible ({ &speakerBox_, &addBtn_, &deleteBtn_ }, secSpeakersOpen_);
+    ifOpen (secSpeakersOpen_, [&]
+    {
+        editRow (speakerModelLabel_, speakerModelBox_);
+        speakerUnitRow();
+    });
+    setSectionVisible ({ &speakerModelLabel_, &speakerModelBox_,
+                         &speakerBox_, &addBtn_, &deleteBtn_ }, secSpeakersOpen_);
     for (auto* c : { (juce::Component*) &layoutLabel_, (juce::Component*) &layout1Btn_,
                      (juce::Component*) &layout2Btn_,  (juce::Component*) &layout3Btn_ })
     {

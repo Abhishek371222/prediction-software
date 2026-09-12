@@ -586,7 +586,8 @@ MainComponent::MainComponent (ProjectData project)
 
     measDir_    = MeasurementData::folderForSource (measSource_);
     measSource_ = controlPanel_.setMeasurementSource (measSource_);
-    controlPanel_.onMeasurementSourceChanged = [this] (int s) { setMeasurementSource (s); };
+    controlPanel_.onMeasurementSourceChanged = [this] (int s) { setMeasurementSource (s, true); };
+    controlPanel_.onMeasurementModelChanged  = [this] (int s) { controlPanel_.setMeasurementSource (s, false); };
     controlPanel_.onMeasurementDistanceChanged = [this] (float d) { setMeasurementDistance (d); };
     loadMeasurements();
     measPoll_.fn = [this] { pollMeasurements(); };
@@ -3162,7 +3163,7 @@ void MainComponent::setMeasurementDistance (float distanceM)
         patternComp_.repaint();
 }
 
-void MainComponent::setMeasurementSource (int src)
+void MainComponent::setMeasurementSource (int src, bool recompute)
 {
     src = juce::jlimit (0, 2, src);
     if (src == measSource_) return;
@@ -3183,10 +3184,18 @@ void MainComponent::setMeasurementSource (int src)
                         + MeasurementData::sourceName (src), true);
     updateSettingsBar();
 
-    if (currentView_ == ViewMode::MeasuredPolar)
-        patternComp_.repaint();
-    else
-        scheduleRecompute();            // re-run so the heat map uses the new directivity
+    if (recompute)
+    {
+        // Section 4 / explicit source change: update heatmap immediately.
+        if (currentView_ == ViewMode::MeasuredPolar)
+            patternComp_.repaint();
+        else
+            scheduleRecompute();    // re-run so the heat map uses the new directivity
+    }
+    // Section 2 model picker (recompute=false): data is loaded so the freq
+    // catalogue and directivity tables are ready, but the heatmap stays frozen
+    // on the current result. The next user action (freq change, speaker move,
+    // etc.) will trigger a recompute with the newly selected model's data.
 }
 
 juce::int64 MainComponent::measurementsSignature() const

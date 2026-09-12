@@ -29,19 +29,24 @@ public:
     /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
     std::function<void()>    onAddSpeakerRequest;
 
-    std::function<void(int)> onMeasurementSourceChanged;  // 0 = Q21S, 1 = GYLT, 2 = 15W750
-    std::function<void(float)> onMeasurementDistanceChanged;  // metres
+    std::function<void(int)> onMeasurementSourceChanged;         // 0=Q21S, 1=GYLT, 2=15W750  — recomputes heatmap
+    std::function<void(int)> onMeasurementModelChanged;          // section-2 picker only — loads data, no recompute
+    std::function<void(float)> onMeasurementDistanceChanged;     // metres
 
     /** Sync UI to a measurement source: combo selection + frequency catalogue.
-        Q21S / 15W750 are fully isolated -- this rebuilds freqBox_ from scratch
-        so the two devices' frequencies can never mix.
+        The two devices are fully isolated -- this rebuilds freqBox_ from
+        scratch so their frequencies can never mix.
+
+        @param updateActiveSim false when the user is only browsing the other
+        model's catalogue in section 2; the running simulation then keeps its
+        own model and its own frequency.
 
         @returns the index actually selected, which may differ from the one
         asked for. Selecting an id the box does not contain leaves ComboBox
-        showing NOTHING, with no error -- a stale "measurementSource" of 1 in
-        the settings file blanked this control and gave no clue why. Falls back
-        to the first item instead and lets the caller know. */
-    int setMeasurementSource (int idx);
+        showing NOTHING, with no error -- a stale "measurementSource" in the
+        settings file blanked this control and gave no clue why. Falls back to
+        the first item instead and lets the caller know. */
+    int setMeasurementSource (int idx, bool updateActiveSim = true);
 
     // Populate distance choices from loaded measurement set (0.5 / 1.0 / 2.0 m).
     void setAvailableDistances (const std::vector<float>& distancesM, float preferM = 0.5f);
@@ -138,6 +143,12 @@ private:
     std::vector<int> selectedSpeakers_; // multi-select from plot; empty → use selected_
     bool updatingUI_ = false;
 
+    // Per-source frequency memory: each model keeps its own last-selected Hz.
+    // -1 = never visited yet (first switch uses nearest-frequency matching).
+    int    currentMeasSource_ = 0;
+    int    activeSimSource_   = 0;   // tracks section-4 (simulation) model independently
+    double savedFreqHz_[3]    = { -1.0, -1.0, -1.0 };
+
     // Frequency
     SectionHeader    freqHdr_     { "1. Frequency (Hz)" };
     juce::ComboBox   freqBox_;
@@ -147,6 +158,8 @@ private:
 
     // Speaker selector
     SectionHeader    speakersHdr_ { "2. Q21S units" };
+    juce::Label      speakerModelLabel_;
+    juce::ComboBox   speakerModelBox_;   // Q21S / 15W750 model selector
     juce::ComboBox   speakerBox_;
     juce::TextButton addBtn_, deleteBtn_;
 
@@ -214,6 +227,9 @@ private:
     static juce::Colour kBtnAct() { return Brand::accent(); }
     static juce::Colour kBtnIn()  { return Brand::btnIn(); }
     static juce::Colour kBorder() { return Brand::border(); }
+
+    juce::String activeModelName() const;   // "Q21S" or "15W750"
+    void updateModelDependentLabels();      // headers, tooltip, speaker list prefix
 
     void styleSlider (juce::Slider&, double lo, double hi, double step, double val);
     void styleToggle (juce::ToggleButton&, const juce::String&);
