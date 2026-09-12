@@ -179,6 +179,7 @@ if errorlevel 1 exit /B 0</Command>
     <ClCompile Include="Source\PreferencesComponent.cpp" />
     <ClCompile Include="Source\DashboardComponent.cpp" />
     <ClCompile Include="Source\EmbeddedQ21SData.cpp" />
+    <ClCompile Include="Source\Embedded15W750Data.cpp" />
   </ItemGroup>
 
   <!-- ======================================================================
@@ -200,6 +201,7 @@ if errorlevel 1 exit /B 0</Command>
     <ClInclude Include="Source\CommandRegistry.h" />
     <ClInclude Include="Source\MeasurementData.h" />
     <ClInclude Include="Source\EmbeddedQ21SData.h" />
+    <ClInclude Include="Source\Embedded15W750Data.h" />
     <ClInclude Include="Source\UiTextConfig.h" />
     <ClInclude Include="Source\BrandTheme.h" />
     <ClInclude Include="Source\RadiationPatternComponent.h" />

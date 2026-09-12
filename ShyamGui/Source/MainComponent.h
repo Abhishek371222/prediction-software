@@ -187,7 +187,7 @@ private:
     MeasuredSet  measured_;
     juce::File   measDir_;
     juce::int64  measSignature_ = 0;
-    int          measSource_ = 1;    // 0 = Open Field, 1 = Room
+    int          measSource_ = 1;    // 0 = Q21S (Open Field), 1 = Room, 2 = 15W750
     float        measDistanceM_ = 0.5f;
     void         setMeasurementSource (int src);
     void         setMeasurementDistance (float distanceM);

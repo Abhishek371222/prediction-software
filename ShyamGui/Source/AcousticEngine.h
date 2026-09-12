@@ -51,12 +51,51 @@ struct BemFieldPattern
     bool               ok = false;
 };
 
-// UI catalogue = native BEM_Data_10m/<Hz>Hz.xlsx only (no interpolated extras).
-static constexpr double kSupportedFrequencies[] = {
+// Per-model frequency catalogues — native BEM xlsx bands only (no interpolated
+// extras). Q21S and 15W750 are two completely separate devices: each keeps
+// its own array below and the two are never merged or shared.
+static constexpr double kQ21SFrequencies[] = {
     20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401
 };
-static constexpr int kNumSupportedFrequencies =
-    (int) (sizeof (kSupportedFrequencies) / sizeof (kSupportedFrequencies[0]));
+static constexpr int kNumQ21SFrequencies =
+    (int) (sizeof (kQ21SFrequencies) / sizeof (kQ21SFrequencies[0]));
+
+static constexpr double k15W750Frequencies[] = {
+    64, 135, 243, 507, 1057, 1904, 3971, 8280, 17200
+};
+static constexpr int kNum15W750Frequencies =
+    (int) (sizeof (k15W750Frequencies) / sizeof (k15W750Frequencies[0]));
+
+// Measurement source ids (mirror MeasurementData::Source; duplicated here so
+// this header doesn't need to include MeasurementData.h).
+enum class MeasurementSourceId { Q21S = 0, Room = 1, W750 = 2 };
+
+// Isolated per-model catalogue lookup — never returns a blended list.
+inline void frequencyCatalogue (int source, const double*& freqs, int& count) noexcept
+{
+    if (source == (int) MeasurementSourceId::W750)
+    {
+        freqs = k15W750Frequencies;
+        count = kNum15W750Frequencies;
+    }
+    else
+    {
+        freqs = kQ21SFrequencies;
+        count = kNumQ21SFrequencies;
+    }
+}
+
+// UI catalogue = the currently active model's native band list only. Repointed
+// by setActiveFrequencyCatalogue() whenever the measurement source changes —
+// the previous model's array is fully swapped out, never merged (single
+// active pointer, so the two devices' frequencies cannot collide at runtime).
+extern const double* kSupportedFrequencies;
+extern int           kNumSupportedFrequencies;
+
+inline void setActiveFrequencyCatalogue (int source) noexcept
+{
+    frequencyCatalogue (source, kSupportedFrequencies, kNumSupportedFrequencies);
+}
 
 // View modes selectable in the UI / renderer.
 enum class ViewMode

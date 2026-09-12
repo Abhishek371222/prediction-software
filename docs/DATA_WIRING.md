@@ -2,33 +2,47 @@
 
 Living record of **which datasets and maths files the app / pipeline use**. Update whenever measured CSVs, source xlsx, or maths scripts change.
 
-**Last updated:** 2026-08-11  
-**Code loader:** `ShyamGui/Source/MeasurementData.h` → `MainComponent::loadMeasurements()`  
-**Product cabinet name:** **Q21S** (UI labels formerly XN18)
+**Last updated:** 2026-09-12
+**Code loader:** `ShyamGui/Source/MeasurementData.h` → `MainComponent::loadMeasurements()`
+**Product cabinet name:** **Q21S** (UI labels formerly XN18). A second, fully
+isolated measurement source, **15W750**, was added 2026-09-12 (backend data
+pipeline + runtime source switch only — cabinet dimensions/dialog branding
+stay Q21S; see §1.4).
 
 ---
 
 ## How the app wires data today
 
 ```text
-UI: Q21S measured set only
+UI: "Measurement set" combo — Q21S (Ground Plane) or 15W750
         │
         ▼
 MeasurementData::packDataFolder()
-  → …/MeasurementIntegrationPack/Data/   (manifest.csv must exist)
-        │  prefer CSV named Q21S_<Hz>Hz_<dist>m.csv
+  → …/MeasurementIntegrationPack/Data/   (manifest.csv must exist, shared by both sets)
+        │  prefer CSV named <Set>_<Hz>Hz_<dist>m.csv  (Set = "Q21S" or "15W750")
         ▼
 buildCurve → on-axis-normalised R = 10^((SPL−SPL₀)/20)
         │
         ▼
 buildDirectivityTables() → AcousticEngine (SPL heatmap + array directivity)
-RadiationPatternComponent MeasuredPolar view (Q21S polars)
+RadiationPatternComponent MeasuredPolar view
 ```
+
+Q21S and 15W750 are two completely separate devices: each keeps its own
+frequency catalogue (`AcousticEngine::kQ21SFrequencies` /
+`k15W750Frequencies`), its own CSV file prefix, its own `.q21f` field files,
+and its own embedded-C++ pack (`EmbeddedQ21SData` / `Embedded15W750Data`).
+Selecting a measurement source repoints the active catalogue
+(`AcousticEngine::setActiveFrequencyCatalogue`) and rebuilds the Frequency
+dropdown from that catalogue only — the two never merge or share a table, so
+switching devices can't leak one model's frequencies/readings into the other.
 
 | Role | Active set ID | Display name | Distances | Frequencies |
 |------|---------------|--------------|-----------|-------------|
-| Product default | `Q21S` | Q21S | 0.5 / 1.0 / 2.0 m | Native `BEM_Data_10m/<Hz>Hz.xlsx` only |
+| Product default | `Q21S` | Ground Plane | 0.5 / 1.0 / 2.0 m | Native `BEM_Data_10m/<Hz>Hz.xlsx` only |
 | Trusted for model | Q21S | — | 0.5–2.0 m | 20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401 |
+| Secondary device | `15W750` | 15W750 | 0.5 / 1.0 / 2.0 m | Native `BEM_Data_15W750_10m/<Hz>Hz.xlsx` only |
+| Trusted for model | 15W750 | — | 0.5–2.0 m | 64, 135, 243, 507, 1057, 1904, 3971, 8280, 17200 |
 | Legacy / unused in UI | `Factory`, `ShyamGuild`, `XN18`, `3inch` | — | — | Still on disk in pack |
 
 Engine / UI heatmap colours: Atomik `ColourMaps::sevenColor` (not matplotlib jet).
@@ -56,7 +70,7 @@ Derived from maths BEM workbook `Q21S_PolarPlot_Data_10M.xlsx` via
 | `Q21S_<Hz>Hz_1p0m.csv` | native bands | 1.0 m | 360 | Yes |
 | `Q21S_<Hz>Hz_2p0m.csv` | native bands | 2.0 m | 360 | Far-field prefer for SPL sim |
 
-Catalogue Hz list = `kSupportedFrequencies` in `AcousticEngine.h` (**xlsx only, extras hidden**):  
+Catalogue Hz list = `kQ21SFrequencies` in `AcousticEngine.h` (**xlsx only, extras hidden**):
 **20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401**
 
 | Origin | Detail |
@@ -87,10 +101,57 @@ python3 docs/q21s_bem_plots/export_q21s_pack_csvs.py
 Still under `MeasurementIntegrationPack/Data/` for reference:  
 `Factory_*`, `ShyamGuild_*`, `XN18_*`, `3inch_*`.
 
+### 1.4 Active in app (15W750) — isolated second device
+
+Raw BEM per-Hz workbooks live in `BEM_Data_15W750_10m/<Hz>Hz.xlsx` (same
+column layout as `BEM_Data_10m`: X1/X3 = X/Z, Pressure real/imag), exported via
+`docs/w750_bem_plots/export_15w750_native_hz_pack.py` (mirror of the Q21S
+native-band script, retargeted). Writes into the **same**
+`MeasurementIntegrationPack/Data/` folder as Q21S, but every filename is
+prefixed `15W750_` instead of `Q21S_`, so the two sets can never collide.
+
+| Pattern | Freqs | Dist | n | Trust |
+|---------|-------|------|---|-------|
+| `15W750_<Hz>Hz_0p5m.csv` | native bands | 0.5 m | 360 | Yes |
+| `15W750_<Hz>Hz_1p0m.csv` | native bands | 1.0 m | 360 | Yes |
+| `15W750_<Hz>Hz_2p0m.csv` | native bands | 2.0 m | 360 | Far-field prefer for SPL sim |
+
+Catalogue Hz list = `k15W750Frequencies` in `AcousticEngine.h` — completely
+separate array from `kQ21SFrequencies`, never merged:
+**64, 135, 243, 507, 1057, 1904, 3971, 8280, 17200**
+
+CSV schema: `degree,dBSPL` (0…359 step 1°) — identical schema to Q21S, kept
+in the same folder, distinguished only by the `15W750_` filename prefix and
+the `15W750` row value in `manifest.csv`'s `set` column.
+
+Regenerate:
+
+```bash
+python docs/w750_bem_plots/export_15w750_native_hz_pack.py          # all 9 native bands
+python docs/w750_bem_plots/export_15w750_native_hz_pack.py 64 135   # subset
+```
+
+Bake into the EXE after regenerating (mirrors `embed_q21s_pack.py`):
+
+```bash
+python ShyamGui/Tools/embed_15w750_pack.py
+```
+
+Runtime switch: `ControlPanel`'s "Measurement set" combo (`Ground Plane` /
+`15W750`) → `MeasurementData::Source` `OpenField(0)` / `W750(2)` →
+`AcousticEngine::setActiveFrequencyCatalogue()` repoints the active
+frequency catalogue and `ControlPanel::setMeasurementSource()` rebuilds the
+Frequency dropdown from it, before `MainComponent::loadMeasurements()`
+reloads an entirely fresh, isolated `MeasuredSet` for the newly-selected
+device. Cabinet dimensions, dialog titles, and product branding are
+unchanged (still Q21S) — only the acoustic dataset driving the Frequency
+list / directivity tables / SPL heatmap switches.
+
 ### 1.3 Change log (measured)
 
 | Date | Change | Files / set |
 |------|--------|-------------|
+| 2026-09-12 | **Added 15W750 as a second, fully isolated measurement source** (own CSVs/.q21f/embedded pack/frequency catalogue; runtime switch via "Measurement set" combo) | `15W750_*Hz_*.csv`, `Embedded15W750Data.*`, `AcousticEngine.h`, `MeasurementData.h`, `ControlPanel.*`, `MainComponent.cpp` |
 | 2026-08-11 | **Rewired product measured set to Q21S BEM polars** for full catalogue | `Q21S_*Hz_*.csv` |
 | 2026-08-11 | UI cabinet / labels **XN18 → Q21S** | `Source/*` |
 | *(prior)* | Ground Plane / Factory 5-band set | `Factory_*` |
@@ -104,6 +165,7 @@ Still under `MeasurementIntegrationPack/Data/` for reference:
 | Item | Location | Role |
 |------|----------|------|
 | Q21S BEM → polar CSV pipeline | `docs/q21s_bem_plots/export_q21s_pack_csvs.py` | Feeds measured pack |
+| 15W750 BEM → polar CSV pipeline | `docs/w750_bem_plots/export_15w750_native_hz_pack.py` | Feeds measured pack (isolated 15W750 set) |
 | Preview heatmaps / polars (jet) | `docs/q21s_bem_plots/generate_q21s_plots.py` | Offline check only |
 | Baffled piston fallback | `AcousticEngine.cpp` | When measured directivity off |
 | Array field compute | `AcousticEngine::compute` | SPL heatmap (Atomik colours) |
@@ -115,6 +177,9 @@ Still under `MeasurementIntegrationPack/Data/` for reference:
 | `Q21S_PolarPlot_Data_10M.xlsx` | **Canonical Q21S BEM field** (~182k rows) |
 | `docs/q21s_bem_plots/export_q21s_pack_csvs.py` | Pack CSV exporter |
 | `docs/q21s_bem_plots/generate_q21s_plots.py` | Preview PNGs |
+| `BEM_Data_15W750_10m/<Hz>Hz.xlsx` | Raw 15W750 BEM field, 9 native bands |
+| `docs/w750_bem_plots/export_15w750_native_hz_pack.py` | 15W750 pack CSV + `.q21f` exporter |
+| `ShyamGui/Tools/embed_15w750_pack.py` | Bakes 15W750 CSVs into `Embedded15W750Data.*` |
 | `two_speaker_radiation.m` / `shyamGuildMeasurements/*.py` | Legacy maths helpers |
 
 ### 2.3 BEM symmetry rule

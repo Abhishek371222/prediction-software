@@ -29,13 +29,13 @@ public:
     /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
     std::function<void()>    onAddSpeakerRequest;
 
-    std::function<void(int)> onMeasurementSourceChanged;  // 0 = Open Field, 1 = GYLT
+    std::function<void(int)> onMeasurementSourceChanged;  // 0 = Q21S, 1 = GYLT, 2 = 15W750
     std::function<void(float)> onMeasurementDistanceChanged;  // metres
 
-    void setMeasurementSource (int idx)
-    {
-        measSetBox_.setSelectedId (idx + 1, juce::dontSendNotification);
-    }
+    /** Sync UI to a measurement source: combo selection + frequency catalogue
+        (Q21S / 15W750 are fully isolated — this rebuilds freqBox_ from
+        scratch so the two devices' frequencies can never mix). */
+    void setMeasurementSource (int idx);
 
     // Populate distance choices from loaded measurement set (0.5 / 1.0 / 2.0 m).
     void setAvailableDistances (const std::vector<float>& distancesM, float preferM = 0.5f);

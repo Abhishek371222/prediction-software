@@ -2972,12 +2972,17 @@ void MainComponent::setMeasurementDistance (float distanceM)
 
 void MainComponent::setMeasurementSource (int src)
 {
-    src = juce::jlimit (0, 1, src);
+    src = juce::jlimit (0, 2, src);
     if (src == measSource_) return;
 
     measSource_ = src;
     AppSettings::get().setMeasurementSource (src);
     measDir_ = MeasurementData::folderForSource (src);
+
+    // Repoint the active frequency catalogue + rebuild the Frequency dropdown
+    // from it BEFORE reloading, so loadMeasurements()/getParams() below only
+    // ever see the newly-selected device's own (isolated) frequency list.
+    controlPanel_.setMeasurementSource (src);
 
     loadMeasurements();                 // rebuilds measured_ + directivity tables
     patternComp_.setMeasuredFrequency ((int) (controlPanel_.getParams().frequency + 0.5));
@@ -2998,24 +3003,33 @@ juce::int64 MainComponent::measurementsSignature() const
     // Prefer MeasurementIntegrationPack CSVs; also watch legacy .xlsx.
     const juce::File pack = MeasurementData::packDataFolder();
     const juce::File xlsx = MeasurementData::xlsxFolderForSource (measSource_);
-    const int roomFreqs[] = { 30, 80, 200, 500 };
-    const int gpFreqs[]   = { 30, 60, 100, 150, 200 };
-    const int* freqList = (measSource_ == MeasurementData::Gylt) ? roomFreqs : gpFreqs;
-    const int  nFreq    = (measSource_ == MeasurementData::Gylt) ? 4 : 5;
     const float dists[] = { 0.5f, 1.0f, 2.0f };
     const juce::String setName = MeasurementData::packSetName (measSource_);
 
-    for (int i = 0; i < nFreq; ++i)
+    // Poll only the active source's own catalogue (Room / Q21S / 15W750) —
+    // never mixes another device's frequencies into the change signature.
+    std::vector<int> freqList;
+    if (measSource_ == MeasurementData::Gylt)
+        freqList = { 30, 80, 200, 500 };
+    else
+    {
+        const double* freqs; int n;
+        frequencyCatalogue (measSource_, freqs, n);
+        for (int i = 0; i < n; ++i)
+            freqList.push_back ((int) std::lround (freqs[i]));
+    }
+
+    for (int hz : freqList)
         for (float d : dists)
         {
             const juce::File csv = pack.getChildFile (
-                MeasurementData::csvFileName (setName, freqList[i], d));
+                MeasurementData::csvFileName (setName, hz, d));
             if (csv.existsAsFile())
                 sig += csv.getLastModificationTime().toMilliseconds() + csv.getSize();
 
             const juce::String distTag = (std::abs (d - 0.5f) < 1.0e-3f) ? "0.5"
                                       : (std::abs (d - 2.0f) < 1.0e-3f) ? "2" : "1";
-            const juce::File xf = MeasurementData::fileFor (xlsx, freqList[i], distTag);
+            const juce::File xf = MeasurementData::fileFor (xlsx, hz, distTag);
             if (xf.existsAsFile())
                 sig += xf.getLastModificationTime().toMilliseconds() + xf.getSize();
         }
