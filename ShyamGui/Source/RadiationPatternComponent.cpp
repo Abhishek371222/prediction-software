@@ -631,7 +631,7 @@ void RadiationPatternComponent::updateDrawPrompt()
 {
     juce::String p;
     if (addSpeakerArmed_)
-        p = "Q21S: click the plot to place the unit (Esc cancels)";
+        p = "Click the plot to place the unit (Esc cancels)";
     else if (addMicArmed_)
         p = "MIC: click to place (Esc cancels). Snaps to 1 / 2 / 4 / 8 m rings.";
     else if (tool_ == Tool::Ruler)
@@ -3001,7 +3001,8 @@ void RadiationPatternComponent::showSpeakerProperties (int speakerIndex)
 
     juce::DialogWindow::LaunchOptions opts;
     opts.content.setOwned (body);
-    opts.dialogTitle = "Q21S-" + juce::String (speakerIndex + 1) + " Properties";
+    opts.dialogTitle = juce::String (speakerModelName (speakers_[(size_t) speakerIndex].model))
+                      + "-" + juce::String (speakerIndex + 1) + " Properties";
     opts.dialogBackgroundColour = Brand::panel();
     opts.escapeKeyTriggersCloseButton = true;
     opts.useNativeTitleBar = true;
@@ -3711,7 +3712,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         g.setColour (Brand::white().withAlpha (alpha));
         g.setFont (Brand::tech (isSel ? Brand::Type::speakerIdSelected
                                       : Brand::Type::speakerId, true));
-        g.drawText ("Q21S_" + juce::String (i + 1),
+        g.drawText (juce::String (speakerModelName (spk.model)) + "_" + juce::String (i + 1),
                     (int) (c.x - 40), (int) (box.getY() - 16.0f), 80, 14,
                     juce::Justification::centred);
     }
@@ -4123,7 +4124,7 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
     {
         g.setColour (juce::Colour (0xff5a6270));
         g.setFont (Brand::tech (Brand::Type::colourBarTick));
-        g.drawText (nEnabled == 0 ? "Enable a Q21S unit and press RUN"
+        g.drawText (nEnabled == 0 ? "Enable a unit and press RUN"
                                   : "No polar data — press RUN",
                     bounds.withTrimmedTop (bounds.getHeight() / 2),
                     juce::Justification::centred);

@@ -35,7 +35,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.3.8", juce::dontSendNotification);
+    versionLabel_.setText ("v1.3.9", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -438,7 +438,7 @@ MainComponent::MainComponent (ProjectData project)
     {
         patternComp_.setAddSpeakerArmed (true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
-        statusStrip_.setStatus ("Click the plot to place a Q21S", true);
+        statusStrip_.setStatus ("Click the plot to place a unit", true);
         patternComp_.grabKeyboardFocus();
     };
 
@@ -459,7 +459,7 @@ MainComponent::MainComponent (ProjectData project)
         syncRenderer();
         scheduleRecompute();
         commitEdit();
-        statusStrip_.setStatus ("Q21S placed — click again to add another (Esc cancels)", true);
+        statusStrip_.setStatus ("Unit placed — click again to add another (Esc cancels)", true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
     patternComp_.onAddSpeakerArmedChanged = [this]
@@ -499,13 +499,14 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.refreshLayoutControls();
 
     // Measured polar data: initial load + ~1 s live refresh ----------------
+    // Both Q21S and 15W750 are loaded unconditionally (reloadAllMeasurements)
+    // so mixed-model scenes work from the start; measSource_ only selects
+    // which one the Measured Polar reference view shows.
     measSource_ = AppSettings::get().measurementSource();
-    measDir_    = MeasurementData::folderForSource (measSource_);
     controlPanel_.setMeasurementSource (measSource_);
-    controlPanel_.onMeasurementSourceChanged = [this] (int s) { setMeasurementSource (s, true); };
-    controlPanel_.onMeasurementModelChanged  = [this] (int s) { controlPanel_.setMeasurementSource (s, false); };
+    controlPanel_.onMeasurementSourceChanged   = [this] (int s) { setMeasurementSource (s); };
     controlPanel_.onMeasurementDistanceChanged = [this] (float d) { setMeasurementDistance (d); };
-    loadMeasurements();
+    reloadAllMeasurements();
     measPoll_.fn = [this] { pollMeasurements(); };
     measPoll_.startTimer (1000);
 
@@ -2011,8 +2012,9 @@ void MainComponent::run()
     p.viewMode  = currentView_;
     {
         juce::ScopedLock sl (measLock_);
-        p.directivity = directivityTables_;
-        p.bemFields   = bemFieldTables_;
+        p.directivity       = directivityQ21STables_;
+        p.directivity15W750 = directivity15W750Tables_;
+        p.bemFields         = bemFieldTablesQ21S_;
     }
 
     auto result = AcousticEngine::compute (p);
@@ -2201,7 +2203,7 @@ void MainComponent::updateSettingsBar()
         chips.add ("f = " + juce::String ((int) p.frequency) + " Hz");
         chips.add ("lambda = " + juce::String (Units::metresToDisplay (lastResult_.lambda), 2)
                      + " " + Units::lengthUnit());
-        chips.add ("Q21S = " + juce::String (lastResult_.activeSpeakers)
+        chips.add ("Units = " + juce::String (lastResult_.activeSpeakers)
                      + " / " + juce::String ((int) p.speakers.size()));
         chips.add ("View: " + juce::String (vm));
         chips.add ("Grid: " + juce::String (p.resolution) + " x " + juce::String (p.resolution));
@@ -2459,9 +2461,16 @@ void MainComponent::refreshFrequencyResponse()
     {
         juce::ScopedLock sl (measLock_);
         base = controlPanel_.getParams();
-        base.directivity = directivityTables_;
-        base.bemFields = bemFieldTables_;
+        base.directivity       = directivityQ21STables_;
+        base.directivity15W750 = directivity15W750Tables_;
+        base.bemFields         = bemFieldTablesQ21S_;
     }
+
+    // The sweep walks the currently-browsed model's own catalogue only; that
+    // model's speakers must be probed at each swept Hz, so its own resolved
+    // frequency field is updated alongside p.frequency — the OTHER model's
+    // field (and therefore its speakers' rendered pattern) stays untouched.
+    const int browsedModel = controlPanel_.getBrowsedModel();
 
     std::vector<std::vector<float>> curves ((size_t) mics.size());
     for (size_t mi = 0; mi < mics.size(); ++mi)
@@ -2471,6 +2480,8 @@ void MainComponent::refreshFrequencyResponse()
         {
             SimParams p = base;
             p.frequency = kSupportedFrequencies[hi];
+            if (browsedModel == MeasurementData::W750) p.frequency15W750 = p.frequency;
+            else                                         p.frequencyQ21S   = p.frequency;
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
                                                    intensityDb, absDb))
@@ -2701,7 +2712,9 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
 
     // Live scene + last result.
     SimParams base = controlPanel_.getParams();
-    { juce::ScopedLock sl (measLock_); base.directivity = directivityTables_; base.bemFields = bemFieldTables_; }
+    { juce::ScopedLock sl (measLock_);
+      base.directivity = directivityQ21STables_; base.directivity15W750 = directivity15W750Tables_;
+      base.bemFields = bemFieldTablesQ21S_; }
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
     in.params = base;
@@ -2825,6 +2838,11 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
 {
     SimParams p = base;
     p.frequency = freq;
+    // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue —
+    // update only that model's resolved frequency so the other model's
+    // speakers keep rendering at their own unrelated frequency.
+    if (measSource_ == MeasurementData::W750) p.frequency15W750 = freq;
+    else                                        p.frequencyQ21S   = freq;
     p.viewMode  = ViewMode::SPL;
 
     SimResult r = AcousticEngine::compute (p);
@@ -2867,7 +2885,9 @@ void MainComponent::exportCSV()
 
             const auto now = juce::Time::getCurrentTime();
             int nDev = 0;
-            for (const auto& s : pr.speakers) if (s.enabled) ++nDev;
+            int nQ21S = 0, n15W750 = 0;
+            for (const auto& s : pr.speakers)
+                if (s.enabled) { ++nDev; if (s.model == 2) ++n15W750; else ++nQ21S; }
 
             const bool absOk = r.hasAbsoluteSpl
                 && r.splAbsDB.size() == (size_t) W * (size_t) H;
@@ -2878,8 +2898,13 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.3.8");
-            line ("# Product,Q21S");
+            juce::String product;
+            if (nQ21S > 0)   product << "Q21S(" << nQ21S << ")";
+            if (n15W750 > 0) product << (product.isEmpty() ? "" : "+") << "15W750(" << n15W750 << ")";
+            if (product.isEmpty()) product = "Q21S";
+
+            line ("# Atomik Simulation Engine v1.3.9");
+            line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));
             line ("# Frequency_Hz," + juce::String (r.frequency, 1));
@@ -2926,31 +2951,56 @@ void MainComponent::exportCSV()
 // ---------------------------------------------------------------------------
 // Measured polar data: load + live auto-refresh
 // ---------------------------------------------------------------------------
-void MainComponent::rebuildDirectivityTables()
+MeasuredSet MainComponent::referenceSetFor (int source) const
 {
-    {
-        juce::ScopedLock sl (measLock_);
-        // Heatmap / array sim: far-field BEM arc (not 0.5 m near-field lobes).
-        const float simDist = MeasurementData::farFieldDirectivityDistance (measured_, measDistanceM_);
-        directivityTables_ = MeasurementData::buildDirectivityTables (measured_, simDist);
-        bemFieldTables_    = MeasurementData::loadBemFieldTables (measured_);
-    }
-    patternComp_.setMeasuredDistance (measDistanceM_);
-    patternComp_.setMeasuredData (measured_);
+    if (source == MeasurementData::W750)      return measured15W750_;
+    if (source == MeasurementData::OpenField) return measuredQ21S_;
+    // Legacy Room — not part of the always-loaded pair (no Speaker::model
+    // ever selects it); load on demand only if explicitly chosen.
+    return MeasurementData::loadMeasurements (MeasurementData::folderForSource (source), source);
 }
 
-void MainComponent::loadMeasurements()
+// Q21S and 15W750 are always both (re)loaded together — a scene can mix
+// units of either, so neither model's data may depend on which one the
+// "Measurement set" reference view (section 4) currently shows.
+void MainComponent::reloadAllMeasurements()
 {
-    measured_      = MeasurementData::loadMeasurements (measDir_, measSource_);
+    MeasuredSet mQ21S = MeasurementData::loadMeasurements (
+        MeasurementData::folderForSource (MeasurementData::OpenField), MeasurementData::OpenField);
+    MeasuredSet m15W750 = MeasurementData::loadMeasurements (
+        MeasurementData::folderForSource (MeasurementData::W750), MeasurementData::W750);
+
+    // Heatmap / array sim: far-field BEM arc (not 0.5 m near-field lobes),
+    // computed independently per model.
+    const float distQ21S   = MeasurementData::farFieldDirectivityDistance (mQ21S,   1.0f);
+    const float dist15W750 = MeasurementData::farFieldDirectivityDistance (m15W750, 1.0f);
+
+    auto dirQ21S   = MeasurementData::buildDirectivityTables (mQ21S,   distQ21S);
+    auto dir15W750 = MeasurementData::buildDirectivityTables (m15W750, dist15W750);
+    auto bemQ21S   = MeasurementData::loadBemFieldTables (mQ21S);
+    auto bem15W750 = MeasurementData::loadBemFieldTables (m15W750);
+
+    {
+        juce::ScopedLock sl (measLock_);
+        measuredQ21S_            = std::move (mQ21S);
+        measured15W750_          = std::move (m15W750);
+        directivityQ21STables_   = std::move (dirQ21S);
+        directivity15W750Tables_ = std::move (dir15W750);
+        bemFieldTablesQ21S_      = std::move (bemQ21S);
+        bemFieldTables15W750_    = std::move (bem15W750);
+
+        measured_ = referenceSetFor (measSource_);
+    }
+
+    measDir_       = MeasurementData::folderForSource (measSource_);
     measSignature_ = measurementsSignature();
 
-    // Distance choices depend on which sweeps exist for this set.
     const auto dists = MeasurementData::availableDistances (measured_);
-    const float prefer = (measSource_ == MeasurementData::Gylt) ? 0.5f : 1.0f;
-    controlPanel_.setAvailableDistances (dists, prefer);
+    controlPanel_.setAvailableDistances (dists, 1.0f);
     measDistanceM_ = controlPanel_.getMeasurementDistance();
 
-    rebuildDirectivityTables();
+    patternComp_.setMeasuredDistance (measDistanceM_);
+    patternComp_.setMeasuredData (measured_);
     patternComp_.setMeasuredFrequency ((int) (controlPanel_.getParams().frequency + 0.5));
     updateSettingsBar();
 }
@@ -2971,77 +3021,81 @@ void MainComponent::setMeasurementDistance (float distanceM)
         patternComp_.repaint();
 }
 
-void MainComponent::setMeasurementSource (int src, bool recompute)
+// Section 4's "Measurement set" now only selects which device the Measured
+// Polar reference view shows. It no longer gates the engine — every placed
+// speaker already simulates with its own model's directivity (both are
+// always loaded), so switching this never needs a heatmap recompute.
+void MainComponent::setMeasurementSource (int src)
 {
     src = juce::jlimit (0, 2, src);
     if (src == measSource_) return;
 
     measSource_ = src;
     AppSettings::get().setMeasurementSource (src);
+
+    {
+        juce::ScopedLock sl (measLock_);
+        measured_ = referenceSetFor (src);
+    }
     measDir_ = MeasurementData::folderForSource (src);
 
-    // Repoint the active frequency catalogue + rebuild the Frequency dropdown
-    // from it BEFORE reloading, so loadMeasurements()/getParams() below only
-    // ever see the newly-selected device's own (isolated) frequency list.
-    controlPanel_.setMeasurementSource (src);
+    const auto dists = MeasurementData::availableDistances (measured_);
+    controlPanel_.setAvailableDistances (dists, 1.0f);
+    measDistanceM_ = controlPanel_.getMeasurementDistance();
 
-    loadMeasurements();                 // rebuilds measured_ + directivity tables
-    patternComp_.setMeasuredFrequency ((int) (controlPanel_.getParams().frequency + 0.5));
+    patternComp_.setMeasuredDistance (measDistanceM_);
+    patternComp_.setMeasuredData (measured_);
 
     statusStrip_.setStatus (juce::String ("Measurement set: ")
                         + MeasurementData::sourceName (src), true);
     updateSettingsBar();
 
-    if (recompute)
-    {
-        // Section 4 / explicit source change: update heatmap immediately.
-        if (currentView_ == ViewMode::MeasuredPolar)
-            patternComp_.repaint();
-        else
-            scheduleRecompute();    // re-run so the heat map uses the new directivity
-    }
-    // Section 2 model picker (recompute=false): data is loaded so the freq
-    // catalogue and directivity tables are ready, but the heatmap stays frozen
-    // on the current result. The next user action (freq change, speaker move,
-    // etc.) will trigger a recompute with the newly selected model's data.
+    if (currentView_ == ViewMode::MeasuredPolar)
+        patternComp_.repaint();
 }
 
 juce::int64 MainComponent::measurementsSignature() const
 {
+    // Combined fingerprint across BOTH always-loaded devices (plus legacy
+    // Room only if that happens to be the reference selection), so a live
+    // edit to either CSV pack is caught regardless of what's on screen.
     juce::int64 sig = 0;
-    // Prefer MeasurementIntegrationPack CSVs; also watch legacy .xlsx.
     const juce::File pack = MeasurementData::packDataFolder();
-    const juce::File xlsx = MeasurementData::xlsxFolderForSource (measSource_);
     const float dists[] = { 0.5f, 1.0f, 2.0f };
-    const juce::String setName = MeasurementData::packSetName (measSource_);
 
-    // Poll only the active source's own catalogue (Room / Q21S / 15W750) —
-    // never mixes another device's frequencies into the change signature.
-    std::vector<int> freqList;
-    if (measSource_ == MeasurementData::Gylt)
-        freqList = { 30, 80, 200, 500 };
-    else
+    auto addModel = [&] (int source)
     {
-        const double* freqs; int n;
-        frequencyCatalogue (measSource_, freqs, n);
-        for (int i = 0; i < n; ++i)
-            freqList.push_back ((int) std::lround (freqs[i]));
-    }
-
-    for (int hz : freqList)
-        for (float d : dists)
+        const juce::File xlsx = MeasurementData::xlsxFolderForSource (source);
+        const juce::String setName = MeasurementData::packSetName (source);
+        std::vector<int> freqList;
+        if (source == MeasurementData::Gylt)
+            freqList = { 30, 80, 200, 500 };
+        else
         {
-            const juce::File csv = pack.getChildFile (
-                MeasurementData::csvFileName (setName, hz, d));
-            if (csv.existsAsFile())
-                sig += csv.getLastModificationTime().toMilliseconds() + csv.getSize();
-
-            const juce::String distTag = (std::abs (d - 0.5f) < 1.0e-3f) ? "0.5"
-                                      : (std::abs (d - 2.0f) < 1.0e-3f) ? "2" : "1";
-            const juce::File xf = MeasurementData::fileFor (xlsx, hz, distTag);
-            if (xf.existsAsFile())
-                sig += xf.getLastModificationTime().toMilliseconds() + xf.getSize();
+            const double* freqs; int n;
+            frequencyCatalogue (source, freqs, n);
+            for (int i = 0; i < n; ++i)
+                freqList.push_back ((int) std::lround (freqs[i]));
         }
+        for (int hz : freqList)
+            for (float d : dists)
+            {
+                const juce::File csv = pack.getChildFile (
+                    MeasurementData::csvFileName (setName, hz, d));
+                if (csv.existsAsFile())
+                    sig += csv.getLastModificationTime().toMilliseconds() + csv.getSize();
+
+                const juce::String distTag = (std::abs (d - 0.5f) < 1.0e-3f) ? "0.5"
+                                          : (std::abs (d - 2.0f) < 1.0e-3f) ? "2" : "1";
+                const juce::File xf = MeasurementData::fileFor (xlsx, hz, distTag);
+                if (xf.existsAsFile())
+                    sig += xf.getLastModificationTime().toMilliseconds() + xf.getSize();
+            }
+    };
+
+    addModel (MeasurementData::OpenField);
+    addModel (MeasurementData::W750);
+    if (measSource_ == MeasurementData::Gylt) addModel (MeasurementData::Gylt);
     return sig;
 }
 
@@ -3050,7 +3104,7 @@ void MainComponent::pollMeasurements()
     const juce::int64 sig = measurementsSignature();
     if (sig == measSignature_) return;   // unchanged
 
-    loadMeasurements();
+    reloadAllMeasurements();
     statusStrip_.setStatus ("Measurements refreshed: "
                         + juce::Time::getCurrentTime().formatted ("%H:%M:%S"), true);
     if (currentView_ == ViewMode::MeasuredPolar)

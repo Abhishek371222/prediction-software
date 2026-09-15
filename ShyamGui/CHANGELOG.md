@@ -16,9 +16,47 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.3.6** | 2026-08-31 | Mic ring snap restored; shape-edge Snap tak; start.md |
 | **1.3.7** | 2026-09-02 | Gain fix; multi-delete; text box; clean slate; drawing UX |
 | **1.3.8** | 2026-09-04 | Command line: aliases, typed points, MOVE/ZOOM, dock/undock |
+| **1.3.9** | 2026-09-15 | 15W750 added as a second, fully isolated measurement source alongside Q21S |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.3.9] - 2026-09-15
+
+**Atomik Simulation Engine v1.3.9** — a second speaker model, **15W750**, is now
+supported alongside Q21S. A scene can freely mix units of both; each is
+simulated with its own measured data, own frequency catalogue, and own
+directivity pattern, with no cross-talk between the two.
+
+### Added
+- **15W750 device**: 9 native BEM bands (64 Hz – 17.2 kHz) baked into the EXE
+  the same way Q21S is (own CSV pack, `.q21f` field files, embedded C++ pack) —
+  see `docs/DATA_WIRING.md` §1.4.
+- **Per-unit model** — every placed speaker now carries its own model tag
+  (`Speaker::model`), saved with the project. The "Speaker Model" picker
+  (section 2) tags new units and drives the Frequency dropdown's catalogue;
+  switching it no longer relabels or otherwise touches existing units of the
+  other model.
+- Properties dialog, Info panel, mic-lock dialog, and PDF/CSV report exports
+  all name each unit by its real model instead of always saying "Q21S".
+
+### Fixed
+- **Cross-model frequency bleed**: selecting/changing a frequency for one
+  model could silently reshape the *other* model's already-placed units,
+  because both were evaluated against one shared global frequency with
+  unrestricted nearest-match fallback. Each device now resolves and remembers
+  its own frequency independently (`SimParams::frequencyQ21S` /
+  `frequency15W750`); changing one can never affect the other.
+- Removed the separate "Measurement set" selector (section 4) that duplicated
+  and could desync from the "Speaker Model" picker — section 2 is now the
+  single source of truth for which model's data is being viewed/placed.
+
+### Changed
+- Q21S and 15W750 measurement data (both `MeasuredSet`s and both directivity
+  table sets) are now always loaded together, regardless of which model is
+  currently displayed, so a mixed scene never has to wait on a reload.
 
 ---
 

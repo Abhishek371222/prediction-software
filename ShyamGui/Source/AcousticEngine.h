@@ -15,7 +15,19 @@ struct Speaker
     bool  polarityInverted   = false;   // Normal / Reverse
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
     bool  enabled            = true;
+    // Which device this unit is: 0 = Q21S, 2 = 15W750 (matches
+    // MeasurementData::Source / AcousticEngine::MeasurementSourceId). Each
+    // unit is simulated with its OWN model's directivity — a scene can freely
+    // mix both; they are never blended into one shared pattern.
+    int   model              = 0;
 };
+
+// Display name for a Speaker::model / MeasurementData::Source value. Single
+// canonical spot so UI labels, dialogs, and reports never disagree.
+inline const char* speakerModelName (int model) noexcept
+{
+    return (model == 2) ? "15W750" : "Q21S";
+}
 
 // Q21S product cabinet dimensions (metres). Plan view uses width × depth.
 namespace Q21SCabinet
@@ -109,7 +121,19 @@ enum class ViewMode
 
 struct SimParams
 {
-    double frequency  = 52.0;    // one of kSupportedFrequencies (Hz)
+    double frequency  = 52.0;    // active/displayed simulation frequency (Hz)
+                                  // — drives wavelength/phase (shared physical
+                                  // basis) and the Frequency dropdown/reports.
+    // Each device's OWN currently-selected frequency, always a value native
+    // to (or interpolated only within) THAT model's own prescribedFrequencies
+    // — never borrowed from the other model. Every speaker picks its
+    // directivity pattern using its own model's entry here, never the
+    // other model's, and never the raw `frequency` above when that belongs
+    // to a different model. Q21S and 15W750 are isolated by construction:
+    // changing one can never change the other's value or its speakers'
+    // rendered pattern. Populated by ControlPanel::getParams() every call.
+    double frequencyQ21S   = 20.0;
+    double frequency15W750 = 64.0;
     double worldW     = 100.0;   // world width  (m)
     double worldH     = 100.0;   // world height (m)
     int    resolution = 400;     // grid cells per axis
@@ -121,9 +145,12 @@ struct SimParams
 
     std::vector<Speaker> speakers;
 
-    // Measured Q21S BEM directivity tables. Always applied when non-empty
-    // (useMeasuredDirectivity is forced on — no UI toggle).
+    // Measured BEM directivity tables, one array per device — always applied
+    // (useMeasuredDirectivity is forced on — no UI toggle). Each Speaker picks
+    // its table by its own `model` field (directivity = Q21S/source 0,
+    // directivity15W750 = source 2); the engine never blends the two.
     std::vector<DirectivityPattern> directivity;
+    std::vector<DirectivityPattern> directivity15W750;
     // Absolute BEM mid-plane fields (Heatmap.m / Q21F). Loaded for tooling;
     // the live SPL heatmap uses measured polar directivity across the full world
     // (not a stamped ±5 m island).
@@ -171,9 +198,10 @@ struct SimResult
 // ---------------------------------------------------------------------------
 // AcousticEngine — BEM polar × 1/r over the full world, coherent array sum.
 //
-// Each enabled Q21S uses the measured BEM directivity D(θ) and on-axis dB SPL
-// at R_ref. Pressure spreads as 1/r (inverse-square intensity). Pressures add
-// as complex numbers (superposition). The ±5 m BEM field is never stamped.
+// Each enabled speaker uses ITS OWN model's measured BEM directivity D(θ) and
+// on-axis dB SPL at R_ref (Q21S and 15W750 units may coexist in one scene).
+// Pressure spreads as 1/r (inverse-square intensity). Pressures add as complex
+// numbers (superposition). The ±5 m BEM field is never stamped.
 // ---------------------------------------------------------------------------
 class AcousticEngine
 {

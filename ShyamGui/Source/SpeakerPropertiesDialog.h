@@ -17,18 +17,25 @@ public:
         title_.setColour (juce::Label::textColourId, Brand::heading());
         addAndMakeVisible (title_);
 
-        const juce::String name = "Q21S-" + juce::String (index + 1);
+        const juce::String modelName = speakerModelName (spk.model);
+        const juce::String name = modelName + "-" + juce::String (index + 1);
         const juce::String u = Units::lengthUnit();
 
         addRow ("Name", name);
-        addRow ("Product", "Atomik Q21S");
-        addRow ("Dimensions (W × H × D)",
-               Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
-               + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + " × "
-               + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
-        addRow ("Plan footprint (W × D)",
-               Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
-               + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
+        addRow ("Product", "Atomik " + modelName);
+        // Cabinet dimensions are only specified for Q21S; 15W750's physical
+        // enclosure isn't modelled yet, so don't show Q21S's numbers under
+        // its name.
+        if (spk.model != 2)
+        {
+            addRow ("Dimensions (W × H × D)",
+                   Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
+                   + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + " × "
+                   + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
+            addRow ("Plan footprint (W × D)",
+                   Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
+                   + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
+        }
         addRow ("Position",
                "(" + juce::String (Units::metresToDisplay (spk.x), 2) + ", "
                + juce::String (Units::metresToDisplay (spk.y), 2) + ") " + u);

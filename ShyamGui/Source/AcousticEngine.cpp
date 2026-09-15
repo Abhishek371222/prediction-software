@@ -77,6 +77,22 @@ static double dirFactor (const DirectivityPattern* pat, double k,
           + dirFactorRaw (pat, k, facing, theta + eps)) / 3.0;
 }
 
+// Table to search for a given speaker's own model — never blends devices.
+static const std::vector<DirectivityPattern>& tableFor (const SimParams& p, int model)
+{
+    return (model == 2) ? p.directivity15W750 : p.directivity;
+}
+
+// This speaker's OWN model's currently-selected frequency (never the other
+// model's, never the shared/displayed p.frequency when it belongs to a
+// different model) — see SimParams::frequencyQ21S / frequency15W750. This is
+// what isolates directivity pattern selection per device: changing one
+// model's frequency cannot change what this returns for the other model.
+static double ownFrequency (const SimParams& p, int model)
+{
+    return std::max (1.0, (model == 2) ? p.frequency15W750 : p.frequencyQ21S);
+}
+
 SimResult AcousticEngine::compute (const SimParams& p)
 {
     SimResult res;
@@ -101,6 +117,10 @@ SimResult AcousticEngine::compute (const SimParams& p)
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        const DirectivityPattern* pat = nullptr;   // this speaker's own model, at f
+        bool   hasAbs   = false;
+        double calAbs   = 0.0;    // 10^(onAxisSplDb/20), this speaker's own calibration
+        double refDistM = 2.0;
     };
     std::vector<Src> srcs;
     srcs.reserve (p.speakers.size());
@@ -114,22 +134,37 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.facing   = s.reverseOrientation ? M_PI : 0.0;
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
+
+        const auto& table = tableFor (p, s.model);
+        if (! table.empty())
+            src.pat = pickPattern (table, ownFrequency (p, s.model));
+        if (src.pat != nullptr && src.pat->hasAbsolute)
+        {
+            src.hasAbs   = true;
+            src.calAbs   = std::pow (10.0, (double) src.pat->onAxisSplDb / 20.0);
+            src.refDistM = (src.pat->refDistanceM > 0.05f) ? (double) src.pat->refDistanceM : 2.0;
+        }
         srcs.push_back (src);
     }
     res.activeSpeakers = (int) srcs.size();
 
-    const DirectivityPattern* pat = nullptr;
-    if (! p.directivity.empty())
-        pat = pickPattern (p.directivity, f);
+    // Info-panel summary only; a mixed scene may carry several models/patterns
+    // at once — this just reports whichever one was found first.
+    res.usedMeasuredDirectivity = false;
+    res.measuredDirectivityHz   = 0;
+    for (const auto& s : srcs)
+        if (s.pat != nullptr) { res.usedMeasuredDirectivity = true; res.measuredDirectivityHz = s.pat->hz; break; }
 
-    res.usedMeasuredDirectivity = (pat != nullptr);
-    res.measuredDirectivityHz   = pat != nullptr ? pat->hz : 0;
+    // Absolute SPL requires every active speaker to carry its own calibrated
+    // pattern — a partially-calibrated mixed scene falls back to relative only
+    // rather than showing a misleading absolute number.
+    bool hasAbs = ! srcs.empty();
+    for (const auto& s : srcs) hasAbs = hasAbs && s.hasAbs;
 
     constexpr int    Mband   = 7;
     const double     halfOct = 1.0 / 6.0;
     const int        mCount  = p.octaveSmoothing ? Mband : 1;
     std::vector<double> kBand ((size_t) mCount), omegaBand ((size_t) mCount);
-    std::vector<const DirectivityPattern*> patBand ((size_t) mCount, pat);
     for (int m = 0; m < mCount; ++m)
     {
         const double frac = (mCount == 1) ? 0.0
@@ -137,8 +172,29 @@ SimResult AcousticEngine::compute (const SimParams& p)
         const double fm = f * std::pow (2.0, frac);
         kBand[(size_t) m]     = 2.0 * M_PI * fm / kSpeedOfSound;
         omegaBand[(size_t) m] = 2.0 * M_PI * fm;
-        if (! p.directivity.empty())
-            patBand[(size_t) m] = pickPattern (p.directivity, fm);
+    }
+
+    // Per speaker, per band: that speaker's own model's pattern, band-offset
+    // from THAT model's own frequency (never the shared displayed f, and
+    // never the other model's) — srcs is already enabled-only, same order.
+    std::vector<std::vector<const DirectivityPattern*>> patBand (
+        srcs.size(), std::vector<const DirectivityPattern*> ((size_t) mCount, nullptr));
+    {
+        size_t si = 0;
+        for (const auto& s : p.speakers)
+        {
+            if (! s.enabled) continue;
+            const auto& table = tableFor (p, s.model);
+            const double fOwn = ownFrequency (p, s.model);
+            if (! table.empty())
+                for (int m = 0; m < mCount; ++m)
+                {
+                    const double frac = (mCount == 1) ? 0.0
+                                      : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
+                    patBand[si][(size_t) m] = pickPattern (table, fOwn * std::pow (2.0, frac));
+                }
+            ++si;
+        }
     }
 
     res.splDB.assign        ((size_t) N * N, (float) p.dBfloor);
@@ -160,8 +216,11 @@ SimResult AcousticEngine::compute (const SimParams& p)
     std::vector<double> rSpread ((size_t) srcs.size());
     std::vector<double> theta ((size_t) srcs.size());
 
+    std::vector<double> IabsCal ((size_t) N * N, 0.0);   // per-speaker-calibrated absolute intensity
+
     double maxI = 0.0;
     double maxIUnity = 0.0;
+    double maxIAbsBand = 0.0;
     double maxAbsRe = 0.0;
     double maxAbsReUnity = 0.0;
 
@@ -187,7 +246,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
             for (size_t i = 0; i < srcs.size(); ++i)
             {
                 const auto& s = srcs[i];
-                const double D = dirFactor (pat, k, s.facing, theta[i]);
+                const double D = dirFactor (s.pat, k, s.facing, theta[i]);
                 const double ampBase = D / rSpread[i];
                 const double amp = s.gainLin * ampBase;
                 const double phase = -(k * rGeom[i] + omega * s.delaySec) + s.polPhase;
@@ -198,37 +257,51 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
             double Iband = 0.0;
             double IbandUnity = 0.0;
+            double IbandAbs = 0.0;
             for (int m = 0; m < mCount; ++m)
             {
                 cd sm (0.0, 0.0);
                 cd smUnity (0.0, 0.0);
+                cd smAbs (0.0, 0.0);
                 const double km = kBand[(size_t) m];
                 const double wm = omegaBand[(size_t) m];
-                const DirectivityPattern* pm = patBand[(size_t) m];
                 for (size_t i = 0; i < srcs.size(); ++i)
                 {
                     const auto& s = srcs[i];
+                    const DirectivityPattern* pm = patBand[i][(size_t) m];
                     const double D = dirFactor (pm, km, s.facing, theta[i]);
                     const double ampBase = D / rSpread[i];
                     const double amp = s.gainLin * ampBase;
                     const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
                     sm += std::polar (amp, phase);
                     smUnity += std::polar (ampBase, phase);
+                    if (hasAbs)
+                    {
+                        // This speaker's own on-axis calibration (dB @ its own
+                        // refDistanceM), carried as a per-speaker linear scale
+                        // so mixed-sensitivity devices sum correctly.
+                        const double ampAbs = s.gainLin * ampBase * s.calAbs * s.refDistM;
+                        smAbs += std::polar (ampAbs, phase);
+                    }
                 }
                 Iband += std::norm (sm);
                 IbandUnity += std::norm (smUnity);
+                if (hasAbs) IbandAbs += std::norm (smAbs);
             }
             Iband /= (double) mCount;
             IbandUnity /= (double) mCount;
+            IbandAbs /= (double) mCount;
 
             const size_t idx = (size_t) row * N + col;
             P[idx]    = centre;
             Iavg[idx] = Iband;
             Iabs[idx] = incoh;
+            IabsCal[idx] = IbandAbs;
 
-            maxI         = std::max (maxI, Iband);
-            maxIUnity    = std::max (maxIUnity, IbandUnity);
-            maxAbsRe     = std::max (maxAbsRe, std::abs (centre.real()));
+            maxI          = std::max (maxI, Iband);
+            maxIUnity     = std::max (maxIUnity, IbandUnity);
+            maxIAbsBand   = std::max (maxIAbsBand, IbandAbs);
+            maxAbsRe      = std::max (maxAbsRe, std::abs (centre.real()));
             maxAbsReUnity = std::max (maxAbsReUnity, std::abs (centreUnity.real()));
         }
     }
@@ -239,13 +312,15 @@ SimResult AcousticEngine::compute (const SimParams& p)
     if (maxAbsReUnity < 1e-300) maxAbsReUnity = 1.0;
 
     const double floorDB = p.dBfloor;
-    const bool hasAbs = (pat != nullptr && pat->hasAbsolute);
-    const double Rref = (hasAbs && pat->refDistanceM > 0.05f) ? (double) pat->refDistanceM : 2.0;
-    const double Iref = 1.0 / (Rref * Rref);
-    const double onAxisAbs = hasAbs ? (double) pat->onAxisSplDb : 0.0;
 
+    // Each speaker's absolute amplitude already carries its own onAxisSplDb/
+    // refDistanceM calibration (see ampAbs above), so the summed intensity
+    // converts to dB directly — no separate reference-intensity division
+    // needed (this is algebraically identical to the previous single-model
+    // onAxisAbs + 10*log10(I/Iref) formula when every speaker shares one
+    // model, and generalises correctly when they don't).
     const double peakAbs = hasAbs
-        ? (onAxisAbs + 10.0 * std::log10 (std::max (maxI, 1e-300) / Iref))
+        ? (10.0 * std::log10 (std::max (maxIAbsBand, 1e-300)))
         : 0.0;
 
     for (size_t i = 0; i < P.size(); ++i)
@@ -256,8 +331,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         res.splDB[i]    = (float) std::max (rel, floorDB);
 
         if (hasAbs)
-            res.splAbsDB[i] = (float) (onAxisAbs
-                                       + 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / Iref));
+            res.splAbsDB[i] = (float) (10.0 * std::log10 (std::max (IabsCal[i], 1e-300)));
         else
             res.splAbsDB[i] = (float) rel;
 
@@ -302,7 +376,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const double rg = std::sqrt ((Xf - s.x) * (Xf - s.x) + (Yf - s.y) * (Yf - s.y));
                 const double rs = std::max (rg, kCabHalfW);
                 const double th = std::atan2 (Yf - s.y, Xf - s.x);
-                const double D  = dirFactor (pat, k, s.facing, th);
+                const double D  = dirFactor (s.pat, k, s.facing, th);
                 const double ampBase = D / rs;
                 const double amp = s.gainLin * ampBase;
                 const double phase = -(k * rg + omega * s.delaySec) + s.polPhase;
@@ -330,6 +404,10 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        int    model;
+        bool   hasAbs   = false;
+        double calAbs   = 0.0;
+        double refDistM = 2.0;
     };
     std::vector<Src> srcs;
     for (const auto& s : p.speakers)
@@ -341,14 +419,30 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         src.facing = s.reverseOrientation ? M_PI : 0.0;
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
+        src.model = s.model;
         srcs.push_back (src);
     }
     if (srcs.empty()) return false;
 
     const double f = std::max (1.0, p.frequency);
-    const DirectivityPattern* pat = nullptr;
-    if (! p.directivity.empty())
-        pat = pickPattern (p.directivity, f);
+
+    // hasAbs requires every active speaker's own model to carry a calibrated
+    // pattern at ITS OWN frequency — mirrors compute()'s conservative
+    // mixed-scene fallback.
+    bool hasAbs = true;
+    for (auto& s : srcs)
+    {
+        const auto& table = tableFor (p, s.model);
+        const DirectivityPattern* pat = table.empty() ? nullptr
+                                       : pickPattern (table, ownFrequency (p, s.model));
+        if (pat != nullptr && pat->hasAbsolute)
+        {
+            s.hasAbs   = true;
+            s.calAbs   = std::pow (10.0, (double) pat->onAxisSplDb / 20.0);
+            s.refDistM = (pat->refDistanceM > 0.05f) ? (double) pat->refDistanceM : 2.0;
+        }
+        hasAbs = hasAbs && s.hasAbs;
+    }
 
     constexpr int Mband = 7;
     const double halfOct = 1.0 / 6.0;
@@ -367,6 +461,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
 
     using cd = std::complex<double>;
     double Iband = 0.0;
+    double IbandAbs = 0.0;
     for (int m = 0; m < mCount; ++m)
     {
         const double frac = (mCount == 1) ? 0.0
@@ -374,36 +469,37 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         const double fm = f * std::pow (2.0, frac);
         const double km = 2.0 * M_PI * fm / kSpeedOfSound;
         const double wm = 2.0 * M_PI * fm;
-        const DirectivityPattern* pm = pat;
-        if (! p.directivity.empty())
-            pm = pickPattern (p.directivity, fm);
 
         cd sm (0.0, 0.0);
+        cd smAbs (0.0, 0.0);
         for (size_t i = 0; i < srcs.size(); ++i)
         {
             const auto& s = srcs[i];
+            const auto& table = tableFor (p, s.model);
+            const double fmOwn = ownFrequency (p, s.model) * std::pow (2.0, frac);
+            const DirectivityPattern* pm = table.empty() ? nullptr : pickPattern (table, fmOwn);
             const double D = dirFactor (pm, km, s.facing, theta[i]);
-            const double amp = s.gainLin * D / rSpread[i];
+            const double ampBase = D / rSpread[i];
+            const double amp = s.gainLin * ampBase;
             const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
             sm += std::polar (amp, phase);
+            if (hasAbs)
+            {
+                const double ampAbs = amp * s.calAbs * s.refDistM;
+                smAbs += std::polar (ampAbs, phase);
+            }
         }
         Iband += std::norm (sm);
+        if (hasAbs) IbandAbs += std::norm (smAbs);
     }
     Iband /= (double) mCount;
+    IbandAbs /= (double) mCount;
 
     intensityDb = (float) (10.0 * std::log10 (std::max (Iband, 1e-300)));
 
-    const bool hasAbs = (pat != nullptr && pat->hasAbsolute);
     if (hasAbs)
-    {
-        const double Rref = pat->refDistanceM > 0.05f ? (double) pat->refDistanceM : 2.0;
-        const double Iref = 1.0 / (Rref * Rref);
-        absDb = (float) ((double) pat->onAxisSplDb
-                         + 10.0 * std::log10 (std::max (Iband, 1e-300) / Iref));
-    }
+        absDb = (float) (10.0 * std::log10 (std::max (IbandAbs, 1e-300)));
     else
-    {
         absDb = intensityDb;
-    }
     return true;
 }

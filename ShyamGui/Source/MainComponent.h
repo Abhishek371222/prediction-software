@@ -103,8 +103,7 @@ private:
     void exportPNG();
     void exportCSV();
 
-    void loadMeasurements();
-    juce::int64 measurementsSignature() const;   // mtime/size fingerprint
+    juce::int64 measurementsSignature() const;   // mtime/size fingerprint, both models combined
     void pollMeasurements();
 
     // Workspace / layout import (Phase 5 & 6)
@@ -184,18 +183,28 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Measured polar data + live auto-refresh -------------------------------
+    // Q21S and 15W750 are two fully separate devices: both are ALWAYS loaded
+    // (measuredQ21S_/measured15W750_ + their own directivity tables below) so
+    // a scene can mix units of either model, each simulated with its own
+    // data. measured_/measSource_/measDir_ track only which one is shown by
+    // the "Measurement set" Measured Polar reference view — they no longer
+    // gate what the engine uses (see AcousticEngine::Speaker::model).
     MeasuredSet  measured_;
+    MeasuredSet  measuredQ21S_, measured15W750_;
     juce::File   measDir_;
     juce::int64  measSignature_ = 0;
-    int          measSource_ = 1;    // 0 = Q21S (Open Field), 1 = Room, 2 = 15W750
+    int          measSource_ = 1;    // reference-view selector: 0 = Q21S, 1 = Room, 2 = 15W750
     float        measDistanceM_ = 0.5f;
-    void         setMeasurementSource (int src, bool recompute = true);
+    void         setMeasurementSource (int src);
     void         setMeasurementDistance (float distanceM);
-    void         rebuildDirectivityTables();
+    void         reloadAllMeasurements();      // (re)loads both models + their directivity tables
+    MeasuredSet  referenceSetFor (int source) const;
 
-    // Per-frequency directivity tables derived from measured_, fed to the engine.
-    std::vector<DirectivityPattern> directivityTables_;
-    std::vector<BemFieldPattern>    bemFieldTables_;
+    // Per-frequency directivity tables, one array per device, always current —
+    // fed into SimParams together every recompute (see run()) so each speaker
+    // can pick its own model's table; never merged into one shared table.
+    std::vector<DirectivityPattern> directivityQ21STables_, directivity15W750Tables_;
+    std::vector<BemFieldPattern>    bemFieldTablesQ21S_, bemFieldTables15W750_;
     juce::CriticalSection           measLock_;
 
     // Lightweight second timer for polling the measurement files (the class's

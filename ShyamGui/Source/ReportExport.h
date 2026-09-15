@@ -144,10 +144,16 @@ namespace ReportExport
                                logoW, logoH });
         }
 
-        int nDev = 0; for (const auto& s : p.speakers) if (s.enabled) ++nDev;
+        int nQ21S = 0, n15W750 = 0;
+        for (const auto& s : p.speakers)
+            if (s.enabled) { if (s.model == 2) ++n15W750; else ++nQ21S; }
+        juce::String fleet;
+        if (nQ21S > 0)   fleet << nQ21S   << " Q21S";
+        if (n15W750 > 0) fleet << (fleet.isEmpty() ? "" : " + ") << n15W750 << " 15W750";
+        if (fleet.isEmpty()) fleet = "0 Q21S";
         const juce::String u = Units::lengthUnit();
         juce::String facts = juce::String ((int) p.frequency) + " Hz"
-            + "   ·   " + juce::String (nDev) + " Q21S"
+            + "   ·   " + fleet
             + "   ·   λ " + juce::String (Units::metresToDisplay (r.lambda), 2) + " " + u;
         if (r.hasAbsoluteSpl && r.peakAbsDb > 1.0)
         {
@@ -173,7 +179,7 @@ namespace ReportExport
 
         g.setColour (juce::Colours::white.withAlpha (0.80f));
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.3.8",
+        g.drawText ("Generated  " + liveStamp() + "    v1.3.9",
                     footer.getRight() - 620, y + 72, 600, 18, juce::Justification::centredRight);
 
         return img;

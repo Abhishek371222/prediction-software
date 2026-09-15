@@ -95,14 +95,16 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
     if (selectedIndex >= 0 && selectedIndex < (int) p.speakers.size())
     {
         const auto& s = p.speakers[(size_t) selectedIndex];
-        setRowVal (kSelected, "Q21S-" + juce::String (selectedIndex + 1)
+        setRowVal (kSelected, juce::String (speakerModelName (s.model)) + "-" + juce::String (selectedIndex + 1)
                               + (s.enabled ? "" : " (off)"));
-        setRowVal (kPos,      "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
-                              + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u
-                              + "  ·  "
-                              + Units::mm (Q21SCabinet::widthM * 1000.0, 0) + "×"
-                              + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + "×"
-                              + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
+        juce::String posStr = "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
+                              + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u;
+        if (s.model != 2)   // cabinet dims only specified for Q21S
+            posStr += "  ·  "
+                    + Units::mm (Q21SCabinet::widthM * 1000.0, 0) + "×"
+                    + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + "×"
+                    + Units::mm (Q21SCabinet::depthM * 1000.0, 0);
+        setRowVal (kPos, posStr);
         setRowVal (kGain,     juce::String (s.gainDB, 0) + " dB");
         setRowVal (kDelay,    juce::String (s.delayMs, 1) + " ms");
         setRowVal (kPolarity, s.polarityInverted ? "Reverse" : "Normal");
