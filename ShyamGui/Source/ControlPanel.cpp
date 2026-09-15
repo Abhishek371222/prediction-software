@@ -91,18 +91,13 @@ ControlPanel::ControlPanel()
     freqBox_.onChange = [this]
     {
         if (updatingUI_) return;
-        // Always persist the new frequency for the currently-viewed model.
+        // Persist the new frequency for the currently-browsed model, then
+        // always recompute: frequency is a single global scene parameter
+        // (every placed speaker, of either model, is simulated at it).
         const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                      freqBox_.getSelectedId() - 1);
         if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
             savedFreqHz_[currentMeasSource_] = kSupportedFrequencies[fi];
-
-        // Only drive a simulation recompute when the browsed model (section 2)
-        // matches the active simulation model (section 4). If the user is
-        // browsing a different model, frequency edits are silently saved for
-        // that model but don't disturb the current heatmap.
-        if (currentMeasSource_ != activeSimSource_)
-            return;
 
         willEdit();
         notifyChanged();
@@ -128,9 +123,15 @@ ControlPanel::ControlPanel()
     {
         if (updatingUI_) return;
         const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = 15W750
-        // Do NOT sync measSetBox_ here — section 2 and section 4 are independent.
-        updateModelDependentLabels();
-        if (onMeasurementModelChanged) onMeasurementModelChanged (src);
+        // Switching here repoints the Frequency dropdown to this model's own
+        // catalogue — since frequency is a single global scene parameter,
+        // that changes what's actually simulated, so recompute. Also drives
+        // the Measured Polar reference view (there's no separate "Measurement
+        // set" selector anymore — this picker is the single source of truth).
+        willEdit();
+        setMeasurementSource (src);
+        if (onMeasurementSourceChanged) onMeasurementSourceChanged (src);
+        notifyChanged();
     };
     addAndMakeVisible (speakerModelBox_);
 
@@ -215,31 +216,10 @@ ControlPanel::ControlPanel()
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
-    // Figma's SIMULATION section ends with a "Measurement set" row. It now
-    // selects which device's measured dataset drives the simulation; the two
-    // sets are fully isolated and never blended.
-    configTxt (measSetLabel_, "Measurement set");
-    measSetBox_.setComponentID ("ctrlCombo");
-    measSetBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
-    measSetBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
-    measSetBox_.addItem ("Ground Plane", 1);   // Q21S   — id = source(0) + 1
-    measSetBox_.addItem ("15W750",       3);   // 15W750 — id = source(2) + 1
-    measSetBox_.setSelectedId (1, juce::dontSendNotification);
-    measSetBox_.onChange = [this]
-    {
-        if (updatingUI_) return;
-        const int id  = measSetBox_.getSelectedId();
-        const int idx = id - 1;
-        activeSimSource_ = idx;   // section 4 drives the active simulation source
-        updatingUI_ = true;
-        speakerModelBox_.setSelectedId (id, juce::dontSendNotification);
-        updatingUI_ = false;
-        updateModelDependentLabels();
-        if (onMeasurementSourceChanged)
-            onMeasurementSourceChanged (idx);
-    };
-    addAndMakeVisible (measSetLabel_);
-    addAndMakeVisible (measSetBox_);
+    // The old "Measurement set" row is gone: each unit now carries its own
+    // model tag, so section 2's Speaker model picker is the only control
+    // needed and the section 4 duplicate was just a second way to say it.
+
 
     configTxt (measDistLabel_, "Distance");
     measDistBox_.setComponentID ("ctrlCombo");
@@ -392,16 +372,15 @@ void ControlPanel::refreshUnits()
 }
 
 // ---------------------------------------------------------------------------
-// Q21S and 15W750 are two fully separate devices: switching sources repoints
-// the active frequency catalogue (AcousticEngine::setActiveFrequencyCatalogue)
+// Q21S and 15W750 are two fully separate devices: switching the browsed model
+// repoints the active frequency catalogue (AcousticEngine::setActiveFrequencyCatalogue)
 // and rebuilds freqBox_ from that catalogue only, so the dropdown can never
 // show a blend of both models' frequencies.
-int ControlPanel::setMeasurementSource (int idx, bool updateActiveSim)
+void ControlPanel::setMeasurementSource (int idx)
 {
     // Selecting an id the box does not contain leaves the ComboBox blank with
-    // no error, so fall back to the first entry and report what we landed on.
-    // The model box is the visible selector, so it is the one to validate
-    // against -- the Measurement set row in section 4 is hidden.
+    // no error -- a stale "measurementSource" in the settings file blanked the
+    // control and gave no clue why. Fall back to the first entry instead.
     const int wanted = idx + 1;
     const int useId  = speakerModelBox_.indexOfItemId (wanted) >= 0
                      ? wanted : speakerModelBox_.getItemId (0);
@@ -415,12 +394,9 @@ int ControlPanel::setMeasurementSource (int idx, bool updateActiveSim)
         savedFreqHz_[currentMeasSource_] = outgoingHz;
 
     currentMeasSource_ = idx;
-    if (updateActiveSim) activeSimSource_ = idx;
     setActiveFrequencyCatalogue (idx);   // kSupportedFrequencies now points to new model
 
     updatingUI_ = true;
-    if (updateActiveSim)
-        measSetBox_.setSelectedId (useId, juce::dontSendNotification);
     speakerModelBox_.setSelectedId (useId, juce::dontSendNotification);
 
     // Rebuild the frequency dropdown from the new model's catalogue.
@@ -454,7 +430,6 @@ int ControlPanel::setMeasurementSource (int idx, bool updateActiveSim)
 
     updatingUI_ = false;
     updateModelDependentLabels();
-    return idx;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,20 +440,26 @@ juce::String ControlPanel::activeModelName() const
 
 void ControlPanel::updateModelDependentLabels()
 {
+    // "Add" tooltip and section 2's header describe what the NEXT unit will
+    // be (section 2's own browsing model) — the list underneath may show a
+    // mix of Q21S/15W750 units since rebuildSpeakerBox() labels each by its
+    // own tag, not this one.
     const juce::String name = activeModelName();
     speakersHdr_.setTitle ("2. " + name + " Units");
-    editHdr_.setTitle ("3. SELECTED " + name);
     addBtn_.setTooltip ("Add " + name + ": click the plot where you want the unit");
     rebuildSpeakerBox();
+    refreshEditors();   // section 3's header reflects the SELECTED unit's own model
 }
 
 void ControlPanel::rebuildSpeakerBox()
 {
     updatingUI_ = true;
     speakerBox_.clear (juce::dontSendNotification);
-    const juce::String name = activeModelName();
+    // Each unit is labelled by its OWN model tag — never the section-2
+    // browsing selection — so a mixed scene's list never mislabels units.
     for (int i = 0; i < (int) speakers_.size(); ++i)
-        speakerBox_.addItem (name + "-" + juce::String (i + 1), i + 1);
+        speakerBox_.addItem (juce::String (speakerModelName (speakers_[(size_t) i].model))
+                                + "-" + juce::String (i + 1), i + 1);
     if (selected_ >= (int) speakers_.size()) selected_ = (int) speakers_.size() - 1;
     if (selected_ < 0 && ! speakers_.empty()) selected_ = 0;
     if (selected_ >= 0) speakerBox_.setSelectedId (selected_ + 1, juce::dontSendNotification);
@@ -499,6 +480,13 @@ void ControlPanel::refreshEditors()
         polarityToggle_.setToggleState    (s.polarityInverted,   juce::dontSendNotification);
         orientationToggle_.setToggleState (s.reverseOrientation, juce::dontSendNotification);
         enabledToggle_.setToggleState     (s.enabled,            juce::dontSendNotification);
+        // Section 3's header always names the SELECTED unit's own model —
+        // never the section-2 browsing selection, which may differ.
+        editHdr_.setTitle ("3. SELECTED " + juce::String (speakerModelName (s.model)));
+    }
+    else
+    {
+        editHdr_.setTitle ("3. SELECTED " + activeModelName());
     }
     xSlider_.setEnabled (has); ySlider_.setEnabled (has);
     gainSlider_.setEnabled (has); delaySlider_.setEnabled (has);
@@ -522,6 +510,7 @@ bool ControlPanel::addSpeakerAt (float x, float y)
     Speaker s;
     s.x = x;
     s.y = y;
+    s.model = currentMeasSource_;   // tag with section 2's currently-browsed model
     speakers_.push_back (s);
     selected_ = (int) speakers_.size() - 1;
     selectedSpeakers_ = { selected_ };
@@ -564,6 +553,7 @@ void ControlPanel::applyDeviceLayout (int count)
         s.polarityInverted   = false;
         s.reverseOrientation = false;
         s.enabled            = true;
+        s.model              = currentMeasSource_;
         speakers_.push_back (s);
     }
     selected_ = 0;
@@ -610,6 +600,7 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
             Speaker sp;
             sp.y = centreY;
             sp.enabled = true;
+            sp.model   = currentMeasSource_;
 
             if (i == 0)
             {
@@ -656,6 +647,7 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
             sp.polarityInverted = false;
             sp.delayMs = (float) ((double) i * (double) s / c * 1000.0);
             sp.enabled = true;
+            sp.model   = currentMeasSource_;
             speakers_.push_back (sp);
         }
     }
@@ -881,8 +873,12 @@ void ControlPanel::resetToDefaults()
     savedFreqHz_[0] = -1.0;
     savedFreqHz_[1] = -1.0;
     savedFreqHz_[2] = -1.0;
-    currentMeasSource_ = 0;
-    activeSimSource_   = 0;
+
+    // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz —
+    // fixes a stale-catalogue bug if the user was browsing 15W750 (section 2)
+    // when Reset was clicked.
+    setMeasurementSource (0);
+
     updatingUI_ = true;
     {
         int defId = 1;
@@ -890,8 +886,6 @@ void ControlPanel::resetToDefaults()
             if (kSupportedFrequencies[i] == 52) { defId = i + 1; break; }
         freqBox_.setSelectedId (defId, juce::dontSendNotification);   // 52 Hz
     }
-    measSetBox_.setSelectedId      (1, juce::dontSendNotification); // Ground Plane / Q21S
-    speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     setAvailableDistances ({ 0.5f, 1.0f, 2.0f }, 0.5f);
     resSlider_.setValue (400.0, juce::dontSendNotification);
     floorSlider_.setValue (-36.0, juce::dontSendNotification);
@@ -899,7 +893,7 @@ void ControlPanel::resetToDefaults()
     updatingUI_ = false;
     rebuildSpeakerBox();
     refreshEditors();
-    if (onMeasurementSourceChanged) onMeasurementSourceChanged (0); // Ground Plane
+    if (onMeasurementSourceChanged) onMeasurementSourceChanged (0); // Ground Plane reference view
     if (onSelectionChanged) onSelectionChanged (selected_);
     notifyChanged();
 }
@@ -911,8 +905,13 @@ void ControlPanel::applyProject (const ProjectData& p)
     selectedSpeakers_.clear();
     selected_ = speakers_.empty() ? -1 : 0;
 
+    // Browse whichever model the first placed unit is, so the Frequency
+    // catalogue matches before we search it for the saved frequency below.
+    const int browseModel = speakers_.empty() ? 0 : speakers_.front().model;
+    setMeasurementSource (browseModel);
+
     updatingUI_ = true;
-    int freqId = 4;
+    int freqId = 1;
     for (int i = 0; i < (int) kNumSupportedFrequencies; ++i)
         if (kSupportedFrequencies[i] == (int) std::lround (p.frequency)) { freqId = i + 1; break; }
     freqBox_.setSelectedId (freqId, juce::dontSendNotification);
@@ -929,30 +928,47 @@ void ControlPanel::applyProject (const ProjectData& p)
 }
 
 // ---------------------------------------------------------------------------
-SimParams ControlPanel::getParams() const
+// Resolves model's own frequency WITHOUT ever reading the other model's
+// catalogue or state. Three cases, in order:
+//  1. model IS the currently-browsed one -> read freqBox_ live (exact
+//     selection from that model's own catalogue, already rebuilt for it).
+//  2. model was visited before -> its own remembered savedFreqHz_ entry.
+//  3. never visited -> that model's own lowest prescribed frequency (a real
+//     catalogue entry, never an invented value, never the other model's).
+double ControlPanel::resolvedFrequencyFor (int model) const
 {
-    SimParams p;
-    // freqBox_ may be showing the OTHER model's catalogue because the user is
-    // browsing in section 2. The running simulation must keep its own model's
-    // frequency, never borrow the one currently on screen.
-    double freq;
-    if (currentMeasSource_ == activeSimSource_)
+    if (model == currentMeasSource_)
     {
         const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                      freqBox_.getSelectedId() - 1);
-        freq = kSupportedFrequencies[fi];
+        return kSupportedFrequencies[fi];
     }
-    else
-    {
-        const double saved = (activeSimSource_ >= 0 && activeSimSource_ < 3)
-                             ? savedFreqHz_[activeSimSource_] : -1.0;
-        freq = (saved >= 0.0) ? saved : kSupportedFrequencies[0];
-    }
-    p.frequency  = freq;
-    // Fixed 100 x 100 m domain. Tying it to the visible region instead made
-    // every zoom and pan a re-solve, which was slow and moved the goalposts
-    // for placement and for the Rel. SPL normalisation. The view's job is to
-    // show this field well, not to redefine it.
+    if (model >= 0 && model < 3 && savedFreqHz_[model] >= 0.0)
+        return savedFreqHz_[model];
+
+    const double* freqs; int n;
+    frequencyCatalogue (model, freqs, n);
+    return (n > 0) ? freqs[0] : 0.0;
+}
+
+SimParams ControlPanel::getParams() const
+{
+    SimParams p;
+    // p.frequency: the active/displayed simulation frequency (whichever model
+    // is currently browsed) -- drives wavelength/phase/reports, as before.
+    // p.frequencyQ21S / p.frequency15W750: each device's OWN frequency,
+    // resolved independently below -- this is what the engine actually uses to
+    // pick each speaker's directivity pattern, so changing one model's
+    // frequency can never alter the other's rendered units.
+    const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
+                                 freqBox_.getSelectedId() - 1);
+    p.frequency         = kSupportedFrequencies[fi];
+    p.frequencyQ21S     = resolvedFrequencyFor (0);
+    p.frequency15W750   = resolvedFrequencyFor (2);
+    // Fixed domain. Tying it to the visible region instead made every zoom and
+    // pan a re-solve, which was slow and moved the goalposts for placement and
+    // for the Rel. SPL normalisation. The view's job is to show this field
+    // well, not to redefine it.
     p.worldX0    = worldX0_;
     p.worldY0    = worldY0_;
     p.worldW     = worldW_;
@@ -1099,7 +1115,7 @@ void ControlPanel::updateScaledChrome()
     }
 
     for (auto* l : { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
-                     &resLabel_, &floorLabel_, &measDistLabel_, &measSetLabel_,
+                     &resLabel_, &floorLabel_, &measDistLabel_,
                      &speakerModelLabel_,
                      &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ })
         l->setFont (Brand::tech (labelSz));
@@ -1249,21 +1265,9 @@ void ControlPanel::resized()
         editRow (resLabel_,   resSlider_);
         editRow (floorLabel_, floorSlider_);
         fullRow (bandsToggle_);
-        // "Measurement set" sits on a wider label column than the slider rows:
-        // Figma puts its dropdown at x=174 of the 313px content, ~151px wide.
-        {
-            // Hidden for now: only the Q21S (Ground Plane) set ships, so the
-            // control had exactly one choice. Everything behind it is intact --
-            // the source is still validated and loaded at startup -- so making
-            // it visible again is just this block.
-            measSetLabel_.setVisible (false);
-            measSetBox_.setVisible (false);
-            measSetLabel_.setBounds (0, 0, 0, 0);
-            measSetBox_.setBounds (0, 0, 0, 0);
-        }
     });
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,
-                         &bandsToggle_, &measSetLabel_, &measSetBox_ },
+                         &bandsToggle_ },
                        secSimOpen_);
     measDistLabel_.setVisible (false);
     measDistBox_.setVisible (false);

@@ -38,7 +38,8 @@ public:
         int firstEnabled = 0;
         for (int i = 0; i < (int) speakers_.size(); ++i)
         {
-            juce::String name = "Q21S_" + juce::String (i + 1);
+            juce::String name = juce::String (speakerModelName (speakers_[(size_t) i].model))
+                              + "_" + juce::String (i + 1);
             if (! speakers_[(size_t) i].enabled) name += " (off)";
             spkBox_.addItem (name, i + 1);
             if (firstEnabled == 0 && speakers_[(size_t) i].enabled)

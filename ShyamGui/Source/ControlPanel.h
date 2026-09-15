@@ -29,24 +29,23 @@ public:
     /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
     std::function<void()>    onAddSpeakerRequest;
 
-    std::function<void(int)> onMeasurementSourceChanged;         // 0=Q21S, 1=GYLT, 2=15W750  — recomputes heatmap
-    std::function<void(int)> onMeasurementModelChanged;          // section-2 picker only — loads data, no recompute
+    // 0=Q21S, 1=GYLT, 2=15W750. Fires when section 2's Speaker Model picker
+    // changes, to update the Measured Polar reference view — it no longer
+    // gates the engine, since every placed speaker simulates with its own
+    // model regardless (there's no separate "Measurement set" selector).
+    std::function<void(int)> onMeasurementSourceChanged;
     std::function<void(float)> onMeasurementDistanceChanged;     // metres
 
-    /** Sync UI to a measurement source: combo selection + frequency catalogue.
-        The two devices are fully isolated -- this rebuilds freqBox_ from
-        scratch so their frequencies can never mix.
+    /** Sync section 2 (Speaker model picker + new-unit tag) and the Frequency
+        dropdown to a model: repoints the active catalogue and rebuilds
+        freqBox_ from scratch (the two devices are fully isolated -- their
+        frequencies can never mix). Frequency is a single global scene
+        parameter, so this always leaves a valid selection behind. */
+    void setMeasurementSource (int idx);
 
-        @param updateActiveSim false when the user is only browsing the other
-        model's catalogue in section 2; the running simulation then keeps its
-        own model and its own frequency.
-
-        @returns the index actually selected, which may differ from the one
-        asked for. Selecting an id the box does not contain leaves ComboBox
-        showing NOTHING, with no error -- a stale "measurementSource" in the
-        settings file blanked this control and gave no clue why. Falls back to
-        the first item instead and lets the caller know. */
-    int setMeasurementSource (int idx, bool updateActiveSim = true);
+    /** Display name of the model new units will be created as
+        ("Q21S" / "BEM 2inch"). Used for status text and reports. */
+    juce::String activeModelName() const;
 
     // Populate distance choices from loaded measurement set (0.5 / 1.0 / 2.0 m).
     void setAvailableDistances (const std::vector<float>& distancesM, float preferM = 0.5f);
@@ -90,6 +89,8 @@ public:
     int  getContentHeight() const { return contentHeight_; }
 
     SimParams getParams() const;
+    /** Model whose catalogue the Frequency dropdown currently shows (0=Q21S, 2=15W750). */
+    int  getBrowsedModel() const { return currentMeasSource_; }
     const std::vector<Speaker>& getSpeakers() const { return speakers_; }
     int  getSelectedIndex() const { return selected_; }
 
@@ -120,6 +121,13 @@ public:
     void lookAndFeelChanged() override;   // re-apply theme colours
 
 private:
+    /** The frequency to use for a given model's speakers (0=Q21S, 2=15W750),
+        completely independent of which model the Frequency dropdown is
+        currently showing: live value when it IS the browsed model, else that
+        model's own remembered value, else its own lowest prescribed
+        frequency. Never derived from or blended with the other model. */
+    double resolvedFrequencyFor (int model) const;
+
     void applyColours();
     void rebuildSpeakerBox();
     void refreshEditors();
@@ -145,8 +153,9 @@ private:
 
     // Per-source frequency memory: each model keeps its own last-selected Hz.
     // -1 = never visited yet (first switch uses nearest-frequency matching).
+    // currentMeasSource_ = section 2's Speaker Model picker: drives the
+    // Frequency dropdown's catalogue AND the model tag new "+Add" units get.
     int    currentMeasSource_ = 0;
-    int    activeSimSource_   = 0;   // tracks section-4 (simulation) model independently
     double savedFreqHz_[3]    = { -1.0, -1.0, -1.0 };
 
     // Frequency
@@ -182,13 +191,11 @@ private:
     juce::ToggleButton bandsToggle_;
     // Measured directivity is always on (Q21S BEM) — no UI toggle.
 
-    // Measurement dataset + distance (kept separate per set)
     // Region the next simulation covers. Replaces a hard-coded 100 x 100 m.
     double worldW_ = 100.0, worldH_ = 100.0;
     double worldX0_ = 0.0, worldY0_ = 0.0;
 
-    juce::Label    measSetLabel_;
-    juce::ComboBox measSetBox_;
+    // Measurement distance (kept separate per set) -- currently hidden from UI
     juce::Label    measDistLabel_;
     juce::ComboBox measDistBox_;
     std::vector<float> measDistances_;
@@ -228,7 +235,6 @@ private:
     static juce::Colour kBtnIn()  { return Brand::btnIn(); }
     static juce::Colour kBorder() { return Brand::border(); }
 
-    juce::String activeModelName() const;   // "Q21S" or "15W750"
     void updateModelDependentLabels();      // headers, tooltip, speaker list prefix
 
     void styleSlider (juce::Slider&, double lo, double hi, double step, double val);
