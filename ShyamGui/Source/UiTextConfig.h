@@ -56,22 +56,26 @@ namespace UiConfig
         constexpr float paramChip           = 12.14f;   // 13.44 + 35%
 
         // --- Sidebars (left control + right info) ----------------------------
-        // All sidebar field / checkbox labels match Selected-Q21S mockup weight
-        constexpr float sectionHeader       = 9.0f;
+        // Bumped ~40-45% from the original 9-9.5px mockup baseline: at a 1920x1080
+        // desktop the old sizes rendered around 11-12px on screen (base * runtime
+        // Scale::factor), which read as illegible. These sizes plus the matching
+        // Layout row-height bumps below keep the same compact/CAD look at a size
+        // that's actually readable without feeling bulky.
+        constexpr float sectionHeader       = 13.0f;
         // Field labels: "X Position (m)", "Grid Resolution", checkbox text, …
-        constexpr float fieldLabel          = 9.5f;
+        constexpr float fieldLabel          = 13.0f;
         // Slider numeric boxes (mono) and info-panel value column (right side)
-        constexpr float fieldValue          = 9.5f;
+        constexpr float fieldValue          = 13.0f;
         // Info-panel row keys (left column) — usually same as fieldLabel
-        constexpr float infoKey             = 9.5f;
+        constexpr float infoKey             = 13.0f;
 
         // --- Plot chrome -----------------------------------------------------
         // Title above heatmap: "SPL Heatmap | 2 devices | 50 Hz | …"
-        constexpr float plotTitle           = 9.0f;
+        constexpr float plotTitle           = 11.5f;
         // Axis tick numbers along plot edges (0 m, 10 m, 20 m …)
-        constexpr float plotGridNumber      = 10.0f;
+        constexpr float plotGridNumber      = 11.5f;
         // Secondary plot axis / annotation text
-        constexpr float plotAxis            = 10.0f;
+        constexpr float plotAxis            = 11.5f;
         // Colour-bar dB tick labels and "Rel. SPL" caption
         constexpr float colourBarTick       = 14.0f;
         constexpr float colourBarTitle      = 15.0f;
@@ -85,15 +89,15 @@ namespace UiConfig
 
         // --- Bottom bar (v1.1 screenshot baseline) ---------------------------
         // General TextButton captions elsewhere in the app
-        constexpr float button              = 9.0f;
+        constexpr float button              = 12.5f;
         // Bottom-bar Export / View Mode pill captions (compact v1.1)
-        constexpr float bottomBarButton       = 9.0f;
+        constexpr float bottomBarButton       = 11.5f;
         // View tile captions (legacy icon tiles)
-        constexpr float viewTileCaption       = 9.0f;
+        constexpr float viewTileCaption       = 11.0f;
         // Status strip: "Ready", "Last run: …", "Elapsed: …"
-        constexpr float statusBar             = 11.0f;
+        constexpr float statusBar             = 11.5f;
         // "SAVE / EXPORT" / "VIEW MODE" section titles
-        constexpr float bottomSectionTitle    = 7.5f;
+        constexpr float bottomSectionTitle    = 9.5f;
 
         // --- Directivity / measured polar view (on-screen legend) ------------
         constexpr float polarLegend           = 12.0f;
@@ -123,21 +127,28 @@ namespace UiConfig
         constexpr float freqSectionTitle      = sidebarSectionTitle;
         constexpr float freqStepGlyph         = sidebarButtonText;
 
-        // --- Project Dashboard (startup screen) ------------------------------
+        // --- Project Dashboard (startup screen) -------------------------------
+        // This window is much smaller than the main editor's 1340x820 reference,
+        // so its Scale::factor is clamped to minFactor (0.78) — these bases are
+        // picked so the RENDERED size (base * 0.78) is actually legible.
         // "NEW PROJECT" / "OPEN EXISTING PROJECT" big action buttons
-        constexpr float dashActionButton      = 18.0f;
+        constexpr float dashActionButton      = 22.0f;
         // "Project Dashboard" subtitle under the title
-        constexpr float dashSubtitle          = 19.0f;
+        constexpr float dashSubtitle          = 23.0f;
         // "RECENT PROJECTS" section header
-        constexpr float dashRecentHeader      = 18.0f;
+        constexpr float dashRecentHeader      = 23.0f;
         // Recent project list rows ("name - path") + "No recent projects yet."
-        constexpr float dashRecentItem        = 18.0f;
+        constexpr float dashRecentItem        = 22.0f;
 
         // --- Plot toolbar ----------------------------------------------------
-        // "Fit" button above the heatmap (bold)
-        constexpr float plotFitButton         = 10.0f;
+        // "Fit View" button above the heatmap (bold)
+        constexpr float plotFitButton         = 12.5f;
         // Header "Statistics" dropdown button (Montserrat SemiBold)
         constexpr float headerStatsButton     = 12.0f;
+        // Small toolbar labels: "Opacity", "Gap", and the drawing-tool status
+        // prompt ("LINE: click the plot…"). Were hardcoded literals (10px, no
+        // scale) — named + scaled here so they track the legibility pass above.
+        constexpr float plotToolbarLabel      = 12.5f;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle            = 24.0f;
@@ -173,30 +184,32 @@ namespace UiConfig
     // -------------------------------------------------------------------------
     namespace Layout
     {
-        // Left sidebar — measured from mockup (244px panel, ~33px slider row pitch)
-        constexpr int sidebarWidth          = 252;
+        // Left sidebar — widened + row heights raised to match the larger
+        // FontSize::sidebar* values above (legibility pass); same layout shape,
+        // just enough room for 13px text instead of 9-9.5px.
+        constexpr int sidebarWidth          = 272;
         constexpr int sidebarCollapsedWidth = 32;   // rail when sidebar is collapsed
         constexpr int sidebarPadding        = 14;
         // Right info panel (Scene Summary, Selected Speaker)
-        constexpr int infoPanelWidth          = 248;
-        constexpr int controlRowHeight        = 27;   // combo / device / action rows
-        constexpr int controlRowGap           = 5;
-        constexpr int sectionGap              = 10;
-        constexpr int labelColumnWidth        = 96;
+        constexpr int infoPanelWidth          = 264;
+        constexpr int controlRowHeight        = 34;   // combo / device / action rows
+        constexpr int controlRowGap           = 7;
+        constexpr int sectionGap              = 13;
+        constexpr int labelColumnWidth        = 104;
 
         constexpr int sidebarRowHeight          = controlRowHeight;
         constexpr int sidebarStepButtonWidth    = 30;
-        constexpr int sidebarActionButtonWidth  = 54;   // + Add / Delete
-        constexpr int sidebarPrimaryButtonH       = 27;
-        constexpr int sidebarResetRowH            = 24;
+        constexpr int sidebarActionButtonWidth  = 60;   // + Add / Delete
+        constexpr int sidebarPrimaryButtonH       = 34;
+        constexpr int sidebarResetRowH            = 28;
         constexpr int sidebarBorderWidth          = 1;
-        constexpr int sidebarSliderBoxWidth     = 68;
-        constexpr int sidebarSliderBoxHeight    = 21;
-        constexpr int sidebarEditLabelHeight    = 16;
-        constexpr int sidebarSectionHeaderH     = 16;
-        constexpr int sidebarHelperTextH        = 13;
-        constexpr int sidebarSectionHeaderGap   = 4;
-        constexpr int sidebarSliderTextGap      = 6;    // track → value box
+        constexpr int sidebarSliderBoxWidth     = 80;
+        constexpr int sidebarSliderBoxHeight    = 27;
+        constexpr int sidebarEditLabelHeight    = 20;
+        constexpr int sidebarSectionHeaderH     = 21;
+        constexpr int sidebarHelperTextH        = 16;
+        constexpr int sidebarSectionHeaderGap   = 5;
+        constexpr int sidebarSliderTextGap      = 7;    // track → value box
 
         // Legacy names
         constexpr int freqRowHeight             = sidebarRowHeight;
@@ -205,29 +218,34 @@ namespace UiConfig
         // Top param chip strip height
         constexpr int paramBarHeight          = 36;
         // Plot title bar above heatmap
-        constexpr int plotHeaderHeight        = 58;
+        constexpr int plotHeaderHeight        = 62;
         // Main window title band (logo + centred title)
         constexpr int headerBandHeight        = 44;
-        // ATOMIK wordmark inside the header (−20% vs prior 18 px baseline)
-        constexpr int headerLogoMaxHeight     = 14;
+        // ATOMIK wordmark inside the header. Was 14px — at the low end of the
+        // window-size scale range that rendered the wordmark's fine strokes
+        // as an illegible smudge. Raised to use more of the available
+        // headerBandHeight (44, minus padY top+bottom) while still leaving
+        // clear vertical padding.
+        constexpr int headerLogoMaxHeight     = 22;
         constexpr int headerLogoPadX          = 18;
-        constexpr int headerLogoPadY          = 12;
+        constexpr int headerLogoPadY          = 10;
 
         // Help / Settings / More icon buttons (top-right)
         constexpr int headerIconWidth         = 36;
         constexpr int headerIconHeight        = 32;
         constexpr int headerIconEdgeIndent    = 4;
 
-        // Bottom export + view toolbar (v1.1 screenshot: compact pills, tight gaps)
-        constexpr int bottomPanelHeight       = 84;
-        constexpr int statusStripHeight       = 26;
-        constexpr int bottomExportWidth       = 168;  // SAVE / EXPORT column (narrower)
+        // Bottom export + view toolbar (raised to fit the larger bottomBarButton /
+        // bottomSectionTitle sizes above; same compact-pill layout, more headroom)
+        constexpr int bottomPanelHeight       = 96;
+        constexpr int statusStripHeight       = 28;
+        constexpr int bottomExportWidth       = 180;  // SAVE / EXPORT column (narrower)
         constexpr int bottomSectionGap        = 16;   // gap Export | View Mode block
         constexpr int bottomViewColGap        = 8;    // gap between the two View Mode columns
-        constexpr int bottomExportBtnGap      = 3;    // tight vertical stack (v1.1)
-        constexpr int bottomViewBtnGap        = 3;
-        constexpr int bottomSectionHeaderH    = 14;
-        constexpr int bottomContentTopPad     = 2;    // header -> first button row
+        constexpr int bottomExportBtnGap      = 4;    // tight vertical stack (v1.1)
+        constexpr int bottomViewBtnGap        = 4;
+        constexpr int bottomSectionHeaderH    = 17;
+        constexpr int bottomContentTopPad     = 3;    // header -> first button row
 
         // Slider numeric readout box (default / non-sidebar)
         constexpr int sliderBoxWidth          = 72;

@@ -204,7 +204,7 @@ public:
         btnOrthoHoriz_.setToggleState (true, juce::dontSendNotification);
 
         orthoGapLabel_.setText ("Gap", juce::dontSendNotification);
-        orthoGapLabel_.setFont (Brand::tech (10.0f));
+        orthoGapLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
         orthoGapLabel_.setColour (juce::Label::textColourId, Brand::muted());
         orthoGapLabel_.setJustificationType (juce::Justification::centredRight);
         orthoGapLabel_.setBorderSize ({});
@@ -255,7 +255,7 @@ public:
         };
 
         promptLabel_.setText ({}, juce::dontSendNotification);
-        promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (10.0f)));
+        promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
         promptLabel_.setColour (juce::Label::textColourId, Brand::muted());
         promptLabel_.setJustificationType (juce::Justification::centredLeft);
         promptLabel_.setBorderSize ({});
@@ -270,7 +270,7 @@ public:
         addAndMakeVisible (colourSwatch_);
 
         alphaLabel_.setText ("Opacity", juce::dontSendNotification);
-        alphaLabel_.setFont (Brand::tech (10.0f));
+        alphaLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
         alphaLabel_.setColour (juce::Label::textColourId, Brand::muted());
         alphaLabel_.setJustificationType (juce::Justification::centredRight);
         alphaLabel_.setBorderSize ({});
@@ -507,14 +507,32 @@ public:
         outer.removeFromBottom (UiConfig::Scale::px (1));
 
         auto b = outer;
-        const int tool = juce::jlimit (20, b.getHeight(), UiConfig::Scale::px (26));
-        const int gap  = UiConfig::Scale::px (4);
-        const int fitW = UiConfig::Scale::px (72);
-        const int rangeW = UiConfig::Scale::px (60);
-        const int modW = UiConfig::Scale::px (48);
-        const int swatch = juce::jlimit (14, tool - 4, UiConfig::Scale::px (18));
-        const int edgeIndent = juce::jmax (3, tool / 6);
-        const int sep = UiConfig::Scale::px (8);
+
+        // Ribbon compaction: this row is a fixed sequence of tool icons, mode
+        // toggles, and the Opacity/zoom/Range/Fit View cluster — at narrow
+        // window widths (small desktops, sidebar expanded) their combined
+        // natural width can exceed what's available. Rather than let items
+        // clip or overlap, shrink icon size/spacing together (never below a
+        // legible floor) so everything still fits in one row with no overlap.
+        const bool orthoVisible = btnOrthoHoriz_.isVisible();
+        const int neededW = UiConfig::Scale::px (72 + 60 + 26 + 26 + 48       // fit, range, zoom x2, snap
+                                                  + (orthoVisible ? (100 + 40 + 28 + 28 + 16) : 0)
+                                                  + 48 + 48                    // ortho, spl probe
+                                                  + 110 + 62                   // opacity slider + label
+                                                  + 26 * 7 + 20                // 7 tool icons + swatch
+                                                  + 4 * 13 + 8 * 4 + 8);       // gaps + separators + trailing gap
+        const float shrink = juce::jlimit (0.6f, 1.0f,
+                                           neededW > 0 ? (float) b.getWidth() / (float) neededW : 1.0f);
+        auto px2 = [&] (int v) { return juce::jmax (1, juce::roundToInt ((float) UiConfig::Scale::px (v) * shrink)); };
+
+        const int tool = juce::jlimit (16, b.getHeight(), px2 (26));
+        const int gap  = px2 (4);
+        const int fitW = px2 (72);
+        const int rangeW = px2 (60);
+        const int modW = px2 (48);
+        const int swatch = juce::jlimit (12, tool - 4, px2 (18));
+        const int edgeIndent = juce::jmax (2, tool / 6);
+        const int sep = px2 (8);
 
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
                           &btnRuler_, &btnShape_, &btnMic_, &btnZoomIn_, &btnZoomOut_ })
@@ -539,9 +557,9 @@ public:
         b.removeFromRight (gap);
         if (btnOrthoHoriz_.isVisible())
         {
-            const int gapEditW = UiConfig::Scale::px (100);
-            const int gapLabW = UiConfig::Scale::px (28);
-            const int hvW = UiConfig::Scale::px (28);
+            const int gapEditW = px2 (100);
+            const int gapLabW = px2 (40);   // wide enough for "Gap" at the bumped font
+            const int hvW = px2 (28);
             auto gr = b.removeFromRight (gapEditW);
             orthoGapSlider_.setBounds (gr.withSizeKeepingCentre (gapEditW, juce::jmax (18, tool - 4)));
             b.removeFromRight (gap);
@@ -558,8 +576,8 @@ public:
         placeRight (btnSplProbe_, modW);
         b.removeFromRight (gap);
         {
-            const int alphaW = UiConfig::Scale::px (110);
-            const int labW = UiConfig::Scale::px (44);
+            const int alphaW = px2 (110);
+            const int labW = px2 (62);   // wide enough for "Opacity" at the bumped font
             auto ar = b.removeFromRight (alphaW);
             fillAlpha_.setBounds (ar.withSizeKeepingCentre (alphaW, juce::jmax (18, tool - 4)));
             b.removeFromRight (gap);
@@ -587,7 +605,7 @@ public:
         placeRight (btnPan_, tool);
         b.removeFromRight (gap);
         placeRight (btnSelect_, tool);
-        b.removeFromRight (UiConfig::Scale::px (8));
+        b.removeFromRight (px2 (8));
 
         const int titleNeed = juce::roundToInt (
             title_.getFont().getStringWidthFloat (title_.getText()) + 8.0f);
@@ -619,7 +637,7 @@ public:
         }
         colourSwatch_.setColour (juce::TextButton::buttonColourId, drawColour_);
         promptLabel_.setColour (juce::Label::textColourId, Brand::muted());
-        promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (10.0f)));
+        promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
 
         auto mk = [] (const char* svg, juce::Colour c) -> std::unique_ptr<juce::Drawable>
         {

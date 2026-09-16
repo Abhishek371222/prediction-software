@@ -68,7 +68,7 @@ DashboardComponent::DashboardComponent()
 
     // --- New-project form --------------------------------------------------
     formTitle_.setText ("NEW PROJECT DETAILS", juce::dontSendNotification);
-    formTitle_.setFont (Brand::tech (20.0f, true));
+    formTitle_.setFont (Brand::tech (24.0f, true));
     formTitle_.setColour (juce::Label::textColourId, Brand::heading());
     formTitle_.setJustificationType (juce::Justification::centredLeft);
     addChildComponent (formTitle_);
@@ -86,6 +86,8 @@ DashboardComponent::DashboardComponent()
 
     createBtn_.setButtonText ("CREATE PROJECT");
     cancelBtn_.setButtonText ("CANCEL");
+    createBtn_.setComponentID ("dashAction");
+    cancelBtn_.setComponentID ("dashAction");
     styleButton (createBtn_, true);
     styleButton (cancelBtn_, false);
     addChildComponent (createBtn_);
@@ -104,12 +106,12 @@ DashboardComponent::Field* DashboardComponent::addField (const juce::String& key
     auto* f = fields_.add (new Field());
     f->key = key;
     f->label.setText (label, juce::dontSendNotification);
-    f->label.setFont (Brand::tech (14.0f));
+    f->label.setFont (Brand::tech (16.0f));
     f->label.setColour (juce::Label::textColourId, Brand::ash());
     f->label.setJustificationType (juce::Justification::centredLeft);
     addChildComponent (f->label);
 
-    f->editor.setFont (Brand::tech (15.0f));
+    f->editor.setFont (Brand::tech (18.0f));
     f->editor.setTextToShowWhenEmpty (placeholder, Brand::ash().withAlpha (0.6f));
     styleEditor (f->editor);
     addChildComponent (f->editor);
@@ -273,7 +275,7 @@ void DashboardComponent::paint (juce::Graphics& g)
 
     Brand::UI::applyWindowScale (getWidth(), getHeight());
     const float pad = (float) UiConfig::Scale::px (40);
-    const float logoH = (float) UiConfig::Scale::px (19);  // −20% vs prior 24 px
+    const float logoH = (float) UiConfig::Scale::px (26);  // legibility pass: fine strokes were smudging at 19px
     const float logoW = logoH * Brand::logoAspect;
     Brand::drawLogo (g, logo_.get(), { pad, (float) UiConfig::Scale::px (28), logoW, logoH });
 
@@ -314,19 +316,19 @@ void DashboardComponent::resized()
     else // NewForm
     {
         int y = subtitle_.getBottom() + UiConfig::Scale::px (8);
-        formTitle_.setBounds (pad, y, W, UiConfig::Scale::px (28)); y += UiConfig::Scale::px (44);
+        formTitle_.setBounds (pad, y, W, UiConfig::Scale::px (38)); y += UiConfig::Scale::px (52);
 
         const int colGap = UiConfig::Scale::px (24);
         const int colW = (W - colGap) / 2;
-        const int rowH = UiConfig::Scale::px (56);
+        const int rowH = UiConfig::Scale::px (72);   // raised for the bigger label/editor fonts below
         int idx = 0;
         for (auto* f : fields_)
         {
             const int col = idx % 2;
             const int rx = pad + col * (colW + colGap);
             if (col == 0 && idx > 0) y += rowH;
-            f->label.setBounds  (rx, y, colW, UiConfig::Scale::px (18));
-            f->editor.setBounds (rx, y + UiConfig::Scale::px (20), colW, UiConfig::Scale::px (30));
+            f->label.setBounds  (rx, y, colW, UiConfig::Scale::px (24));
+            f->editor.setBounds (rx, y + UiConfig::Scale::px (26), colW, UiConfig::Scale::px (36));
             ++idx;
         }
         y += rowH + UiConfig::Scale::px (16);

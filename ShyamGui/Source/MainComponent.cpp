@@ -485,6 +485,7 @@ MainComponent::MainComponent (ProjectData project)
     patternComp_.onEditCommitted = [this] { commitEdit(); };
     patternComp_.onKeyPressed = [this] (const juce::KeyPress& k) { return handleEditShortcut (k); };
     patternComp_.onLayoutMoved = [this] { patternComp_.repaint(); };
+    patternComp_.onRequestCancelCurrentTool = [this] { cancelCurrentCommand(); };
 
     // Workspace / layout wiring --------------------------------------------
     patternComp_.setLayoutLayer (&layout_);

@@ -4533,6 +4533,17 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
     if (e.mods.isPopupMenu())
     {
+        // Outside the plain cursor tool (Pencil/Ruler/Shapes/Add Mic/Add Q21S,
+        // mid-draw or not), right-click mirrors Esc: cancel and return to
+        // Select. Normal Select-mode right-click keeps its context menu below.
+        const bool inSelectMode = tool_ == Tool::Select && ! addMicArmed_ && ! addSpeakerArmed_;
+        if (! inSelectMode)
+        {
+            if (onRequestCancelCurrentTool)
+                onRequestCancelCurrentTool();
+            return;
+        }
+
         // Select under the cursor first so Copy/Paste/Delete work without a prior left-click.
         // Already-selected hits keep the current multi-selection (Windows-style).
         auto annotPt = screenToAnnot (e.position.x, e.position.y);

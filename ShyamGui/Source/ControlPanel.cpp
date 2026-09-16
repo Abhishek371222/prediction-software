@@ -176,21 +176,9 @@ ControlPanel::ControlPanel()
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
-    configTxt (measSetLabel_, "Measurement set");
     measSetBox_.addItem ("Ground Plane", 1);
-    measSetBox_.setComponentID ("ctrlCombo");
     measSetBox_.setSelectedId (1, juce::dontSendNotification);
-    measSetBox_.setEnabled (false); // Ground Plane only
-    measSetBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
-    measSetBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
-    measSetBox_.onChange = [this]
-    {
-        if (updatingUI_) return;
-        // Always Ground Plane (Open Field).
-        if (onMeasurementSourceChanged)
-            onMeasurementSourceChanged (0);
-    };
-    addAndMakeVisible (measSetBox_);
+    // Hidden from UI: single fixed dataset, nothing for the user to pick.
 
     configTxt (measDistLabel_, "Distance");
     measDistBox_.setComponentID ("ctrlCombo");
@@ -848,12 +836,12 @@ void ControlPanel::setSectionVisible (const std::initializer_list<juce::Componen
 void ControlPanel::applyColours()
 {
     auto txt = { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
-                 &resLabel_, &floorLabel_, &measSetLabel_, &measDistLabel_,
+                 &resLabel_, &floorLabel_, &measDistLabel_,
                  &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ };
     for (auto* l : txt) l->setColour (juce::Label::textColourId, Brand::text());
     layoutLabel_.setColour (juce::Label::textColourId, Brand::text());
 
-    for (auto* b : { &freqBox_, &speakerBox_, &presetBox_, &measSetBox_, &measDistBox_ })
+    for (auto* b : { &freqBox_, &speakerBox_, &presetBox_, &measDistBox_ })
     {
         b->setColour (juce::ComboBox::backgroundColourId, kBtnIn());
         b->setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
@@ -927,7 +915,7 @@ void ControlPanel::updateScaledChrome()
     }
 
     for (auto* l : { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
-                     &resLabel_, &floorLabel_, &measSetLabel_, &measDistLabel_,
+                     &resLabel_, &floorLabel_, &measDistLabel_,
                      &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ })
         l->setFont (Brand::tech (labelSz));
 
@@ -1067,11 +1055,9 @@ void ControlPanel::resized()
         editRow (resLabel_,   resSlider_);
         editRow (floorLabel_, floorSlider_);
         fullRow (bandsToggle_);
-        editRow (measSetLabel_, measSetBox_);
     });
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,
-                         &bandsToggle_,
-                         &measSetLabel_, &measSetBox_ },
+                         &bandsToggle_ },
                        secSimOpen_);
     measDistLabel_.setVisible (false);
     measDistBox_.setVisible (false);

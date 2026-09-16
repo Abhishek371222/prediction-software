@@ -224,6 +224,7 @@ namespace Brand
         constexpr float dashRecentItem       = UiConfig::FontSize::dashRecentItem;
         constexpr float plotFitButton      = UiConfig::FontSize::plotFitButton;
         constexpr float headerStatsButton  = UiConfig::FontSize::headerStatsButton;
+        constexpr float plotToolbarLabel   = UiConfig::FontSize::plotToolbarLabel;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle         = UiConfig::FontSize::prefsTitle;
@@ -544,10 +545,40 @@ namespace Brand
                                       juce::jmin (h, gap + pad) - juce::jmax (0, y0 - pad) });
     }
 
+    // Large source wordmarks (native ~323px tall) shrunk directly to the tiny
+    // header/dashboard display size in one step alias badly: thin diagonal
+    // strokes (the A/M/K chevrons) drop out intermittently, which is what
+    // made the wordmark look broken/dotted rather than solid. Pre-shrink in
+    // halving steps (a cheap mipmap-style box filter) to a modest size that's
+    // still comfortably above every real display size (max ~96px tall for
+    // the dashboard logo), so the final draw-time scale-down stays small and
+    // clean instead of an extreme ~15x single-pass reduction.
+    inline juce::Image highQualityDownscale (juce::Image img, int targetH)
+    {
+        if (! img.isValid() || img.getHeight() <= targetH)
+            return img;
+
+        juce::Image cur = img;
+        while (cur.getHeight() > targetH * 2)
+        {
+            const int nw = juce::jmax (1, cur.getWidth() / 2);
+            const int nh = juce::jmax (1, cur.getHeight() / 2);
+            cur = cur.rescaled (nw, nh, juce::Graphics::highResamplingQuality);
+        }
+        if (cur.getHeight() != targetH)
+        {
+            const int nw = juce::jmax (1, juce::roundToInt (
+                (float) cur.getWidth() * ((float) targetH / (float) cur.getHeight())));
+            cur = cur.rescaled (nw, targetH, juce::Graphics::highResamplingQuality);
+        }
+        return cur;
+    }
+
     // whiteVariant: dark-mode / dark-tile logo. Otherwise light-mode logo.
     inline juce::Image loadBrandLogoImage (bool whiteVariant)
     {
         const auto assets = assetsFolder();
+        constexpr int targetH = 160;
 
         // Preferred: ATOMIK-only crops (no "AUDIO" line).
         const juce::String atomikOnly = whiteVariant
@@ -555,21 +586,22 @@ namespace Brand
             : "Atomik_Logo_Light.png";
         if (auto img = juce::ImageFileFormat::loadFrom (assets.getChildFile (atomikOnly));
             img.isValid())
-            return cropToAtomikOnly (img);
+            return highQualityDownscale (cropToAtomikOnly (img), targetH);
 
         const juce::String svgName = whiteVariant
             ? "Atomik Audio - Horizontal logo ( White) 3.svg"
             : "Atomik Audio - Horizontal logo 1.svg";
 
         if (auto img = decodeEmbeddedPngFromSvg (assets.getChildFile (svgName)); img.isValid())
-            return cropToAtomikOnly (img);
+            return highQualityDownscale (cropToAtomikOnly (img), targetH);
 
         const juce::String pngName = whiteVariant
             ? "Atomik_Audio_Logo_Dark.png"
             : "Atomik_Audio_Logo_Light.png";
         const auto png = assets.getChildFile (pngName);
         if (png.existsAsFile())
-            return cropToAtomikOnly (juce::ImageFileFormat::loadFrom (png));
+            return highQualityDownscale (
+                cropToAtomikOnly (juce::ImageFileFormat::loadFrom (png)), targetH);
 
         return {};
     }

@@ -104,13 +104,13 @@ public:
             setContentOwned (dash, true);
             setResizable (true, true);
 
-            // Keep the dashboard proportional with a sensible minimum size.
-            const double aspect = 760.0 / 600.0;
-            const int    minW   = 680;
-            const int    minH   = juce::roundToInt (minW / aspect);
-            setResizeLimits (minW, minH, 4000, juce::roundToInt (4000.0 / aspect));
-            if (auto* c = getConstrainer())
-                c->setFixedAspectRatio (aspect);
+            // Free resize within sensible bounds — no fixed aspect ratio, so the
+            // window can be sized/maximised to any monitor/resolution and the
+            // layout (see DashboardComponent::resized()) adapts to whatever
+            // width/height it's given, down to small 1024x768-class desktops.
+            const int minW = 480;
+            const int minH = 420;
+            setResizeLimits (minW, minH, 8000, 8000);
 
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
@@ -141,14 +141,16 @@ public:
             setContentOwned (new MainComponent (project), true);
             setResizable (true, true);
 
-            // Lock the widescreen proportions and enforce a usable minimum so
-            // the layout can never collapse or distort while resizing.
-            const double aspect = 1340.0 / 820.0;             // design ratio
-            const int    minW   = 1120;
-            const int    minH   = juce::roundToInt (minW / aspect);
-            setResizeLimits (minW, minH, 10000, juce::roundToInt (10000.0 / aspect));
-            if (auto* c = getConstrainer())
-                c->setFixedAspectRatio (aspect);
+            // Free resize, no fixed aspect ratio: MainComponent::resized() lays
+            // out header/ribbon/sidebar/canvas/status bar from the actual
+            // window bounds every time (UiConfig::Scale + sidebar collapse +
+            // the sidebar's own scrolling viewport), so it adapts to whatever
+            // size/aspect the window is given rather than requiring one exact
+            // shape. Minimum kept just large enough that the ribbon/toolbar
+            // controls still have room to lay out without overlapping.
+            const int minW = 1024;
+            const int minH = 700;
+            setResizeLimits (minW, minH, 10000, 10000);
 
             centreWithSize (getWidth(), getHeight());
             setVisible (true);

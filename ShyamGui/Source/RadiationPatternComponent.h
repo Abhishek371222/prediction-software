@@ -182,6 +182,10 @@ public:
     /** Place a new speaker at world (x, y) metres — MainComponent → ControlPanel. */
     std::function<void(float, float)>      onPlaceSpeakerAt;
     std::function<bool(const juce::KeyPress&)> onKeyPressed;
+    /** Right-click while a non-Select tool (or Add Mic/Speaker) is armed —
+        same "back to cursor" action as Esc. Normal Select-mode right-click
+        (context menu) is untouched. */
+    std::function<void()>                  onRequestCancelCurrentTool;
 
     void paint (juce::Graphics&) override;
     void resized() override;
