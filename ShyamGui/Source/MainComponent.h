@@ -72,6 +72,9 @@ private:
                         bool focusPlot = true);
     void preferTerminalFocus();
     void cancelCurrentCommand (bool focusPlot = true);
+    // Mirrors to both statusStrip_ (bottom, full detail) and headerStatus_
+    // (compact "Ready" pill, header row 1) so callers only need one call.
+    void reportStatus (const juce::String& state, bool ready = true);
 
     struct EditSnapshot
     {
@@ -137,6 +140,7 @@ private:
     juce::Label titleLabel_, versionLabel_;
     ParamBar    paramBar_;
     StatusStrip statusStrip_;
+    StatusStrip headerStatus_;   // compact "Ready" pill, top-right of header row 1 (Figma redesign)
     juce::TooltipWindow tooltipWindow_ { this, 450 };
     juce::StringArray statChips_;   // live simulation stats, shown in the Help (?) popup
 

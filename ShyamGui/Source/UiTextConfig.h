@@ -77,8 +77,12 @@ namespace UiConfig
         // Secondary plot axis / annotation text
         constexpr float plotAxis            = 11.5f;
         // Colour-bar dB tick labels and "Rel. SPL" caption
-        constexpr float colourBarTick       = 14.0f;
-        constexpr float colourBarTitle      = 15.0f;
+        constexpr float colourBarTick       = 14.0f;   // export sheets (unscaled)
+        constexpr float colourBarTitle      = 15.0f;   // export sheets (unscaled)
+        // On-screen Rel. SPL legend. Figma renders these at 14px SemiBold;
+        // calibrated against its ink width and put through the window scale so
+        // they track window size (the export values above deliberately don't).
+        constexpr float legendTickOnScreen  = 11.0f;
 
         // --- Heatmap speaker markers -----------------------------------------
         // +/- polarity badge inside speaker icon
@@ -95,7 +99,10 @@ namespace UiConfig
         // View tile captions (legacy icon tiles)
         constexpr float viewTileCaption       = 11.0f;
         // Status strip: "Ready", "Last run: …", "Elapsed: …"
-        constexpr float statusBar             = 11.5f;
+        // Bottom strip "Last run : …" / "Elapsed : …" and the ribbon's Ready
+        // pill. Calibrated against the Figma render's ink width (see the
+        // sidebar note above for why this isn't just the CSS px value).
+        constexpr float statusBar             = 18.0f;
         // "SAVE / EXPORT" / "VIEW MODE" section titles
         constexpr float bottomSectionTitle    = 9.5f;
 
@@ -112,15 +119,16 @@ namespace UiConfig
         constexpr float exportPolarRing     = 13.0f;   // mono — dB rings & angle labels
         constexpr float exportPolarCenter   = 15.0f;
 
-        // --- Left control sidebar (whole pane — v1.1 baseline, no +30/+35% bump)
-        // MAIN: combo values + slider numeric boxes
-        constexpr float sidebarMainValue      = fieldValue;        // 15.0
-        // REST: collapsible section titles
-        constexpr float sidebarSectionTitle   = sectionHeader;     // 16.0
-        // REST: buttons, < > steppers
-        constexpr float sidebarButtonText     = button;            // 13.0
-        // REST: field labels, helper lines, checkbox text
-        constexpr float sidebarFieldLabel     = fieldLabel;        // 14.0
+        // --- Left control sidebar -------------------------------------------
+        // Figma uses Montserrat 14px Medium for the numbered section headers
+        // and 12px Regular for every field label, value and button. These
+        // bases are calibrated by measuring rendered ink width against the
+        // Figma render, not by dividing the CSS px value — JUCE's Font height
+        // is the whole line box, so matching ink needs a larger number.
+        constexpr float sidebarMainValue      = 14.3f;  // -> 12px ink  values / combo text
+        constexpr float sidebarSectionTitle   = 19.1f;  // -> 14px ink  "1. FREQUENCY (Hz)"
+        constexpr float sidebarButtonText     = 14.3f;  // -> 12px ink  + Add / Delete
+        constexpr float sidebarFieldLabel     = 14.3f;  // -> 12px ink  labels, checkbox text
 
         // Aliases (frequency card uses the same sidebar scale)
         constexpr float freqValue             = sidebarMainValue;
@@ -149,6 +157,12 @@ namespace UiConfig
         // prompt ("LINE: click the plot…"). Were hardcoded literals (10px, no
         // scale) — named + scaled here so they track the legibility pass above.
         constexpr float plotToolbarLabel      = 12.5f;
+        // Ribbon cluster captions ("File", "Navigation", ...). Calibrated by
+        // measuring rendered ink against the Figma render rather than by
+        // converting a CSS px value — JUCE's Font height is the whole line box,
+        // so it needs a larger number than the design's nominal font-size to
+        // put the same amount of ink on screen.
+        constexpr float ribbonClusterLabel    = 15.0f;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle            = 24.0f;
@@ -187,29 +201,34 @@ namespace UiConfig
         // Left sidebar — widened + row heights raised to match the larger
         // FontSize::sidebar* values above (legibility pass); same layout shape,
         // just enough room for 13px text instead of 9-9.5px.
-        constexpr int sidebarWidth          = 272;
+        // Figma "Home Screen 1.1": sidebar is 340px of a 1920px canvas, i.e.
+        // 258 through the 1.317 scale factor the app derives at that size.
+        constexpr int sidebarWidth          = 258;  // -> 340px
         constexpr int sidebarCollapsedWidth = 32;   // rail when sidebar is collapsed
-        constexpr int sidebarPadding        = 14;
+        // Sidebar metrics, all Figma pixels / 1.317 (see 02-layout-left-panel.md):
+        //   12px content gutter · 36px input rows · 24px section headers ·
+        //   ~48px slider-row pitch · 28.8px checkboxes · 101px value boxes.
+        constexpr int sidebarPadding        = 9;    // -> 12px content gutter
         // Right info panel (Scene Summary, Selected Speaker)
         constexpr int infoPanelWidth          = 264;
-        constexpr int controlRowHeight        = 34;   // combo / device / action rows
-        constexpr int controlRowGap           = 7;
-        constexpr int sectionGap              = 13;
-        constexpr int labelColumnWidth        = 104;
+        constexpr int controlRowHeight        = 27;   // -> 36px  combo / device / action rows
+        constexpr int controlRowGap           = 9;    // -> 12px  between rows in a section
+        constexpr int sectionGap              = 11;   // -> 14px  last row -> next header
+        constexpr int labelColumnWidth        = 74;   // -> 97px  (label + gap = 109px)
 
         constexpr int sidebarRowHeight          = controlRowHeight;
         constexpr int sidebarStepButtonWidth    = 30;
-        constexpr int sidebarActionButtonWidth  = 60;   // + Add / Delete
-        constexpr int sidebarPrimaryButtonH       = 34;
-        constexpr int sidebarResetRowH            = 28;
+        constexpr int sidebarActionButtonWidth  = 77;   // -> 101px  + Add / Delete
+        constexpr int sidebarPrimaryButtonH       = 27;
+        constexpr int sidebarResetRowH            = 22;   // -> 29px  Set to Default / Clear All
         constexpr int sidebarBorderWidth          = 1;
-        constexpr int sidebarSliderBoxWidth     = 80;
-        constexpr int sidebarSliderBoxHeight    = 27;
+        constexpr int sidebarSliderBoxWidth     = 77;   // -> 101px  value box
+        constexpr int sidebarSliderBoxHeight    = 27;   // -> 36px
         constexpr int sidebarEditLabelHeight    = 20;
-        constexpr int sidebarSectionHeaderH     = 21;
+        constexpr int sidebarSectionHeaderH     = 18;   // -> 24px
         constexpr int sidebarHelperTextH        = 16;
-        constexpr int sidebarSectionHeaderGap   = 5;
-        constexpr int sidebarSliderTextGap      = 7;    // track → value box
+        constexpr int sidebarSectionHeaderGap   = 7;    // -> 9px  header -> first control
+        constexpr int sidebarSliderTextGap      = 6;    // -> 8px  track → value box
 
         // Legacy names
         constexpr int freqRowHeight             = sidebarRowHeight;
@@ -217,8 +236,22 @@ namespace UiConfig
 
         // Top param chip strip height
         constexpr int paramBarHeight          = 36;
-        // Plot title bar above heatmap
-        constexpr int plotHeaderHeight        = 62;
+        // Tool ribbon (Figma "Home Screen 1.1" row 2). Every ribbon constant
+        // below is the Figma 1920x1080 pixel value divided by the 1.317 scale
+        // factor the app derives at that window size, so at 1920x1080 they
+        // render at exactly the documented Figma pixel sizes.
+        constexpr int plotHeaderHeight        = 56;   // -> 74px (Figma row 2)
+        constexpr int ribbonIconSize          = 18;   // -> 24px icon buttons
+        constexpr int ribbonIconGap           = 5;    // -> 6px  (30px pitch)
+        constexpr int ribbonIconTop           = 8;    // -> 11px below row top
+        constexpr int ribbonLabelTop          = 32;   // -> 42px below row top
+        constexpr int ribbonLabelH            = 16;   // -> 21px label row
+        constexpr int ribbonEdgePad           = 15;   // -> 20px left margin
+        constexpr int ribbonClusterPad        = 9;    // -> 12px each side of a divider
+        constexpr int ribbonSwatch            = 11;   // -> 14px colour dot
+        constexpr int ribbonSwatchPitchX      = 15;   // -> 20px
+        constexpr int ribbonSwatchPitchY      = 12;   // -> 16px
+        constexpr int ribbonReadyRightPad     = 45;   // -> 60px right margin
         // Main window title band (logo + centred title)
         constexpr int headerBandHeight        = 44;
         // ATOMIK wordmark inside the header. Was 14px — at the low end of the
@@ -235,10 +268,19 @@ namespace UiConfig
         constexpr int headerIconHeight        = 32;
         constexpr int headerIconEdgeIndent    = 4;
 
-        // Bottom export + view toolbar (raised to fit the larger bottomBarButton /
-        // bottomSectionTitle sizes above; same compact-pill layout, more headroom)
-        constexpr int bottomPanelHeight       = 96;
-        constexpr int statusStripHeight       = 28;
+        // Bottom strip (Figma: y=979..1080 under the canvas, x=340..1920).
+        // Run info stacked bottom-left, Save/Export buttons bottom-right.
+        // Figma pixels / 1.317, as with the ribbon constants above.
+        constexpr int bottomPanelHeight       = 77;   // -> 101px
+        constexpr int statusStripHeight       = 0;    // Figma has no full-width status strip
+        constexpr int bottomRunInfoLeft       = 13;   // -> 17px text inset from canvas left
+        constexpr int bottomRunInfoTop        = 8;    // -> 11px first line below strip top
+        constexpr int bottomRunInfoLineGap    = 18;   // -> 24px between the two lines
+        constexpr int bottomButtonWidth       = 150;  // -> 197px
+        constexpr int bottomButtonHeight      = 23;   // -> 30px
+        constexpr int bottomButtonGap         = 4;    // -> 5px
+        constexpr int bottomButtonRightPad    = 25;   // -> 33px
+        constexpr int bottomButtonBaseline    = 20;   // -> 26px button top below strip top
         constexpr int bottomExportWidth       = 180;  // SAVE / EXPORT column (narrower)
         constexpr int bottomSectionGap        = 16;   // gap Export | View Mode block
         constexpr int bottomViewColGap        = 8;    // gap between the two View Mode columns
@@ -273,8 +315,8 @@ namespace UiConfig
         constexpr float sliderTrackThickness = 2.0f;
         constexpr float sliderThumbDiameter  = 10.0f;
         constexpr float checkboxTickSize     = 18.0f;
-        constexpr float cornerRadius         = 4.0f;
-        constexpr float cardCornerRadius     = 8.0f;
+        constexpr float cornerRadius         = 2.0f;   // Figma redesign: flat 2px radius
+        constexpr float cardCornerRadius     = 2.0f;   // Figma redesign: flat 2px radius
         // Sidebar collapse chevrons, combo dropdown triangles, checkbox ticks
         constexpr float sidebarChevronScale    = 1.0f;
         constexpr float sidebarComboArrowScale = 1.0f;

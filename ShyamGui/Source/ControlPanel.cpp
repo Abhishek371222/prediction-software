@@ -176,9 +176,23 @@ ControlPanel::ControlPanel()
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
+    // Figma's SIMULATION section ends with a "Measurement set" row. Only one
+    // dataset ships today, so the box has a single entry and reads as a
+    // statement of which set is in use rather than a real choice.
+    configTxt (measSetLabel_, "Measurement set");
+    measSetBox_.setComponentID ("ctrlCombo");
+    measSetBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    measSetBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     measSetBox_.addItem ("Ground Plane", 1);
     measSetBox_.setSelectedId (1, juce::dontSendNotification);
-    // Hidden from UI: single fixed dataset, nothing for the user to pick.
+    measSetBox_.onChange = [this]
+    {
+        if (updatingUI_) return;
+        if (onMeasurementSourceChanged)
+            onMeasurementSourceChanged (measSetBox_.getSelectedId() - 1);
+    };
+    addAndMakeVisible (measSetLabel_);
+    addAndMakeVisible (measSetBox_);
 
     configTxt (measDistLabel_, "Distance");
     measDistBox_.setComponentID ("ctrlCombo");
@@ -259,13 +273,17 @@ ControlPanel::ControlPanel()
     };
 
     // RESET / CLEAR — centred text links at the bottom (no Run Simulation in v1.1).
+    // Figma draws "Set to Default" / "Clear All" as ordinary filled sidebar
+    // buttons (#F6F6F6 fill, hairline border, 2px radius, black centred
+    // label) — not the borderless text links this used to use.
     auto styleTextLink = [] (juce::TextButton& b, const juce::String& id)
     {
-        b.setComponentID (id);
-        b.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-        b.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-        b.setColour (juce::TextButton::textColourOffId,  Brand::ash());
-        b.setColour (juce::TextButton::textColourOnId,   Brand::text());
+        juce::ignoreUnused (id);
+        b.setComponentID ("ctrlBtn");
+        b.setColour (juce::TextButton::buttonColourId,   Brand::btnIn());
+        b.setColour (juce::TextButton::buttonOnColourId, Brand::btnIn());
+        b.setColour (juce::TextButton::textColourOffId,  Brand::onBtnIn());
+        b.setColour (juce::TextButton::textColourOnId,   Brand::onBtnIn());
     };
 
     resetBtn_.setButtonText ("Set to Default");
@@ -824,7 +842,7 @@ float ControlPanel::getMeasurementDistance() const
 // ---------------------------------------------------------------------------
 void ControlPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (Brand::panel());
+    g.fillAll (Brand::sidebarBg());
 }
 
 // ---------------------------------------------------------------------------
@@ -860,14 +878,9 @@ void ControlPanel::applyColours()
                      &importLayoutBtn_, &removeLayoutBtn_,
                      &freqPrevBtn_, &freqNextBtn_ })
         styleBtnC (*b, false);
+    // Filled sidebar buttons, like every other control (see styleTextLink).
     styleBtnC (resetBtn_, false);
-    resetBtn_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-    resetBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    resetBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
     styleBtnC (clearAllBtn_, false);
-    clearAllBtn_.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-    clearAllBtn_.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    clearAllBtn_.setColour (juce::TextButton::textColourOffId,  Brand::ash());
     styleBtnC (applyPresetBtn_, true);
 
     for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
@@ -915,7 +928,7 @@ void ControlPanel::updateScaledChrome()
     }
 
     for (auto* l : { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
-                     &resLabel_, &floorLabel_, &measDistLabel_,
+                     &resLabel_, &floorLabel_, &measDistLabel_, &measSetLabel_,
                      &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ })
         l->setFont (Brand::tech (labelSz));
 
@@ -1005,7 +1018,10 @@ void ControlPanel::resized()
         deleteBtn_.setBounds  (pad + W - actW, y, actW, rowH);
         y += rowH + gap;
     };
-    auto sectionBreak = [&] () { y += secGap; };
+    // Every row helper already advances by its own trailing `gap`, so a section
+    // break only needs the difference — otherwise the two stack and each
+    // section drifts further below its Figma position than the last.
+    auto sectionBreak = [&] () { y += juce::jmax (0, secGap - gap); };
 
     // 1. Frequency (Hz)
     section (freqHdr_, secFreqOpen_);
@@ -1013,18 +1029,18 @@ void ControlPanel::resized()
     setSectionVisible ({ &freqBox_ }, secFreqOpen_);
     sectionBreak();
 
-    // 2. Q21S Units
+    // 2. Q21S Units — Figma shows only the device row (dropdown | + Add |
+    // Delete). The "Quick Layout" helper + 1/2/3 Devices buttons have no slot
+    // in the mock, so they're hidden here (handlers/logic untouched).
     section (speakersHdr_, secSpeakersOpen_);
-    ifOpen (secSpeakersOpen_, [&]
+    ifOpen (secSpeakersOpen_, [&] { speakerUnitRow(); });
+    setSectionVisible ({ &speakerBox_, &addBtn_, &deleteBtn_ }, secSpeakersOpen_);
+    for (auto* c : { (juce::Component*) &layoutLabel_, (juce::Component*) &layout1Btn_,
+                     (juce::Component*) &layout2Btn_,  (juce::Component*) &layout3Btn_ })
     {
-        speakerUnitRow();
-        const int helperH = Brand::UI::sidebarHelperTextH;
-        layoutLabel_.setBounds (pad, y, W, helperH);
-        y += helperH + UiConfig::Scale::px (2);
-        equalTriple (layout1Btn_, layout2Btn_, layout3Btn_);
-    });
-    setSectionVisible ({ &speakerBox_, &addBtn_, &deleteBtn_, &layoutLabel_,
-                         &layout1Btn_, &layout2Btn_, &layout3Btn_ }, secSpeakersOpen_);
+        c->setVisible (false);
+        c->setBounds (0, 0, 0, 0);
+    }
     sectionBreak();
 
     // 3. Selected Q21S
@@ -1035,9 +1051,9 @@ void ControlPanel::resized()
         editRow (yLabel_,     ySlider_);
         editRow (gainLabel_,  gainSlider_);
         editRow (delayLabel_, delaySlider_);
-        // Compact stacked checkboxes — tall enough for 14.5 label
-        const int chkH = UiConfig::Scale::px (26);
-        const int chkGap = UiConfig::Scale::px (4);
+        // Figma: 28.8px checkbox rows on a 38.4px pitch.
+        const int chkH   = UiConfig::Scale::px (22);   // -> 29px
+        const int chkGap = UiConfig::Scale::px (7);    // -> 9px
         polarityToggle_.setBounds (pad, y, W, chkH); y += chkH + chkGap;
         orientationToggle_.setBounds (pad, y, W, chkH); y += chkH + chkGap;
         enabledToggle_.setBounds (pad, y, W, chkH); y += chkH + gap;
@@ -1055,18 +1071,28 @@ void ControlPanel::resized()
         editRow (resLabel_,   resSlider_);
         editRow (floorLabel_, floorSlider_);
         fullRow (bandsToggle_);
+        // "Measurement set" sits on a wider label column than the slider rows:
+        // Figma puts its dropdown at x=174 of the 313px content, ~151px wide.
+        {
+            const int boxW = juce::jmin (W - UiConfig::Scale::px (40), UiConfig::Scale::px (115));
+            measSetLabel_.setBounds (pad, y, W - boxW - UiConfig::Scale::px (8), rowH);
+            measSetBox_.setBounds (pad + W - boxW, y, boxW, rowH);
+            y += rowH + gap;
+        }
     });
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,
-                         &bandsToggle_ },
+                         &bandsToggle_, &measSetLabel_, &measSetBox_ },
                        secSimOpen_);
     measDistLabel_.setVisible (false);
     measDistBox_.setVisible (false);
     sectionBreak();
 
-    // 5. Workspace — grid only (Import Layout removed)
-    section (workspaceHdr_, secWorkspaceOpen_);
-    ifOpen (secWorkspaceOpen_, [&] { fullRow (gridToggle_); });
-    setSectionVisible ({ &gridToggle_ }, secWorkspaceOpen_);
+    // 5. Workspace — no counterpart in the Figma mock (it stops at SIMULATION),
+    // so the whole section is hidden. Header/toggle and their handlers remain.
+    workspaceHdr_.setVisible (false);
+    workspaceHdr_.setBounds (0, 0, 0, 0);
+    gridToggle_.setVisible (false);
+    gridToggle_.setBounds (0, 0, 0, 0);
     importLayoutBtn_.setVisible (false);
     removeLayoutBtn_.setVisible (false);
     layoutVisibleToggle_.setVisible (false);
@@ -1079,24 +1105,29 @@ void ControlPanel::resized()
     layoutWidthSlider_.setVisible (false);
     layoutRotSlider_.setVisible (false);
     layoutOpacitySlider_.setVisible (false);
-    sectionBreak();
 
     // 6. Array Presets — removed from UI
     presetHdr_.setVisible (false);
     presetBox_.setVisible (false);
     applyPresetBtn_.setVisible (false);
 
-    // RESET / CLEAR ALL — centred text links at the bottom.
+    // "Set to Default" / "Clear All" pinned to the panel bottom. Figma:
+    // y=979 and y=1015 (7px apart), the lower one ending 36px above the
+    // window's bottom edge.
     const int resetH       = Brand::UI::sidebarResetRowH;
-    const int linkGap      = juce::jmax (2, gap / 2);
-    const int actionsBlock = resetH * 2 + linkGap + pad;
-    const int panelBottom  = getHeight() - pad;
+    const int linkGap      = UiConfig::Scale::px (5);    // -> 7px
+    const int bottomMargin = UiConfig::Scale::px (27);   // -> 36px
+    const int actionsBlock = resetH * 2 + linkGap + bottomMargin;
+    const int panelBottom  = getHeight();
     int actionsTop = y;
     if (y + actionsBlock <= panelBottom)
         actionsTop = panelBottom - actionsBlock;
 
-    resetBtn_.setBounds (pad, actionsTop, W, resetH);
-    clearAllBtn_.setBounds (pad, actionsTop + resetH + linkGap, W, resetH);
+    // Figma insets these one extra gutter from the content column (x=24, w=295).
+    const int actX = pad * 2;
+    const int actW = juce::jmax (40, getWidth() - actX * 2);
+    resetBtn_.setBounds (actX, actionsTop, actW, resetH);
+    clearAllBtn_.setBounds (actX, actionsTop + resetH + linkGap, actW, resetH);
     runBtn_.setVisible (false);
 
     contentHeight_ = juce::jmax (getHeight(), actionsTop + actionsBlock);

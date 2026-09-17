@@ -21,6 +21,7 @@ namespace Brand
         juce::Colour base;          // app background
         juce::Colour panel;         // sidebar
         juce::Colour panelDark;     // plot header strip
+        juce::Colour sidebarBg;     // left settings pane behind its controls
         juce::Colour btnIn;         // sidebar controls / value boxes
         juce::Colour exportPill;    // SAVE / EXPORT buttons
         juce::Colour idleViewPill;  // inactive VIEW MODE pills
@@ -51,6 +52,7 @@ namespace Brand
         p.base          = juce::Colour (0xff1c1c1c);
         p.panel         = juce::Colour (0xff1c1c1c);
         p.panelDark     = juce::Colour (0xff201f1f);
+        p.sidebarBg     = juce::Colour (0xff1c1c1c);
         p.btnIn         = juce::Colour (0xffffffff);
         p.exportPill    = juce::Colour (0xffdfdede);
         p.idleViewPill  = juce::Colour (0xffefe9e9);
@@ -78,32 +80,37 @@ namespace Brand
 
     inline Palette lightPalette()
     {
+        // Figma redesign ("Home Screen 1.1", vLUiytDkvtyHqkQGIaEiLk): flat white UI,
+        // #F6F6F6 input fills, #0C0C0C hairline borders, no shadows/elevation.
         Palette p;
         p.base          = juce::Colour (0xffffffff);
-        p.panel         = juce::Colour (0xffefe9e9);
-        p.panelDark     = juce::Colour (0xffefe9e9);
-        p.btnIn         = juce::Colour (0xffdfdede);
-        p.exportPill    = juce::Colour (0xffdfdede);
-        p.idleViewPill  = juce::Colour (0xffefe9e9);
-        p.statsBtn      = juce::Colour (0xff333131);
-        p.statsText     = juce::Colour (0xfffef8f8);
-        p.plotToolbar   = juce::Colour (0xffdfdede);
-        p.border        = juce::Colour (0xffc9c6c6);   // soft edge on #DFDEDE controls
-        p.sidebarBorder = juce::Colour (0x801a1919);   // #1A1919 @ 50%
-        p.plotBorder    = juce::Colour (0x801a1919);   // #1A1919 @ 50%
-        p.toolbarBorder = juce::Colour (0xff1f1e1e);   // #1F1E1E
-        p.fitViewBorder = juce::Colour (0xff383636);   // #383636
+        p.panel         = juce::Colour (0xffffffff);
+        p.panelDark     = juce::Colour (0xffffffff);
+        // Sidebar reads as a light-grey tray with white controls sitting on it
+        // (the inverse of the first mock, where white panel held #F6F6F6 inputs).
+        p.sidebarBg     = juce::Colour (0xfff0f0f0);
+        p.btnIn         = juce::Colour (0xffffffff);
+        p.exportPill    = juce::Colour (0xfff6f6f6);
+        p.idleViewPill  = juce::Colour (0xfff6f6f6);
+        p.statsBtn      = juce::Colour (0xffffffff);
+        p.statsText     = juce::Colour (0xff000000);
+        p.plotToolbar   = juce::Colour (0xffffffff);
+        p.border        = juce::Colour (0xff0c0c0c);   // #0C0C0C hairline
+        p.sidebarBorder = juce::Colour (0x330c0c0c);   // faint divider between sections
+        p.plotBorder    = juce::Colour (0xff656161);   // Graph panel stroke, #656161
+        p.toolbarBorder = juce::Colour (0x80000000);   // header row-2 rule, black @ 50%
+        p.fitViewBorder = juce::Colour (0xff0c0c0c);
         p.text          = juce::Colour (0xff000000);
         p.heading       = juce::Colour (0xff000000);
         p.ash           = juce::Colour (0xff000000);
-        p.muted         = juce::Colour (0xff333131);
+        p.muted         = juce::Colour (0xff000000);
         p.onBtn         = juce::Colour (0xff000000);
-        p.plotBg        = juce::Colour (0xffefe9e9);
-        p.plotGrid      = juce::Colour (0x66231f20);
+        p.plotBg        = juce::Colour (0xfff6f6f6);
+        p.plotGrid      = juce::Colour (0xffb4b4b4);   // major gridline #B4B4B4
         p.plotTitle     = juce::Colour (0xffed2227);
-        p.axisLabel     = juce::Colour (0xffffffff);
+        p.axisLabel     = juce::Colour (0xff000000);
         p.activeLabel   = juce::Colour (0xfffffafa);
-        p.scrollThumb   = juce::Colour (0xff333131);   // dark pill on light
+        p.scrollThumb   = juce::Colour (0xff313131);   // dark pill on light
         return p;
     }
 
@@ -131,6 +138,7 @@ namespace Brand
     inline juce::Colour base()          { return palette().base; }
     inline juce::Colour panel()         { return palette().panel; }
     inline juce::Colour panelDark()     { return palette().panelDark; }
+    inline juce::Colour sidebarBg()     { return palette().sidebarBg; }
     inline juce::Colour btnIn()         { return palette().btnIn; }
     inline juce::Colour exportPill()    { return palette().exportPill; }
     inline juce::Colour idleViewPill()  { return palette().idleViewPill; }
@@ -158,10 +166,10 @@ namespace Brand
     inline juce::Colour disabled()      { return muted(); }
 
     // Sidebar control outline: thin grey hairline (reads softer than solid black).
-    inline juce::Colour controlBorder() { return juce::Colour (0x731a1919); } // #1A1919 @ ~45%
-    constexpr float controlBorderPx   = 0.6f;
+    inline juce::Colour controlBorder() { return juce::Colour (0xff0c0c0c); } // Figma redesign: solid #0C0C0C hairline
+    constexpr float controlBorderPx   = 1.0f;
     constexpr float valueBoxCorner    = 3.0f;   // slider numeric boxes
-    constexpr float controlCorner     = 4.0f;   // combos / buttons
+    constexpr float controlCorner     = 2.0f;   // Figma redesign: flat 2px radius on combos / buttons
 
     inline void strokeInsideRounded (juce::Graphics& g, juce::Rectangle<float> bounds,
                                      float corner, float strokePx, juce::Colour col,
@@ -199,6 +207,7 @@ namespace Brand
         constexpr float bottomSectionTitle   = UiConfig::FontSize::bottomSectionTitle;
         constexpr float colourBarTick        = UiConfig::FontSize::colourBarTick;
         constexpr float colourBarTitle       = UiConfig::FontSize::colourBarTitle;
+        constexpr float legendTickOnScreen   = UiConfig::FontSize::legendTickOnScreen;
         constexpr float speakerPolarityBadge = UiConfig::FontSize::speakerPolarityBadge;
         constexpr float speakerId            = UiConfig::FontSize::speakerId;
         constexpr float speakerIdSelected    = UiConfig::FontSize::speakerIdSelected;
@@ -225,6 +234,7 @@ namespace Brand
         constexpr float plotFitButton      = UiConfig::FontSize::plotFitButton;
         constexpr float headerStatsButton  = UiConfig::FontSize::headerStatsButton;
         constexpr float plotToolbarLabel   = UiConfig::FontSize::plotToolbarLabel;
+        constexpr float ribbonClusterLabel = UiConfig::FontSize::ribbonClusterLabel;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle         = UiConfig::FontSize::prefsTitle;
@@ -383,6 +393,13 @@ namespace Brand
     inline juce::File assetsFolder()
     {
         return resolveProjectChild ("Assets", juce::File ("D:\\shayam gui\\Assets"));
+    }
+
+    inline juce::File toolIconsFolder()
+    {
+        const auto underAssets = assetsFolder().getChildFile ("ToolIcons");
+        if (underAssets.isDirectory()) return underAssets;
+        return resolveProjectChild ("Assets/ToolIcons", juce::File());
     }
 
     inline juce::File fontsFolder()
@@ -879,8 +896,12 @@ namespace Brand
             juce::ignoreUnused (minSliderPos, maxSliderPos);
 
             const bool horiz = (style == juce::Slider::LinearHorizontal);
-            const float trackH = 2.0f;
-            const float thumbD = 10.0f;
+            // Figma draws the progress side as a chunky pill and leaves only a
+            // hairline for the remainder, so the two need different weights —
+            // one shared track height rendered both as a thin line.
+            const float trackH = 2.0f;    // unfilled remainder
+            const float fillH  = 6.5f;    // filled progress pill
+            const float thumbD = 11.0f;
             const float half   = thumbD * 0.5f;
             const float trackCorner = 5.0f;
             // Filled track: white on dark theme, dark on light. Thumb #d81f1f.
@@ -908,7 +929,7 @@ namespace Brand
                 if (fillW > 0.5f)
                 {
                     g.setColour (filledCol.withAlpha (alpha));
-                    g.fillRoundedRectangle (tx, ty, fillW, trackH, trackCorner);
+                    g.fillRoundedRectangle (tx, cy - fillH * 0.5f, fillW, fillH, fillH * 0.5f);
                 }
 
                 g.setColour (thumbCol.withAlpha (alpha));
@@ -926,11 +947,11 @@ namespace Brand
                 strokeInsideRounded (g, track, trackCorner, 0.2f,
                                      emptyCol.withMultipliedAlpha (alpha));
 
-                const float fillH = juce::jmax (0.0f, ty + th - thumbCy);
-                if (fillH > 0.5f)
+                const float fillLen = juce::jmax (0.0f, ty + th - thumbCy);
+                if (fillLen > 0.5f)
                 {
                     g.setColour (filledCol.withAlpha (alpha));
-                    g.fillRoundedRectangle (tx, thumbCy, trackH, fillH, trackCorner);
+                    g.fillRoundedRectangle (cx - fillH * 0.5f, thumbCy, fillH, fillLen, fillH * 0.5f);
                 }
 
                 g.setColour (thumbCol.withAlpha (alpha));

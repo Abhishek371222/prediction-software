@@ -157,9 +157,11 @@ MainComponent::MainComponent (ProjectData project)
     btnHelp_.setTooltip ("Help");
     btnPrefsIcon_.setTooltip ("Preferences");
     btnMore_.setTooltip ("More options");
-    addAndMakeVisible (btnInfo_);
-    addAndMakeVisible (btnHelp_);
-    addAndMakeVisible (btnPrefsIcon_);
+    // Figma redesign: Info/Help/Settings form row 2's "Help" cluster —
+    // reparented into plotHeader_ so it can lay them out like every other
+    // labeled cluster (icons + label + divider). btnMore_ has no Figma slot
+    // and stays hidden (see resized()), so it keeps its MainComponent parent.
+    plotHeader_.setHelpIcons (btnPrefsIcon_, btnInfo_, btnHelp_);   // gear, info, ? — Figma order
     addAndMakeVisible (btnMore_);
     btnPrefsIcon_.onClick = [this] { openPreferences(); };
     btnMore_.onClick      = [this] { showOverflowMenu(); };
@@ -208,31 +210,43 @@ MainComponent::MainComponent (ProjectData project)
         if (plotHeader_.btnRuler_.getToggleState())
             applyPlotTool (RadiationPatternComponent::Tool::Ruler);
     };
-    plotHeader_.btnShape_.onClick = [this]
+    auto chooseShape = [this] (int shapeId, int constructionId)
     {
-        // Radio-group untoggles also fire onClick (e.g. clicking Select). Only
-        // open the construction menu when Shape is being turned ON / re-clicked.
+        using DS = RadiationPatternComponent::DrawShape;
+        using C  = RadiationPatternComponent::Construction;
+        static const DS shapes[] = {
+            DS::Line, DS::Polyline, DS::Circle, DS::Arc, DS::Rectangle, DS::Square, DS::TextBox
+        };
+        if (shapeId < 0 || shapeId >= (int) (sizeof (shapes) / sizeof (shapes[0])))
+            return;
+        if (constructionId < 0 || constructionId > (int) C::TextBoxClick)
+            return;
+        patternComp_.setDrawShape (shapes[shapeId], (C) constructionId);
+        patternComp_.setAddMicArmed (false);
+        patternComp_.setAddSpeakerArmed (false);
+        applyPlotTool (RadiationPatternComponent::Tool::Shape, false, true);
+        plotHeader_.setActiveTool (PlotHeaderBar::ActiveTool::Shape);
+        plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        patternComp_.grabKeyboardFocus();
+    };
+
+    // Figma Shapes cluster: one icon per shape (Line / Polyline / Circle /
+    // Rectangle / Text box) instead of one button opening a menu.
+    plotHeader_.onShapeChosen = chooseShape;
+
+    // Figma Colours cluster: the 8 palette dots set the draw colour directly.
+    plotHeader_.onSwatchPicked = [this] (juce::Colour c)
+    {
+        patternComp_.setDrawColour (c);
+        plotHeader_.setDrawColour (c);
+    };
+
+    plotHeader_.btnShape_.onClick = [this, chooseShape]
+    {
+        // Retained for the old menu path (button itself is hidden now).
         if (! plotHeader_.btnShape_.getToggleState())
             return;
-
-        plotHeader_.showShapeMenu ([this] (int shapeId, int constructionId)
-        {
-            using DS = RadiationPatternComponent::DrawShape;
-            using C  = RadiationPatternComponent::Construction;
-            static const DS shapes[] = {
-                DS::Line, DS::Polyline, DS::Circle, DS::Arc, DS::Rectangle, DS::Square, DS::TextBox
-            };
-            if (shapeId < 0 || shapeId >= (int) (sizeof (shapes) / sizeof (shapes[0])))
-                return;
-            if (constructionId < 0 || constructionId > (int) C::TextBoxClick)
-                return;
-            patternComp_.setDrawShape (shapes[shapeId], (C) constructionId);
-            patternComp_.setAddMicArmed (false);
-            patternComp_.setAddSpeakerArmed (false);
-            plotHeader_.setActiveTool (PlotHeaderBar::ActiveTool::Shape);
-            plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
-            patternComp_.grabKeyboardFocus();
-        });
+        plotHeader_.showShapeMenu (chooseShape);
     };
     plotHeader_.btnMic_.onClick = [this]
     {
@@ -336,7 +350,16 @@ MainComponent::MainComponent (ProjectData project)
     };
 
     addAndMakeVisible (statusStrip_);
-    statusStrip_.setStatus ("Ready", true);
+    headerStatus_.setMode (StatusStrip::Mode::Pill);
+    statusStrip_.setMode (StatusStrip::Mode::RunInfo);
+    // Figma redesign: "Ready" lives in row 2's ribbon (far right, same row
+    // as the tool icons), not the title row — reparent into plotHeader_.
+    plotHeader_.setReadyPill (headerStatus_);
+    // ...and the red "SPL Heatmap | ..." caption belongs on the canvas's
+    // top-left, not inside the ribbon. Reparent it here; plotHeader_.setTitle()
+    // still drives its text from every existing call site.
+    addAndMakeVisible (plotHeader_.getTitleLabel());
+    reportStatus ("Ready", true);
 
     // Wire panels -----------------------------------------------------------
     controlPanel_.onWillEdit = [this] { willEdit(); };
@@ -438,7 +461,7 @@ MainComponent::MainComponent (ProjectData project)
     {
         patternComp_.setAddSpeakerArmed (true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
-        statusStrip_.setStatus ("Click the plot to place a Q21S", true);
+        reportStatus ("Click the plot to place a Q21S", true);
         patternComp_.grabKeyboardFocus();
     };
 
@@ -459,14 +482,14 @@ MainComponent::MainComponent (ProjectData project)
         syncRenderer();
         scheduleRecompute();
         commitEdit();
-        statusStrip_.setStatus ("Q21S placed — click again to add another (Esc cancels)", true);
+        reportStatus ("Q21S placed — click again to add another (Esc cancels)", true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
     patternComp_.onAddSpeakerArmedChanged = [this]
     {
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         if (! patternComp_.isAddSpeakerArmed())
-            statusStrip_.setStatus ("Ready", true);
+            reportStatus ("Ready", true);
     };
     patternComp_.onPasteSpeakers = [this] (std::vector<Speaker> added)
     {
@@ -687,9 +710,9 @@ void MainComponent::markProjectDirty()
 void MainComponent::updateSaveIndicator()
 {
     if (projectDirty_)
-        statusStrip_.setStatus ("Unsaved changes", false);
+        reportStatus ("Unsaved changes", false);
     else
-        statusStrip_.setStatus ("Ready", true);
+        reportStatus ("Ready", true);
 }
 
 juce::File MainComponent::autosaveFileForProject() const
@@ -710,7 +733,7 @@ bool MainComponent::writeProjectToFile (const juce::File& f, bool quiet)
     if (! p.saveToFile (f))
     {
         if (! quiet)
-            statusStrip_.setStatus ("Could not save project.", false);
+            reportStatus ("Could not save project.", false);
         return false;
     }
     project_ = p;
@@ -718,9 +741,9 @@ bool MainComponent::writeProjectToFile (const juce::File& f, bool quiet)
     projectDirty_ = false;
     AppSettings::get().addRecentProject (f);
     if (! quiet)
-        statusStrip_.setStatus ("Project saved: " + f.getFileName(), true);
+        reportStatus ("Project saved: " + f.getFileName(), true);
     else
-        statusStrip_.setStatus ("Autosaved: " + f.getFileName(), true);
+        reportStatus ("Autosaved: " + f.getFileName(), true);
     return true;
 }
 
@@ -856,14 +879,14 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
         const bool on = ! plotHeader_.btnSplProbe_.getToggleState();
         plotHeader_.btnSplProbe_.setToggleState (on, juce::dontSendNotification);
         patternComp_.setShowSplProbe (on);
-        statusStrip_.setStatus (on ? "Coordinate display on" : "Coordinate display off", true);
+        reportStatus (on ? "Coordinate display on" : "Coordinate display off", true);
         return true;
     }
     if (letter == 'g')
     {
         const bool on = ! AppSettings::get().showGrid();
         AppSettings::get().setShowGrid (on); // persists + applyGridPref via broadcast
-        statusStrip_.setStatus (on ? "Grid on" : "Grid off", true);
+        reportStatus (on ? "Grid on" : "Grid off", true);
         return true;
     }
     if (letter == 'f')
@@ -872,7 +895,7 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
         plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
         patternComp_.setDrawGridSnap (on);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
-        statusStrip_.setStatus (on ? "Snap on" : "Snap off", true);
+        reportStatus (on ? "Snap on" : "Snap off", true);
         return true;
     }
     return false;
@@ -888,6 +911,12 @@ void MainComponent::cancelCurrentCommand (bool focusPlot)
     patternComp_.cancelDrawSession();
     patternComp_.clearPlotSelection();
     applyPlotTool (RadiationPatternComponent::Tool::Select, false, focusPlot);
+}
+
+void MainComponent::reportStatus (const juce::String& state, bool ready)
+{
+    statusStrip_.setStatus (state, ready);
+    headerStatus_.setStatus (state, ready);
 }
 
 void MainComponent::preferTerminalFocus()
@@ -1687,32 +1716,24 @@ void MainComponent::paint (juce::Graphics& g)
 
     const int W = getWidth();
     const int H = getHeight();
-    const int pad = UiConfig::Scale::px (8);
-    const float rad = Brand::UI::cardRadius;
     const int headerH = Brand::UI::headerBandH;
-    const int statusH = Brand::UI::statusStripH;
     const int bottomH = Brand::UI::bottomPanelH;
     const int sideW = effectiveSidebarWidth();
-    const int sideX = pad;
-    const int plotX = sideX + sideW + pad;
-    const int centreW = juce::jmax (0, W - plotX - pad);
-    const int bodyTop = headerH + pad;
-    const int bottomTop = H - statusH - pad - bottomH;
-    const int sidebarBottom = H - statusH - pad;
+    const int plotX = sideW;
+    const int centreW = juce::jmax (0, W - plotX);
+    const int bodyTop2 = headerH + Brand::UI::plotHeaderH;
+    const int bottomTop = H - bottomH;
 
-    // Rounded sidebar shell (same top as heatmap).
-    g.setColour (Brand::panel());
+    // Figma: flat regions, flush to each other — no rounded cards and no gaps.
+    // The sidebar is a light-grey tray; the bottom strip stays white.
+    g.setColour (Brand::sidebarBg());
     if (sideW > 0)
-        g.fillRoundedRectangle ((float) sideX, (float) bodyTop,
-                                (float) sideW, (float) juce::jmax (0, sidebarBottom - bodyTop),
-                                rad);
+        g.fillRect (0, bodyTop2, sideW, juce::jmax (0, H - bodyTop2));
 
-    // Bottom export / view — same fill as the general app background.
     if (bottomH > 0 && centreW > 0)
     {
-        g.setColour (Brand::base());
-        g.fillRoundedRectangle ((float) plotX, (float) bottomTop,
-                                (float) centreW, (float) bottomH, rad);
+        g.setColour (Brand::panel());
+        g.fillRect (plotX, bottomTop, centreW, bottomH);
     }
 
     // Atomik wordmark, top-left of the header band (ATOMIK only).
@@ -1726,50 +1747,25 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     if (W <= 0 || H <= 0)
         return;
 
-    const int pad = UiConfig::Scale::px (8);
-    const float rad = Brand::UI::cardRadius;
-    const float stroke = juce::jmax (0.75f, 0.75f * Brand::UI::scale);
-    const auto outside = kBg();
-    const auto edge = Brand::sidebarBorder();
     const int headerH = Brand::UI::headerBandH;
-    const int statusH = Brand::UI::statusStripH;
     const int bottomH = Brand::UI::bottomPanelH;
     const int sideW = effectiveSidebarWidth();
-    const int sideX = pad;
-    const int plotX = sideX + sideW + pad;
-    const int centreW = juce::jmax (0, W - plotX - pad);
-    const int bodyTop = headerH + pad;
-    const int bottomTop = H - statusH - pad - bottomH;
-    const int sidebarBottom = H - statusH - pad;
+    const int plotX = sideW;
+    const int bodyTop2 = headerH + Brand::UI::plotHeaderH;
+    const int bottomTop = H - bottomH;
 
-    // Sidebar card
+    // Figma separates regions with hairline rules, not card outlines:
+    //   • under the title row     • sidebar's right edge (full height)
+    //   • under the canvas (top of the bottom strip)
+    // The ribbon draws its own bottom rule in PlotHeaderBar::paint().
+    g.setColour (Brand::border().withAlpha (0.45f));
+    g.drawHorizontalLine (headerH - 1, 0.0f, (float) W);
+
     if (sideW > 0)
-    {
-        const auto rf = juce::Rectangle<float> ((float) sideX, (float) bodyTop,
-                                               (float) sideW,
-                                               (float) juce::jmax (0, sidebarBottom - bodyTop));
-        maskRoundedCard (g, rf, rad, outside);
-        strokeRoundedCard (g, rf, rad, stroke, edge);
-    }
+        g.drawVerticalLine (sideW - 1, (float) bodyTop2, (float) H);
 
-    // Heatmap window: one rounded frame around title bar + canvas (no extra top rule).
-    {
-        const auto plotFrame = plotHeader_.getBounds().getUnion (patternComp_.getBounds());
-        if (! plotFrame.isEmpty())
-        {
-            const auto rf = plotFrame.toFloat();
-            maskRoundedCard (g, rf, rad, outside);
-            strokeRoundedCard (g, rf, rad, stroke, Brand::plotBorder());
-        }
-    }
-
-    // Bottom toolbar — rounded fill only (no outer border stroke).
-    if (bottomH > 0 && centreW > 0)
-    {
-        const auto rf = juce::Rectangle<float> ((float) plotX, (float) bottomTop,
-                                               (float) centreW, (float) bottomH);
-        maskRoundedCard (g, rf, rad, outside);
-    }
+    if (bottomH > 0)
+        g.drawHorizontalLine (bottomTop, (float) plotX, (float) W);
 }
 
 void MainComponent::resized()
@@ -1790,51 +1786,45 @@ void MainComponent::resized()
     const int pad       = UiConfig::Scale::px (8);   // gap between panel cards
     const int innerPad  = UiConfig::Scale::px (4);   // inset inside rounded shells
 
+    // Figma's regions are flush edge-to-edge, separated by hairlines rather
+    // than floated as inset rounded cards: sidebar x=0..340, canvas x=340..1920,
+    // both starting immediately under the 132px header with no gap.
     const int sideW = effectiveSidebarWidth();
-    const int sideX = pad;
-    const int plotX = sideX + sideW + pad;
-    const int centreW = juce::jmax (280, W - plotX - pad);
+    const int sideX = 0;
+    const int plotX = sideW;
+    const int centreW = juce::jmax (280, W - plotX);
 
-    // Header: logo area left, title centre, icon cluster right
+    // Header row 1 (Figma redesign): logo + AutoSave on the left, title
+    // centred — nothing on the right. Stats/Project/More have no Figma slot;
+    // hidden but fully intact in code (see reportStatus / showStatsPopup /
+    // showProjectMenu / showOverflowMenu). Info/Help/Settings AND the
+    // "Ready" pill all live in row 2's ribbon now (see setHelpIcons /
+    // setReadyPill in the constructor) — matching the Figma mock, where
+    // Ready sits in the same row as the tool icons, not the title row.
     const int rightPad = UiConfig::Scale::px (12);
-    const int iconW = Brand::UI::headerIconW;
-    const int iconGap = UiConfig::Scale::px (6);
     const int headerBtnTop = UiConfig::Scale::px (8);
-    int rx = W - rightPad;
-    btnMore_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
-    btnPrefsIcon_.setBounds  (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
-    btnHelp_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap;
-    btnInfo_.setBounds       (rx - iconW, headerBtnTop, iconW, Brand::UI::headerIconH); rx -= iconW + iconGap * 2;
+
+    for (juce::Component* c : { (juce::Component*) &btnStats_, (juce::Component*) &btnProject_,
+                                 (juce::Component*) &btnMore_ })
+    {
+        c->setVisible (false);
+        c->setBounds (0, 0, 0, 0);
+    }
 
     const auto statsFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::headerStatsButton));
-    const int headerBtnGap = UiConfig::Scale::px (8);
-    auto headerTextBtnW = [&] (const juce::TextButton& b) -> int
-    {
-        return juce::jmax (UiConfig::Scale::px (96),
-                           juce::roundToInt (statsFont.getStringWidthFloat (b.getButtonText()) + 20.0f));
-    };
-    const int statsW = headerTextBtnW (btnStats_);
-    const int projectW = headerTextBtnW (btnProject_);
     const int toggleW = juce::jmax (UiConfig::Scale::px (120),
                                     juce::roundToInt (statsFont.getStringWidthFloat (toggleAutosave_.getButtonText())
                                                      + UiConfig::Scale::px (52)));
 
-    // Right-to-left: Project | AutoSave | Stats.
-    btnProject_.setBounds (rx - projectW, headerBtnTop, projectW, Brand::UI::headerIconH);
-    rx -= projectW + headerBtnGap;
-
-    toggleAutosave_.setBounds (rx - toggleW, headerBtnTop, toggleW, Brand::UI::headerIconH);
-    rx -= toggleW + headerBtnGap;
-
-    btnStats_.setBounds (rx - statsW, headerBtnTop, statsW, Brand::UI::headerIconH);
-    rx -= statsW;
-
     {
-        // Logo | title + version | flexible space | header buttons.
+        // Logo | AutoSave | title + version | flexible space.
         // Version is never ellipsized: it keeps its full glyph width at every scale.
-        const int logoRight = Brand::headerLogoRightReserve();
-        const int regionR   = rx - UiConfig::Scale::px (12);
-        const int regionW   = juce::jmax (1, regionR - logoRight);
+        const int logoRight   = Brand::headerLogoRightReserve();
+        const int autosaveGap = UiConfig::Scale::px (14);
+        toggleAutosave_.setBounds (logoRight + autosaveGap, headerBtnTop, toggleW, Brand::UI::headerIconH);
+        const int titleLeft  = logoRight + autosaveGap + toggleW + autosaveGap;
+        const int regionR   = W - rightPad;
+        const int regionW   = juce::jmax (1, regionR - titleLeft);
         const int pairGap   = UiConfig::Scale::px (10);
 
         auto glyphW = [] (const juce::Font& font, const juce::String& text) -> int
@@ -1867,8 +1857,8 @@ void MainComponent::resized()
 
         const int pairW = tw + pairGap + vw;
         float pairX = 0.5f * (float) W - 0.5f * (float) pairW;
-        pairX = juce::jlimit ((float) logoRight,
-                              (float) juce::jmax (logoRight, regionR - pairW),
+        pairX = juce::jlimit ((float) titleLeft,
+                              (float) juce::jmax (titleLeft, regionR - pairW),
                               pairX);
 
         const int titleTop = UiConfig::Scale::px (6);
@@ -1881,15 +1871,20 @@ void MainComponent::resized()
     juce::ignoreUnused (paramH);
     paramBar_.setBounds (0, 0, 0, 0);
 
-    // Sidebar + heatmap share the same top (aligned under header with panel gap).
-    const int bodyTop    = titleH + pad;
-    const int bottomTop  = H - statusH - pad - bottomH;
-    const int bodyBottom = bottomTop - pad;
-    const int bodyH      = juce::jmax (80, bodyBottom - bodyTop);
+    // Figma redesign: the tool ribbon (plotHeader_) spans the FULL body width —
+    // above both the sidebar and the canvas, like one continuous two-row header —
+    // instead of sitting only above the canvas. Sidebar + canvas share a lower
+    // top, below that full-width strip.
+    const int bodyTop        = titleH;            // ribbon sits flush under the title row
+    const int toolbarStripH  = plotHdrH;
+    const int bodyTop2       = bodyTop + toolbarStripH;   // flush, no gap (Figma y=132)
+    const int bottomTop  = H - bottomH;
+    const int bodyH      = juce::jmax (80, bottomTop - bodyTop2);
 
-    // Tall left card sits beside both plot and bottom toolbar, ending above status.
-    const int sidebarBottom = H - statusH - pad;
-    const int sidebarH = juce::jmax (80, sidebarBottom - bodyTop);
+    // Sidebar runs the full height from the header down to the window bottom
+    // (Figma y=132..1080) — the bottom strip only spans the canvas column.
+    const int sidebarBottom = H;
+    const int sidebarH = juce::jmax (80, sidebarBottom - bodyTop2);
     const bool collapsed = AppSettings::get().sidebarCollapsed();
     const int railW = Brand::UI::sidebarCollapsedW;
     const int burger = UiConfig::Scale::px (28);
@@ -1903,85 +1898,93 @@ void MainComponent::resized()
         controlViewport_.setBounds (0, 0, 0, 0);
         // Hamburger at top of the collapsed rail (expand).
         btnSidebarToggle_.setBounds (sideX + (railW - burger) / 2,
-                                     bodyTop + burgerPad,
+                                     bodyTop2 + burgerPad,
                                      burger, burger);
     }
     else
     {
         controlViewport_.setVisible (true);
         controlViewport_.setScrollBarThickness (UiConfig::Scale::px (8));
-        // Content starts at the top again; hamburger overlays the top-right corner.
-        const int panelH = juce::jmax (40, sidebarH - innerPad * 2);
-        controlViewport_.setBounds (sideX, bodyTop + innerPad, sideW, panelH);
+        // Content starts at the very top of the panel so section 1 sits level
+        // with the hamburger, which overlays the top-right corner — the old
+        // reserved strip just left a band of empty grey above "1. FREQUENCY".
+        const int panelH = juce::jmax (40, sidebarH);
+        controlViewport_.setBounds (sideX, bodyTop2, sideW, panelH);
         const int innerW = sideW - controlViewport_.getScrollBarThickness();
         controlPanel_.setSize (innerW, panelH);
         if (controlPanel_.getContentHeight() > panelH)
             controlPanel_.setSize (innerW, controlPanel_.getContentHeight());
 
         btnSidebarToggle_.setBounds (sideX + sideW - burger - burgerPad,
-                                     bodyTop + burgerPad,
+                                     bodyTop2 + burgerPad,
                                      burger, burger);
     }
     btnSidebarToggle_.toFront (false);
 
-    // Heatmap window — same bodyTop as sidebar (FR lives in its own floating window).
-    plotHeader_.setBounds (plotX, bodyTop, centreW, plotHdrH);
-    patternComp_.setBounds (plotX, bodyTop + plotHdrH, centreW,
-                            juce::jmax (40, bodyH - plotHdrH));
+    // Tool ribbon — Figma draws it full-bleed: edge to edge, no side margin
+    // and no rounded card, closed by a hairline along its bottom edge (drawn
+    // in PlotHeaderBar::paint). Info/Settings/Help are this ribbon's own
+    // "Help" cluster (see PlotHeaderBar::setHelpIcons / resized()).
+    plotHeader_.setBounds (0, titleH, W, toolbarStripH);
 
-    // Bottom panel — Export | View Mode | Terminal (VS Code–style cmd panel).
-    const int secHdrH    = Brand::UI::bottomSectionHeaderH;
-    const int sectionGap = Brand::UI::bottomSectionGap;
-    const int viewColGap = Brand::UI::bottomViewColGap;
-    const int btnGap     = Brand::UI::bottomExportBtnGap;
-    const int exportW    = Brand::UI::bottomExportWidth;
-    const int contentTop = bottomTop + secHdrH + Brand::UI::bottomContentTopPad;
-    const int contentH   = bottomH - secHdrH - Brand::UI::bottomContentTopPad - UiConfig::Scale::px (2);
-    const int btnH       = (contentH - 2 * btnGap) / 3;
-    const int exportBtnH = (contentH - btnGap) / 2;
+    patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
 
-    int bx = plotX;
-    exportHeader_.setBounds (bx, bottomTop, exportW, secHdrH);
-    int ey = contentTop;
-    btnExportPNG_.setBounds (bx, ey, exportW, exportBtnH); ey += exportBtnH + btnGap;
-    btnExportCSV_.setBounds (bx, ey, exportW, exportBtnH);
-    bx += exportW + sectionGap;
-
-    // Left: view-mode buttons. Right: command terminal (or dock strip when floating).
-    const int remainW  = centreW - exportW - sectionGap;
-    const int dockBtnW = UiConfig::Scale::px (72);
-    const bool termDocked = isTerminalDocked();
-    const int floatStripW = termDocked ? 0
-        : juce::jmin (UiConfig::Scale::px (200), juce::jmax (dockBtnW + UiConfig::Scale::px (100), remainW / 3));
-    const int viewColW = termDocked
-        ? (remainW - viewColGap) / 2
-        : juce::jmax (UiConfig::Scale::px (120), remainW - floatStripW - viewColGap);
-    const int termW = termDocked ? (remainW - viewColW - viewColGap) : 0;
-
-    viewHeader_.setBounds (bx, bottomTop, viewColW, secHdrH);
-    int vy = contentTop;
-    btnViewSPL_.setBounds         (bx, vy, viewColW, btnH); vy += btnH + btnGap;
-    btnViewDirectivity_.setBounds (bx, vy, viewColW, btnH); vy += btnH + btnGap;
-    btnViewMeasured_.setBounds    (bx, vy, viewColW, btnH);
-    bx += viewColW + viewColGap;
-
-    terminalHeader_.setVisible (true);
-    btnTerminalDock_.setVisible (true);
-
-    if (termDocked)
+    // Red "SPL Heatmap | ..." caption: canvas top-left, as in the Figma mock
+    // (it used to sit inside the ribbon and push every cluster to the right).
     {
-        terminalHeader_.setBounds (bx, bottomTop, juce::jmax (0, termW - dockBtnW - 4), secHdrH);
-        btnTerminalDock_.setBounds (bx + termW - dockBtnW, bottomTop + 1, dockBtnW, secHdrH - 2);
-        commandTerminal_.setBounds (bx, contentTop, termW, contentH);
-    }
-    else
-    {
-        // Floating window holds the terminal; keep Dock control in the panel.
-        terminalHeader_.setBounds (bx, bottomTop, juce::jmax (0, floatStripW - dockBtnW - 4), secHdrH);
-        btnTerminalDock_.setBounds (bx + floatStripW - dockBtnW, bottomTop + 1, dockBtnW, secHdrH - 2);
+        // Figma: caption at x=357, y=147 — 17px in from the canvas's left edge
+        // and 15px below its top.
+        auto& caption = plotHeader_.getTitleLabel();
+        const int capPadX = UiConfig::Scale::px (13);
+        const int capPadY = UiConfig::Scale::px (7);
+        const int capH    = UiConfig::Scale::px (16);
+        // Font lives here now that the caption is a MainComponent child, so it
+        // keeps rescaling with the window. Semibold keeps the brand red legible
+        // over the dark heatmap (Figma's mock canvas is empty/light).
+        caption.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::panelTitle)));
+        caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
+                           juce::jmax (0, centreW - capPadX * 2), capH);
+        caption.toFront (false);
     }
 
-    statusStrip_.setBounds (pad, H - statusH, juce::jmax (0, W - pad * 2), statusH);
+    // Bottom strip (Figma y=979..1080, x=340..1920): "Last run" / "Elapsed"
+    // stacked at the left, SAVE IMAGE (PNG) + EXPORT SPL (CSV) at the right.
+    // View Mode and Terminal have no slot in the mock — hidden, code intact.
+    exportHeader_.setVisible (false);
+    exportHeader_.setBounds (0, 0, 0, 0);
+
+    for (juce::Component* c : { (juce::Component*) &viewHeader_, (juce::Component*) &btnViewSPL_,
+                                 (juce::Component*) &btnViewDirectivity_, (juce::Component*) &btnViewMeasured_ })
+    {
+        c->setVisible (false);
+        c->setBounds (0, 0, 0, 0);
+    }
+
+    for (juce::Component* c : { (juce::Component*) &terminalHeader_, (juce::Component*) &btnTerminalDock_,
+                                 (juce::Component*) &commandTerminal_ })
+    {
+        c->setVisible (false);
+        c->setBounds (0, 0, 0, 0);
+    }
+
+    {
+        namespace L = UiConfig::Layout;
+        const int btnW    = UiConfig::Scale::px (L::bottomButtonWidth);
+        const int btnH    = UiConfig::Scale::px (L::bottomButtonHeight);
+        const int btnGap  = UiConfig::Scale::px (L::bottomButtonGap);
+        const int rightPd = UiConfig::Scale::px (L::bottomButtonRightPad);
+        const int btnTop  = bottomTop + UiConfig::Scale::px (L::bottomButtonBaseline);
+
+        int erx = W - rightPd - btnW;
+        btnExportCSV_.setBounds (erx, btnTop, btnW, btnH);
+        erx -= btnGap + btnW;
+        btnExportPNG_.setBounds (erx, btnTop, btnW, btnH);
+
+        const int infoX = plotX + UiConfig::Scale::px (L::bottomRunInfoLeft);
+        const int infoY = bottomTop + UiConfig::Scale::px (L::bottomRunInfoTop);
+        const int infoH = UiConfig::Scale::px (L::bottomRunInfoLineGap) * 2;
+        statusStrip_.setBounds (infoX, infoY, juce::jmax (0, erx - infoX), infoH);
+    }
     layoutPrefsPanel();
 }
 
@@ -2000,7 +2003,7 @@ void MainComponent::timerCallback()
 void MainComponent::runSimulation()
 {
     if (isThreadRunning()) { startTimer (60); return; }   // retry shortly
-    statusStrip_.setStatus ("Computing...", false);
+    reportStatus ("Computing...", false);
     startThread();
 }
 
@@ -2043,10 +2046,12 @@ void MainComponent::applyResult (const SimResult& r)
     syncRenderer();
     updateSettingsBar();
     refreshFrequencyResponse();
-    statusStrip_.setStatus ("Ready", true);
-    statusStrip_.setLastRun ("Last run: "
-        + juce::Time::getCurrentTime().formatted ("%d %b %Y  %H:%M:%S"));
-    statusStrip_.setElapsed ("Elapsed: " + juce::String (lastElapsedSec_, 1) + " s");
+    reportStatus ("Ready", true);
+    // Figma's bottom strip spells these "Last run : 11 JUL 2026 14:52:31" and
+    // "Elapsed : 1.5s" — spaced colon, uppercase month, no space before "s".
+    statusStrip_.setLastRun ("Last run : "
+        + juce::Time::getCurrentTime().formatted ("%d %b %Y %H:%M:%S").toUpperCase());
+    statusStrip_.setElapsed ("Elapsed : " + juce::String (lastElapsedSec_, 1) + "s");
 }
 
 void MainComponent::syncRenderer()
@@ -2336,9 +2341,26 @@ void MainComponent::refreshHeaderIcons()
         b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::btnIn().withAlpha (0.35f));
     };
 
-    styleBadge (btnInfo_, kInfoMarkPath);
-    styleBadge (btnHelp_, kHelpMarkPath);
-    style (btnPrefsIcon_, HeaderIcons::kGear, false);
+    // Help cluster: use the Figma-exported glyphs when they're on disk, so the
+    // gear / info / "?" match the mock exactly; fall back to the drawn badges.
+    auto styleFromFile = [] (juce::DrawableButton& b, const juce::String& iconName) -> bool
+    {
+        const auto png = Brand::toolIconsFolder().getChildFile (iconName + ".png");
+        if (! png.existsAsFile()) return false;
+        const auto img = juce::ImageFileFormat::loadFrom (png);
+        if (! img.isValid()) return false;
+        juce::DrawableImage d;
+        d.setImage (img);
+        b.setImages (&d);
+        b.setEdgeIndent (Brand::UI::headerIconIndent);
+        b.setColour (juce::DrawableButton::backgroundColourId,   juce::Colours::transparentBlack);
+        b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::btnIn().withAlpha (0.35f));
+        return true;
+    };
+
+    if (! styleFromFile (btnInfo_, "Info"))      styleBadge (btnInfo_, kInfoMarkPath);
+    if (! styleFromFile (btnHelp_, "Help"))      styleBadge (btnHelp_, kHelpMarkPath);
+    if (! styleFromFile (btnPrefsIcon_, "Settings")) style (btnPrefsIcon_, HeaderIcons::kGear, false);
     style (btnMore_,      HeaderIcons::kMenu, false);
 }
 
@@ -2579,7 +2601,7 @@ void MainComponent::loadProjectFile (const juce::File& f)
     ProjectData loaded;
     if (! ProjectData::loadFromFile (f, loaded))
     {
-        statusStrip_.setStatus ("Could not open: " + f.getFileName(), false);
+        reportStatus ("Could not open: " + f.getFileName(), false);
         return;
     }
 
@@ -2601,7 +2623,7 @@ void MainComponent::loadProjectFile (const juce::File& f)
     updateSettingsBar();
     updatePlotChrome();
     scheduleRecompute();
-    statusStrip_.setStatus ("Opened: " + project_.displayName(), true);
+    reportStatus ("Opened: " + project_.displayName(), true);
 
     if (auto* w = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()))
         w->setName ("Atomik Simulation Engine - " + project_.displayName());
@@ -2634,7 +2656,7 @@ void MainComponent::highlightViewBtn (ViewMode mode)
 // ---------------------------------------------------------------------------
 void MainComponent::exportPNG()
 {
-    if (! hasResult_) { statusStrip_.setStatus ("Nothing to export.", false); return; }
+    if (! hasResult_) { reportStatus ("Nothing to export.", false); return; }
 
     fileChooser_ = std::make_unique<juce::FileChooser> ("Save PNG image", juce::File{}, "*.png");
     fileChooser_->launchAsync (
@@ -2664,14 +2686,14 @@ void MainComponent::exportPNG()
                 juce::Image sheet = ReportExport::renderHeatmapSheet (plot, project_, pr, r);
                 juce::PNGImageFormat fmt;
                 fmt.writeImageToStream (sheet, fos);
-                statusStrip_.setStatus ("Saved: " + f.getFileName(), true);
+                reportStatus ("Saved: " + f.getFileName(), true);
             }
         });
 }
 
 void MainComponent::exportPdfReport()
 {
-    if (! hasResult_) { statusStrip_.setStatus ("Run a simulation before exporting a report.", false); return; }
+    if (! hasResult_) { reportStatus ("Run a simulation before exporting a report.", false); return; }
 
     const auto suggested = (project_.file != juce::File())
         ? project_.file.withFileExtension ("pdf")
@@ -2687,7 +2709,7 @@ void MainComponent::exportPdfReport()
             if (f == juce::File()) return;
             f = f.withFileExtension ("pdf");
 
-            statusStrip_.setStatus ("Generating PDF report...", false);
+            reportStatus ("Generating PDF report...", false);
             // Defer the heavy work so the status line repaints first.
             juce::MessageManager::callAsync ([this, f] { buildAndWriteReport (f); });
         });
@@ -2734,10 +2756,10 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
     if (pdf.writeToFile (f))
     {
         AppSettings::get().addRecentProject (project_.file != juce::File() ? project_.file : f);
-        statusStrip_.setStatus ("Report exported: " + f.getFileName(), true);
+        reportStatus ("Report exported: " + f.getFileName(), true);
     }
     else
-        statusStrip_.setStatus ("Could not write PDF report.", false);
+        reportStatus ("Could not write PDF report.", false);
 }
 
 // ---------------------------------------------------------------------------
@@ -2769,7 +2791,7 @@ void MainComponent::importLayout()
                 juce::Path p; juce::Rectangle<float> b;
                 if (! DxfImport::load (f, p, b))
                 {
-                    statusStrip_.setStatus ("Could not read DXF: " + f.getFileName(), false);
+                    reportStatus ("Could not read DXF: " + f.getFileName(), false);
                     return;
                 }
                 L.kind = LayoutLayer::Kind::Dxf;
@@ -2781,7 +2803,7 @@ void MainComponent::importLayout()
                 juce::Image img = juce::ImageFileFormat::loadFrom (f);
                 if (! img.isValid())
                 {
-                    statusStrip_.setStatus ("Could not read image: " + f.getFileName(), false);
+                    reportStatus ("Could not read image: " + f.getFileName(), false);
                     return;
                 }
                 L.kind = LayoutLayer::Kind::Image;
@@ -2801,7 +2823,7 @@ void MainComponent::importLayout()
             layout_ = L;
             controlPanel_.refreshLayoutControls();
             applyLayoutSettings();
-            statusStrip_.setStatus ("Layout imported: " + f.getFileName(), true);
+            reportStatus ("Layout imported: " + f.getFileName(), true);
         });
 }
 
@@ -2810,7 +2832,7 @@ void MainComponent::removeLayout()
     layout_.clear();
     controlPanel_.refreshLayoutControls();
     patternComp_.repaint();
-    statusStrip_.setStatus ("Layout removed.", true);
+    reportStatus ("Layout removed.", true);
 }
 
 void MainComponent::applyLayoutSettings()
@@ -2847,7 +2869,7 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
 
 void MainComponent::exportCSV()
 {
-    if (! hasResult_) { statusStrip_.setStatus ("Nothing to export.", false); return; }
+    if (! hasResult_) { reportStatus ("Nothing to export.", false); return; }
 
     fileChooser_ = std::make_unique<juce::FileChooser> ("Export SPL CSV", juce::File{}, "*.csv");
     fileChooser_->launchAsync (
@@ -2919,7 +2941,7 @@ void MainComponent::exportCSV()
                 }
             }
             fos.write (mos.getData(), mos.getDataSize());
-            statusStrip_.setStatus ("Saved: " + f.getFileName(), true);
+            reportStatus ("Saved: " + f.getFileName(), true);
         });
 }
 
@@ -2962,7 +2984,7 @@ void MainComponent::setMeasurementDistance (float distanceM)
     patternComp_.setMeasuredDistance (measDistanceM_);
     patternComp_.setMeasuredData (measured_);
 
-    statusStrip_.setStatus ("Polar distance: " + Units::metres ((double) measDistanceM_, 1), true);
+    reportStatus ("Polar distance: " + Units::metres ((double) measDistanceM_, 1), true);
     updateSettingsBar();
 
     // UI distance drives Measured Polar only. SPL prediction keeps the far-field
@@ -2983,7 +3005,7 @@ void MainComponent::setMeasurementSource (int src)
     loadMeasurements();                 // rebuilds measured_ + directivity tables
     patternComp_.setMeasuredFrequency ((int) (controlPanel_.getParams().frequency + 0.5));
 
-    statusStrip_.setStatus (juce::String ("Measurement set: ")
+    reportStatus (juce::String ("Measurement set: ")
                         + MeasurementData::sourceName (src), true);
     updateSettingsBar();
 
@@ -3029,7 +3051,7 @@ void MainComponent::pollMeasurements()
     if (sig == measSignature_) return;   // unchanged
 
     loadMeasurements();
-    statusStrip_.setStatus ("Measurements refreshed: "
+    reportStatus ("Measurements refreshed: "
                         + juce::Time::getCurrentTime().formatted ("%H:%M:%S"), true);
     if (currentView_ == ViewMode::MeasuredPolar)
         patternComp_.repaint();

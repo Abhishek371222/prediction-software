@@ -3781,24 +3781,33 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    // Layout matches mockup: thin vertical Rel. SPL strip + 0/-6/…/-36 db + caption.
-    const int barX = bounds.getX() + 4;
-    const int barY = bounds.getY() + 16;
-    const int barW = 16;
-    const int barH = bounds.getHeight() - 46;
+    // Figma "Home Screen 1.1": the Rel. SPL bar is 18x750.66 at x=1813,y=163.65
+    // inside a canvas of x=340..1920, y=132..979 — i.e. 31.65px below the canvas
+    // top, 89px in from its right edge, with 96px of the canvas height left over
+    // for the tick above and the caption below. Expressed here through the
+    // window scale so it holds at other window sizes.
+    // `bounds` is the gutter to the right of the plot, so anchor the bar to its
+    // LEFT edge. Anchoring from the right instead pushed the bar back over the
+    // heatmap whenever the gutter was narrower than that offset — which is what
+    // happens full-screen, where the plot takes more of the width.
+    const int barW = UiConfig::Scale::px (14);                       // -> 18px
+    const int barX = bounds.getX() + UiConfig::Scale::px (4);
+    const int barY = bounds.getY() + UiConfig::Scale::px (24);       // -> 32px
+    const int barH = bounds.getHeight() - UiConfig::Scale::px (73);  // -> 96px
     if (barH < 20) return;
 
     const auto tickCol = Brand::text();                 // white (dark) / charcoal (light)
     const auto outline = AppSettings::get().isDark()
                              ? juce::Colour (0xffc8c8c8)
                              : Brand::border();
-    g.setFont (Brand::techBold (Brand::Type::colourBarTick));
+    g.setFont (Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
 
+    const int tickH = UiConfig::Scale::px (14);
     auto drawTick = [&] (int db, int ty)
     {
         g.setColour (tickCol);
         g.drawText (juce::String (db) + " db",
-                    barX + barW + 4, ty - 7, 54, 14,
+                    barX + barW + 4, ty - tickH / 2, UiConfig::Scale::px (54), tickH,
                     juce::Justification::centredLeft);
     };
 
@@ -3848,8 +3857,12 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
     }
 
     g.setColour (tickCol);
-    g.setFont (Brand::techBold (Brand::Type::colourBarTitle));
-    g.drawText ("Rel. SPL", barX - 2, barY + barH + 6, barW + 72, 14,
+    g.setFont (Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
+    // Figma puts the caption just below the bar, starting ~13px right of its
+    // left edge (x=1826 for a bar at 1813) and running to the canvas edge.
+    const int capX = barX + UiConfig::Scale::px (10);
+    g.drawText ("Rel. SPL", capX, barY + barH + UiConfig::Scale::px (6),
+                juce::jmax (10, bounds.getRight() - capX), tickH,
                 juce::Justification::centredLeft);
 }
 
