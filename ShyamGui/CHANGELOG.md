@@ -42,13 +42,14 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
 ### Changed
 - **Renamed "Heatmap" to "Gradient Plot"** everywhere it is user-visible - canvas
   caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips.
-- **Plot is drawn to scale, full bleed** - one px/m on both axes, so the square
-  100 x 100 m world renders square and grid cells are square in every window (measured
-  1.003 and 1.009 against an ideal 1.000), and the fit fills the canvas edge to edge
-  with no margins. On a non-square window that crops the field on the shorter axis;
-  zooming out past the fit is now allowed, down to the whole field being on screen, so
-  nothing is unreachable. The visible grid is still exactly the simulated area, so a
-  unit can be placed anywhere grid is drawn.
+- **The simulated region follows the view; no fixed world size** - the 100 x 100 m box
+  is gone. The plot asks for a region shaped to its own aspect, so the field always
+  covers the canvas exactly: no crop, no margins, and square grid cells because both
+  axes share one px/m (measured 0.983 and 0.999 against an ideal 1.000). Zooming no
+  longer crops a fixed box, it changes how many metres are solved for, so reach is
+  limited only by how far you zoom (2 m to 20 km). Speaker X / Y sliders span the
+  current region instead of a hard-coded 0..100 m, which had been silently clamping
+  every unit to the old box. Verified placing a unit at 204.9 x 145.6 m.
 - **Q21S cabinet corrected to the real product** - 1546 x 679 x 1024 mm
   (60.86" x 26.73" x 40.31") replaces an incorrect 750 x 784 x 917 mm set. The plan
   footprint is now drawn at the field's own px/m rather than as a fixed-size icon, so

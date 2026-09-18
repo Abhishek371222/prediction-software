@@ -50,6 +50,21 @@ public:
     void setAvailableDistances (const std::vector<float>& distancesM, float preferM = 0.5f);
     float getMeasurementDistance() const;
 
+    /** Sets the world region the next run should cover, in metres. Driven by
+        the plot's visible extent (see RadiationPatternComponent::
+        onViewExtentChanged) so the simulation follows the view. */
+    void setWorldExtent (double w, double h)
+    {
+        worldW_ = juce::jmax (1.0, w);
+        worldH_ = juce::jmax (1.0, h);
+        // The X / Y position sliders span the world, so they have to grow with
+        // it -- they were fixed at 0..100 m, which silently clamped every unit
+        // to the old box no matter how far the view had been zoomed out.
+        syncPositionRanges();
+    }
+    double worldExtentW() const noexcept { return worldW_; }
+    double worldExtentH() const noexcept { return worldH_; }
+
     // Workspace / layout (Phase 5 & 6) -------------------------------------
     std::function<void(bool)> onGridToggled;       // show/hide grid
     std::function<void()>     onImportLayout;      // request layout import
@@ -96,6 +111,7 @@ private:
     void applyDeviceLayout (int count);   // 1/2/3 devices, same plane, 3 m apart
     void pushEdit();          // commit editor values into selected speaker
     void pushPositionEdit();  // X/Y only — avoids quantizing snapped positions
+    void syncPositionRanges();   // X/Y slider spans follow the world extent
     void pushSharedEdit();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
     void willEdit();
@@ -142,6 +158,9 @@ private:
     // Measured directivity is always on (Q21S BEM) — no UI toggle.
 
     // Measurement dataset + distance (kept separate per set)
+    // Region the next simulation covers. Replaces a hard-coded 100 x 100 m.
+    double worldW_ = 100.0, worldH_ = 100.0;
+
     juce::Label    measSetLabel_;
     juce::ComboBox measSetBox_;
     juce::Label    measDistLabel_;

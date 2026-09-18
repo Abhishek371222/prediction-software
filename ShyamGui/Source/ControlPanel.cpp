@@ -142,6 +142,8 @@ ControlPanel::ControlPanel()
     configTxt (yLabel_,     "Y Position (m)");
     configTxt (gainLabel_,  "Gain (db)");
     configTxt (delayLabel_, "Delay (ms)");
+    // Spans are re-set by syncPositionRanges() whenever the world extent
+    // changes; these are just the initial values.
     styleSlider (xSlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
@@ -537,6 +539,18 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
 
 // ---------------------------------------------------------------------------
 bool ControlPanel::layoutEditMode() const { return layoutEditToggle_.getToggleState(); }
+void ControlPanel::syncPositionRanges()
+{
+    // Keep the current values: setRange would otherwise snap them into the new
+    // span and silently move speakers when the view is zoomed.
+    const double x = xSlider_.getValue();
+    const double y = ySlider_.getValue();
+    xSlider_.setRange (0.0, juce::jmax (1.0, worldW_), 0.1);
+    ySlider_.setRange (0.0, juce::jmax (1.0, worldH_), 0.1);
+    xSlider_.setValue (x, juce::dontSendNotification);
+    ySlider_.setValue (y, juce::dontSendNotification);
+}
+
 bool ControlPanel::layoutSnap()     const { return layoutSnapToggle_.getToggleState(); }
 
 void ControlPanel::pushLayoutTransform()
@@ -785,8 +799,11 @@ SimParams ControlPanel::getParams() const
     const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                  freqBox_.getSelectedId() - 1);
     p.frequency  = kSupportedFrequencies[fi];
-    p.worldW     = 100.0;
-    p.worldH     = 100.0;
+    // The simulated region is whatever the plot is currently showing, so the
+    // field always covers the canvas exactly and the reachable range is set by
+    // how far you zoom out rather than by a fixed 100 x 100 m box.
+    p.worldW     = worldW_;
+    p.worldH     = worldH_;
     p.resolution = (int) resSlider_.getValue();
     p.dBfloor    = floorSlider_.getValue();
     p.colourmap  = 0;

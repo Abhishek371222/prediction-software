@@ -199,6 +199,20 @@ public:
     void mouseExit      (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
+    /** Fired when the view wants a different simulated region (metres).
+        The owner should push it into the next SimParams and re-run. */
+    std::function<void(double, double)> onViewExtentChanged;
+
+    /** Requests a region `depthM` metres tall, widened to the plot's aspect so
+        it fills the canvas exactly. Clamped to [kMinExtentM, kMaxExtentM]. */
+    void requestViewExtent (double depthM);
+
+    double viewExtentW() const noexcept { return extentW_; }
+    double viewExtentH() const noexcept { return extentH_; }
+
+    static constexpr double kMinExtentM = 2.0;
+    static constexpr double kMaxExtentM = 20000.0;
+
     /** The field's rectangle on screen, in this component's coordinates.
         The view fits to contain, so this is smaller than the component on one
         axis; callers that draw over the plot need it to stay on the field. */
@@ -207,8 +221,10 @@ public:
 private:
     void buildImage();
     void fitView();
-    float minZoomForFit() const;   // zoom floor: whole field on screen
     void clampViewToField();
+
+    // Simulated region the view is asking for, in metres.
+    double extentW_ = 100.0, extentH_ = 100.0;
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
 

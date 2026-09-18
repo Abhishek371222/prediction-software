@@ -169,10 +169,14 @@ v140 = [
     ["Naming", C, "Heatmap -> Gradient Plot",
      "Canvas caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips",
      "2026-09-18"],
-    ["Plot", C, "Drawn to scale, full bleed",
-     "One px/m on both axes so cells are square in every window, and the fit fills the "
-     "canvas edge to edge. Crops the shorter axis; zoom-out past the fit now reaches "
-     "the whole field", "2026-09-18"],
+    ["Plot", C, "Simulated region follows the view",
+     "The fixed 100 x 100 m world is gone: the plot asks for a region shaped to its "
+     "own aspect, so the field covers the canvas exactly with square cells, and zoom "
+     "changes how many metres are solved rather than cropping a box (2 m - 20 km)",
+     "2026-09-18"],
+    ["Speakers", F, "X / Y sliders capped at 100 m",
+     "Spans were hard-coded 0..100 m and silently clamped every unit to the old box; "
+     "they now follow the simulated region", "2026-09-18"],
     ["Speakers", F, "Q21S dimensions corrected",
      "1546 x 679 x 1024 mm (60.86 x 26.73 x 40.31 in) replaces an incorrect "
      "750 x 784 x 917 mm set; footprint drawn at the field's px/m, so the marker is "
