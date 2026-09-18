@@ -199,6 +199,10 @@ v140 = [
     ["Plot", F, "Contour bands collapsed below -18 dB",
      "splBand quantizes the gradient instead of indexing a 7-entry palette that ran out "
      "at the UI's 3 dB step", "2026-09-18"],
+    ["Packaging", F, "Assets embedded in the EXE",
+     "Logos, ribbon icons and bundled fonts baked in by Tools/embed_assets.py. They "
+     "were read from an Assets/ folder found by walking up from the CWD or EXE, so a "
+     "recipient of just the .exe saw no logo, no glyphs and fallback fonts", "2026-09-18"],
     ["Packaging", C, "Version -> v1.4.0",
      "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-18"],
 ]

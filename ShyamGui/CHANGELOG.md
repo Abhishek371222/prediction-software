@@ -68,8 +68,14 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
   than indexing a 7-entry palette that ran out at the UI's 3 dB step.
 
 ### Packaging
+- **Assets embedded in the EXE** - logos, ribbon icons and the bundled Montserrat /
+  Space Mono faces are baked in by `Tools/embed_assets.py`, so a downloaded binary is
+  self-contained. Previously they were read from an `Assets/` folder found by walking
+  up from the CWD or the EXE, so anyone who received only the `.exe` got no logo, no
+  ribbon glyphs and system fallback fonts - indistinguishable from a stale build.
+  A file on disk still overrides the baked copy, so the dev loop is unchanged.
 - Version strings, file version resource and installer -> **v1.4.0**.
-- **Windows Release** `Atomik-Windows-v1.4.0.exe` (Q21S embedded).
+- **Windows Release** `Atomik-Windows-v1.4.0.exe` (Q21S + UI assets embedded).
 
 ---
 

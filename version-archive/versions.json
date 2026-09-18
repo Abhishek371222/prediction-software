@@ -3,14 +3,14 @@
     "versions": [
         {
             "version": "1.4.0",
-            "notes": "Figma UI cut: new ATOMIK. wordmark, tool ribbon, sidebar and dashboard built to measured Figma geometry. Heatmap renamed Gradient Plot. Square grid cells ruled edge to edge with no dead margins. Contrast-aware axis numbers and canvas caption. Sidebar holds its width share at any aspect ratio; 4K scale ceiling raised. Icon-free info panels with a close cross. Light theme only. Q21S still embedded.",
+            "notes": "Figma UI cut: new ATOMIK. wordmark, tool ribbon, sidebar and dashboard built to measured Figma geometry. Heatmap renamed Gradient Plot. Square grid cells ruled edge to edge with no dead margins. Contrast-aware axis numbers and canvas caption. Sidebar holds its width share at any aspect ratio; 4K scale ceiling raised. Icon-free info panels with a close cross. Light theme only. Q21S still embedded. Assets (logos, ribbon icons, fonts) are now baked into the EXE, so a downloaded binary is self-contained.",
             "createdAt": "2026-09-18T12:00:00.000Z",
             "updatedAt": "2026-09-18T12:00:00.000Z",
             "downloads": {
                 "source": {
                     "available": true,
                     "filename": "v1.4.0/Atomik-Source-v1.4.0.zip",
-                    "size": 4910085
+                    "size": 6279845
                 },
                 "mac": {
                     "available": false
@@ -18,7 +18,7 @@
                 "windows": {
                     "available": true,
                     "filename": "v1.4.0/Atomik-Windows-v1.4.0.exe",
-                    "size": 3502472
+                    "size": 5615496
                 }
             }
         },

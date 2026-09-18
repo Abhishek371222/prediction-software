@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "AppSettings.h"
 #include "UiTextConfig.h"
+#include "EmbeddedAssets.h"
 
 // ===========================================================================
 // Atomik brand theme — central palette, fonts (Montserrat + Space Mono) and a
@@ -401,6 +402,43 @@ namespace Brand
         return resolveProjectChild ("Assets", juce::File ("D:\\shayam gui\\Assets"));
     }
 
+    /** Bytes for an asset named relative to Assets/ (forward slashes), e.g.
+        "ToolIcons/Pencil.png" or "Fonts/Montserrat-Bold.ttf".
+
+        Embedded data first, disk second. The disk copy is what makes the dev
+        loop pleasant -- drop a new icon in Assets/ and it shows up without
+        regenerating anything -- but it must never be the ONLY source: someone
+        who downloads just the EXE has no Assets/ folder anywhere above it, and
+        every logo, ribbon glyph and bundled typeface then silently fails to
+        load, which reads as a stale build with missing artwork.
+
+        So shipped builds are self-contained, and in the dev tree a file on disk
+        still wins once Tools/embed_assets.py has been re-run. */
+    inline juce::MemoryBlock assetBytes (const juce::String& relPath)
+    {
+        // A newer file on disk overrides the baked copy, for iterating on art.
+        const auto onDisk = assetsFolder().getChildFile (relPath);
+        if (onDisk.existsAsFile())
+        {
+            juce::MemoryBlock fromDisk;
+            if (onDisk.loadFileAsData (fromDisk) && fromDisk.getSize() > 0)
+                return fromDisk;
+        }
+
+        juce::MemoryBlock mb;
+        if (const auto* e = EmbeddedAssets::find (relPath.toRawUTF8());
+            e != nullptr && e->size > 0)
+            mb.append (e->data, (size_t) e->size);
+        return mb;
+    }
+
+    inline juce::Image assetImage (const juce::String& relPath)
+    {
+        const auto mb = assetBytes (relPath);
+        if (mb.getSize() == 0) return {};
+        return juce::ImageFileFormat::loadFrom (mb.getData(), mb.getSize());
+    }
+
     inline juce::File toolIconsFolder()
     {
         const auto underAssets = assetsFolder().getChildFile ("ToolIcons");
@@ -418,10 +456,14 @@ namespace Brand
 
     inline juce::Typeface::Ptr loadFace (const juce::String& fileName)
     {
-        const auto f = fontsFolder().getChildFile (fileName);
-        if (! f.existsAsFile()) return nullptr;
-        juce::MemoryBlock mb;
-        if (! f.loadFileAsData (mb)) return nullptr;
+        auto mb = assetBytes ("Fonts/" + fileName);
+        if (mb.getSize() == 0)
+        {
+            // Legacy layout: a Fonts/ folder found by walking up from the EXE.
+            const auto f = fontsFolder().getChildFile (fileName);
+            if (! f.existsAsFile() || ! f.loadFileAsData (mb))
+                return nullptr;
+        }
         return juce::Typeface::createSystemTypefaceFor (mb.getData(), mb.getSize());
     }
 
@@ -611,8 +653,7 @@ namespace Brand
         const juce::String atomikOnly = whiteVariant
             ? "Atomik_Logo_Dark.png"
             : "Atomik_Logo_Light.png";
-        if (auto img = juce::ImageFileFormat::loadFrom (assets.getChildFile (atomikOnly));
-            img.isValid())
+        if (auto img = assetImage (atomikOnly); img.isValid())
             return highQualityDownscale (cropToAtomikOnly (img), targetH);
 
         const juce::String svgName = whiteVariant

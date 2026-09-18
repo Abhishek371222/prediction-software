@@ -194,8 +194,7 @@ public:
             // Figma draws these as plain dark glyphs on the ribbon, no chip.
             b.setColour (juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
             b.setColour (juce::DrawableButton::backgroundOnColourId, Brand::accent().withAlpha (0.35f));
-            const auto png = Brand::assetsFolder().getChildFile ("FigmaRedesign").getChildFile (pngName);
-            if (auto img = juce::ImageFileFormat::loadFrom (png); img.isValid())
+            if (auto img = Brand::assetImage ("FigmaRedesign/" + pngName); img.isValid())
             {
                 juce::DrawableImage d;
                 d.setImage (img);
@@ -1108,13 +1107,16 @@ private:
     */
     static std::unique_ptr<juce::Drawable> loadToolIcon (const juce::String& fileName)
     {
-        const auto dir  = Brand::toolIconsFolder();
+        // Via Brand::assetBytes, so a downloaded EXE with no Assets/ folder
+        // beside it still gets its glyphs from the baked-in copies.
         const auto base = fileName.upToLastOccurrenceOf (".", false, false);
 
-        const auto png = dir.getChildFile (base + ".png");
-        if (png.existsAsFile())
+        // PNG first: the Figma SVGs wrap base64 bitmaps in a pattern fill,
+        // which JUCE renders as a solid black square.
+        if (const auto mb = Brand::assetBytes ("ToolIcons/" + base + ".png");
+            mb.getSize() > 0)
         {
-            const auto img = juce::ImageFileFormat::loadFrom (png);
+            const auto img = juce::ImageFileFormat::loadFrom (mb.getData(), mb.getSize());
             if (img.isValid())
             {
                 auto d = std::make_unique<juce::DrawableImage>();
@@ -1123,9 +1125,10 @@ private:
             }
         }
 
-        const auto svg = dir.getChildFile (base + ".svg");
-        if (svg.existsAsFile())
-            if (auto xml = juce::XmlDocument::parse (svg))
+        if (const auto mb = Brand::assetBytes ("ToolIcons/" + base + ".svg");
+            mb.getSize() > 0)
+            if (auto xml = juce::XmlDocument::parse (
+                    juce::String::createStringFromData (mb.getData(), (int) mb.getSize())))
                 return juce::Drawable::createFromSVG (*xml);
 
         return {};

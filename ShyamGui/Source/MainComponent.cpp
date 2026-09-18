@@ -2419,9 +2419,10 @@ void MainComponent::refreshHeaderIcons()
     // gear / info / "?" match the mock exactly; fall back to the drawn badges.
     auto styleFromFile = [] (juce::DrawableButton& b, const juce::String& iconName) -> bool
     {
-        const auto png = Brand::toolIconsFolder().getChildFile (iconName + ".png");
-        if (! png.existsAsFile()) return false;
-        const auto img = juce::ImageFileFormat::loadFrom (png);
+        // Baked-in bytes first, so these survive a bare-EXE download.
+        const auto mb = Brand::assetBytes ("ToolIcons/" + iconName + ".png");
+        if (mb.getSize() == 0) return false;
+        const auto img = juce::ImageFileFormat::loadFrom (mb.getData(), mb.getSize());
         if (! img.isValid()) return false;
         juce::DrawableImage d;
         d.setImage (img);
