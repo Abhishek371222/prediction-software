@@ -196,6 +196,15 @@ v140 = [
      "Run info, export buttons and the status pill centred in their rows", "2026-09-18"],
     ["Theme", C, "Dark theme hidden",
      "Light theme only for this release; code intact", "2026-09-18"],
+    ["Plot", F, "Pan did nothing",
+     "The solved region fills the view, so clampViewToField pinned the offset back to "
+     "zero every drag. Panning now moves the region itself; middle-drag pans from any "
+     "tool", "2026-09-18"],
+    ["Plot", F, "Zoom anchored on the region corner",
+     "Zooming in walked off into empty space; it now keeps the view centre", "2026-09-18"],
+    ["Plot", F, "SPL caption sat mid-canvas",
+     "Was inset to the field's left edge, left over from the letterboxed view",
+     "2026-09-18"],
     ["Measurements", F, "Prediction fell back to omni off-machine",
      "A stored measurementSource of 1 selected a non-existent combo id (blank control) "
      "and pointed at a sidecar shyamGuildMeasurements folder shipped builds lack, so "

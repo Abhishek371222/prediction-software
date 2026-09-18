@@ -79,6 +79,8 @@ SimResult AcousticEngine::compute (const SimParams& p)
     const int N = std::max (16, p.resolution);
     res.width   = N;
     res.height  = N;
+    res.worldX0 = p.worldX0;
+    res.worldY0 = p.worldY0;
     res.worldW  = p.worldW;
     res.worldH  = p.worldH;
     res.usedBemField = false;
@@ -162,10 +164,10 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
     for (int row = 0; row < N; ++row)
     {
-        const double Y = row * dy;
+        const double Y = res.worldY0 + row * dy;
         for (int col = 0; col < N; ++col)
         {
-            const double X = col * dx;
+            const double X = res.worldX0 + col * dx;
 
             for (size_t i = 0; i < srcs.size(); ++i)
             {

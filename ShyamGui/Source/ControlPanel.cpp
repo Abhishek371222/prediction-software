@@ -545,8 +545,8 @@ void ControlPanel::syncPositionRanges()
     // span and silently move speakers when the view is zoomed.
     const double x = xSlider_.getValue();
     const double y = ySlider_.getValue();
-    xSlider_.setRange (0.0, juce::jmax (1.0, worldW_), 0.1);
-    ySlider_.setRange (0.0, juce::jmax (1.0, worldH_), 0.1);
+    xSlider_.setRange (worldX0_, worldX0_ + juce::jmax (1.0, worldW_), 0.1);
+    ySlider_.setRange (worldY0_, worldY0_ + juce::jmax (1.0, worldH_), 0.1);
     xSlider_.setValue (x, juce::dontSendNotification);
     ySlider_.setValue (y, juce::dontSendNotification);
 }
@@ -802,6 +802,8 @@ SimParams ControlPanel::getParams() const
     // The simulated region is whatever the plot is currently showing, so the
     // field always covers the canvas exactly and the reachable range is set by
     // how far you zoom out rather than by a fixed 100 x 100 m box.
+    p.worldX0    = worldX0_;
+    p.worldY0    = worldY0_;
     p.worldW     = worldW_;
     p.worldH     = worldH_;
     p.resolution = (int) resSlider_.getValue();

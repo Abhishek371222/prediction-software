@@ -52,7 +52,7 @@ public:
 
     /** Sets the world region the next run should cover, in metres. Driven by
         the plot's visible extent (see RadiationPatternComponent::
-        onViewExtentChanged) so the simulation follows the view. */
+        onViewRegionChanged) so the simulation follows the view. */
     void setWorldExtent (double w, double h)
     {
         worldW_ = juce::jmax (1.0, w);
@@ -62,6 +62,14 @@ public:
         // to the old box no matter how far the view had been zoomed out.
         syncPositionRanges();
     }
+    /** Origin of the region the next run should cover, in metres. Moved by
+        panning the plot (see RadiationPatternComponent::onViewRegionChanged). */
+    void setWorldOrigin (double x, double y)
+    {
+        worldX0_ = x; worldY0_ = y;
+        syncPositionRanges();
+    }
+
     double worldExtentW() const noexcept { return worldW_; }
     double worldExtentH() const noexcept { return worldH_; }
 
@@ -160,6 +168,7 @@ private:
     // Measurement dataset + distance (kept separate per set)
     // Region the next simulation covers. Replaces a hard-coded 100 x 100 m.
     double worldW_ = 100.0, worldH_ = 100.0;
+    double worldX0_ = 0.0, worldY0_ = 0.0;
 
     juce::Label    measSetLabel_;
     juce::ComboBox measSetBox_;

@@ -82,6 +82,11 @@ enum class ViewMode
 struct SimParams
 {
     double frequency  = 52.0;    // one of kSupportedFrequencies (Hz)
+    // Region solved for: [worldX0, worldX0+worldW] x [worldY0, worldY0+worldH].
+    // The origin exists so the view can pan the solved region around rather
+    // than sliding a fixed box that always started at (0, 0).
+    double worldX0    = 0.0;     // region origin x (m)
+    double worldY0    = 0.0;     // region origin y (m)
     double worldW     = 100.0;   // world width  (m)
     double worldH     = 100.0;   // world height (m)
     int    resolution = 400;     // grid cells per axis
@@ -108,6 +113,8 @@ struct SimResult
     int width  = 0;
     int height = 0;
 
+    double worldX0 = 0.0;
+    double worldY0 = 0.0;
     double worldW = 100.0;
     double worldH = 100.0;
 

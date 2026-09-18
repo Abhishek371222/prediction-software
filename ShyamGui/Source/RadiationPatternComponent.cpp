@@ -2394,8 +2394,8 @@ bool RadiationPatternComponent::sampleSplAtWorld (float wx, float wy,
     if (W < 2 || H < 2 || result_.worldW < 1.0e-6 || result_.worldH < 1.0e-6)
         return false;
 
-    const float fx = (float) ((wx / (float) result_.worldW) * (double) (W - 1));
-    const float fy = (float) ((wy / (float) result_.worldH) * (double) (H - 1));
+    const float fx = (float) (((wx - (float) result_.worldX0) / (float) result_.worldW) * (double) (W - 1));
+    const float fy = (float) (((wy - (float) result_.worldY0) / (float) result_.worldH) * (double) (H - 1));
     if (fx < 0.0f || fy < 0.0f || fx > (float) (W - 1) || fy > (float) (H - 1))
         return false;
 
@@ -3124,9 +3124,14 @@ float RadiationPatternComponent::worldScale() const
 
 juce::Point<float> RadiationPatternComponent::worldToScreen (float wx, float wy) const
 {
+    // Relative to the solved region's origin, not absolute (0, 0): the region
+    // moves when you pan, so a world point's screen position depends on where
+    // that region currently starts.
     const auto pb = plotArea();
-    return { (float) pb.getX() + origin_.x + wx * worldScaleX(),
-             (float) pb.getY() + origin_.y + ((float) result_.worldH - wy) * worldScaleY() };
+    const float rx = wx - (float) result_.worldX0;
+    const float ry = (float) (result_.worldY0 + result_.worldH) - wy;
+    return { (float) pb.getX() + origin_.x + rx * worldScaleX(),
+             (float) pb.getY() + origin_.y + ry * worldScaleY() };
 }
 
 juce::Point<float> RadiationPatternComponent::screenToWorld (float sx, float sy) const
@@ -3134,8 +3139,9 @@ juce::Point<float> RadiationPatternComponent::screenToWorld (float sx, float sy)
     const auto pb = plotArea();
     const float sxScale = worldScaleX();
     const float syScale = worldScaleY();
-    return { (sx - (float) pb.getX() - origin_.x) / sxScale,
-             (float) result_.worldH - (sy - (float) pb.getY() - origin_.y) / syScale };
+    return { (float) result_.worldX0 + (sx - (float) pb.getX() - origin_.x) / sxScale,
+             (float) (result_.worldY0 + result_.worldH)
+                 - (sy - (float) pb.getY() - origin_.y) / syScale };
 }
 
 void RadiationPatternComponent::fitView()
@@ -3190,9 +3196,19 @@ void RadiationPatternComponent::requestViewExtent (double depthM)
     if (std::abs (depthM - extentH_) < 1.0e-6 && std::abs (w - extentW_) < 1.0e-6)
         return;
 
+    // Zoom about the middle of what is on screen. Resizing the region while
+    // holding its origin would anchor every zoom to the region's corner, so
+    // zooming in walked the view off into empty space instead of magnifying
+    // whatever you were looking at.
+    const double cx = result_.worldX0 + result_.worldW * 0.5;
+    const double cy = result_.worldY0 + result_.worldH * 0.5;
+
     extentH_ = depthM;
     extentW_ = w;
-    if (onViewExtentChanged) onViewExtentChanged (extentW_, extentH_);
+    regionX0_ = cx - extentW_ * 0.5;
+    regionY0_ = cy - extentH_ * 0.5;
+
+    if (onViewRegionChanged) onViewRegionChanged (regionX0_, regionY0_, extentW_, extentH_);
 }
 
 void RadiationPatternComponent::clampViewToField()
@@ -3379,7 +3395,8 @@ void RadiationPatternComponent::drawField (juce::Graphics& g, juce::Rectangle<in
 {
     if (! fieldImage_.isValid()) return;
 
-    const auto tl = worldToScreen (0.0f, (float) result_.worldH);   // top-left
+    const auto tl = worldToScreen ((float) result_.worldX0,
+                                   (float) (result_.worldY0 + result_.worldH));   // top-left
     const float w = (float) result_.worldW * worldScaleX();
     const float h = (float) result_.worldH * worldScaleY();
 
@@ -3475,18 +3492,19 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // Only draw lines that intersect the visible plot (needed at 1 mm density).
     const auto tl = screenToWorld ((float) bounds.getX(),      (float) bounds.getY());
     const auto br = screenToWorld ((float) bounds.getRight(),  (float) bounds.getBottom());
-    // Clipped to the field, so the grid never advertises area outside the
-    // simulated world -- speaker placement clamps to it, so ruled space beyond
-    // the edge is space you cannot actually click into.
-    const double visX0 = juce::jlimit (0.0, (double) ww, (double) std::min (tl.x, br.x));
-    const double visX1 = juce::jlimit (0.0, (double) ww, (double) std::max (tl.x, br.x));
-    const double visY0 = juce::jlimit (0.0, (double) wh, (double) std::min (tl.y, br.y));
-    const double visY1 = juce::jlimit (0.0, (double) wh, (double) std::max (tl.y, br.y));
+    // The solved region, wherever panning has moved it to.
+    const double xMin = (double) result_.worldX0;
+    const double xMax = xMin + (double) ww;
+    const double yMin = (double) result_.worldY0;
+    const double yMax = yMin + (double) wh;
 
-    const double xMin = 0.0;
-    const double xMax = (double) ww;
-    const double yMin = 0.0;
-    const double yMax = (double) wh;
+    // Clipped to that region, so the grid never advertises area outside it --
+    // placement clamps to the region, so ruled space beyond its edge would be
+    // space you cannot actually click into.
+    const double visX0 = juce::jlimit (xMin, xMax, (double) std::min (tl.x, br.x));
+    const double visX1 = juce::jlimit (xMin, xMax, (double) std::max (tl.x, br.x));
+    const double visY0 = juce::jlimit (yMin, yMax, (double) std::min (tl.y, br.y));
+    const double visY1 = juce::jlimit (yMin, yMax, (double) std::max (tl.y, br.y));
 
     const juce::Colour minorCol = Brand::plotGrid().withMultipliedAlpha (0.45f);
     const juce::Colour majorCol = Brand::plotGrid();
@@ -3549,8 +3567,10 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // the component's edge stranded the whole vertical axis out in the empty
     // margin -- detached from the grid it annotates, and on a pale background
     // where the over-the-field white ink is unreadable.
-    const auto wtl = worldToScreen (0.0f, wh);      // world top-left on screen
-    const auto wbr = worldToScreen (ww,   0.0f);    // world bottom-right
+    const auto wtl = worldToScreen ((float) result_.worldX0,
+                                    (float) (result_.worldY0 + wh));   // top-left
+    const auto wbr = worldToScreen ((float) (result_.worldX0 + ww),
+                                    (float) result_.worldY0);          // bottom-right
     const auto axisBox = bounds.getIntersection (
         juce::Rectangle<int> (juce::roundToInt (wtl.x), juce::roundToInt (wtl.y),
                               juce::jmax (1, juce::roundToInt (wbr.x - wtl.x)),
@@ -3681,8 +3701,10 @@ juce::Rectangle<int> RadiationPatternComponent::fieldScreenBounds() const
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (ww <= 0 || wh <= 0) return pb;
 
-    const auto tl = worldToScreen (0.0f, (float) wh);
-    const auto br = worldToScreen ((float) ww, 0.0f);
+    const auto tl = worldToScreen ((float) result_.worldX0,
+                                   (float) (result_.worldY0 + wh));
+    const auto br = worldToScreen ((float) (result_.worldX0 + ww),
+                                   (float) result_.worldY0);
     return pb.getIntersection (
         juce::Rectangle<int> (juce::roundToInt (tl.x), juce::roundToInt (tl.y),
                               juce::jmax (1, juce::roundToInt (br.x - tl.x)),
@@ -4638,6 +4660,16 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         grabKeyboardFocus();
 
     lastMouse_ = e.position;
+
+    // Middle button pans from ANY tool, the way every CAD app behaves -- you
+    // should not have to leave the tool you are drawing with to move the view.
+    if (e.mods.isMiddleButtonDown())
+    {
+        drag_ = Drag::Pan;
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        return;
+    }
+
     const auto pb = plotArea();
     // Polar uses full bounds as the plot frame; SPL uses the trimmed plot area.
     const bool inPlot = (currentAnnotSpace() == AnnotSpace::PolarPlot)
@@ -5153,6 +5185,25 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     }
 }
 
+void RadiationPatternComponent::commitPan()
+{
+    // Convert the pixels dragged into metres and shift the solved region by
+    // that much, then hand it back so the owner re-runs. origin_ returns to
+    // zero because the new region starts exactly where the view now looks.
+    const float sx = worldScaleX(), sy = worldScaleY();
+    if (std::abs (origin_.x) < 0.5f && std::abs (origin_.y) < 0.5f) return;
+    if (sx < 1.0e-6f || sy < 1.0e-6f) return;
+
+    const double dxM = -(double) origin_.x / (double) sx;   // drag right -> region moves left
+    const double dyM =  (double) origin_.y / (double) sy;   // screen y is inverted
+
+    origin_ = { 0.0f, 0.0f };
+    regionX0_ = result_.worldX0 + dxM;
+    regionY0_ = result_.worldY0 + dyM;
+    if (onViewRegionChanged)
+        onViewRegionChanged (regionX0_, regionY0_, result_.worldW, result_.worldH);
+}
+
 void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag_ == Drag::Pencil && ! annotations_.empty())
@@ -5368,9 +5419,15 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (drag_ == Drag::Pan)
     {
+        // Slide the already-rendered field for a smooth drag. The solved
+        // region itself is moved once, on release -- re-solving every mouse
+        // move would be unusable with a few units on a fine grid.
+        //
+        // No clampViewToField here: the region exactly fills the view, so the
+        // clamp's jlimit(0, 0, x) would pin origin_ back to zero and the pan
+        // would do nothing at all. That is why the Pan tool looked dead.
         origin_ += (e.position - lastMouse_);
         lastMouse_ = e.position;
-        clampViewToField();
         if (tool_ == Tool::Select)
             updateSplProbeAt (e.position);
         repaint();
@@ -5412,6 +5469,15 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 {
+    if (drag_ == Drag::Pan)
+    {
+        commitPan();
+        drag_ = Drag::None;
+        updateMouseCursorForTool();
+        repaint();
+        return;
+    }
+
     if (drag_ == Drag::Marquee)
     {
         marqueeEndScreen_ = e.position;

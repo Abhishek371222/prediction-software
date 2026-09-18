@@ -323,9 +323,12 @@ MainComponent::MainComponent (ProjectData project)
     // The plot drives the simulated region: zooming changes how many metres
     // are solved for, not how much of a fixed box is visible, so the field
     // always covers the canvas and the reachable range is unbounded.
-    patternComp_.onViewExtentChanged = [this] (double w, double h)
+    // Zoom resizes the solved region, panning moves it; either way the field
+    // is re-solved for exactly what is on screen.
+    patternComp_.onViewRegionChanged = [this] (double x, double y, double w, double h)
     {
         controlPanel_.setWorldExtent (w, h);
+        controlPanel_.setWorldOrigin (x, y);
         scheduleRecompute();
     };
 
@@ -2011,13 +2014,12 @@ void MainComponent::resized()
         // keeps rescaling with the window. Semibold keeps the brand red legible
         // over the dark heatmap (Figma's mock canvas is empty/light).
         caption.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::panelTitle)));
-        // On the field, not the canvas: the view fits to contain, so the canvas
-        // has pale margins where the over-the-field white ink is invisible.
-        const auto fieldRel = patternComp_.fieldScreenBounds();
-        const int capX = plotX + fieldRel.getX() + capPadX;
-        const int capY = bodyTop2 + fieldRel.getY() + capPadY;
-        caption.setBounds (capX, capY,
-                           juce::jmax (0, fieldRel.getWidth() - capPadX * 2), capH);
+        // Hard against the canvas's left edge. It used to be inset to the
+        // field's own left edge, which mattered while the view letterboxed a
+        // square world and left pale margins; now the solved region fills the
+        // canvas, that inset only pushed the caption toward the middle.
+        caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
+                           juce::jmax (0, centreW - capPadX * 2), capH);
         caption.toFront (false);
         // PlotHeaderBar::lookAndFeelChanged() re-stamps the label red, so put
         // the contrast-aware colour back on every layout pass.
@@ -3021,6 +3023,8 @@ void MainComponent::exportCSV()
             line ("# Frequency_Hz," + juce::String (r.frequency, 1));
             line ("# Units," + juce::String (nDev));
             line ("# World_m," + juce::String (r.worldW, 3) + " x " + juce::String (r.worldH, 3));
+            // The solved region moves with the view, so record where it starts.
+            line ("# Origin_m," + juce::String (r.worldX0, 3) + " , " + juce::String (r.worldY0, 3));
             line ("# Grid," + juce::String (W) + " x " + juce::String (H));
             if (absOk)
                 line ("# Peak_dB_SPL," + juce::String (r.peakAbsDb, 2));
@@ -3040,7 +3044,10 @@ void MainComponent::exportCSV()
 
             for (int row = 0; row < H; ++row)
             {
-                const double y = row * dy;
+                // Offset by the solved region's origin: the region is no longer
+                // anchored at (0, 0), so exported coordinates have to say where
+                // the samples actually are.
+                const double y = r.worldY0 + row * dy;
                 for (int col = 0; col < W; ++col)
                 {
                     const size_t i = (size_t) row * (size_t) W + (size_t) col;
@@ -3048,7 +3055,7 @@ void MainComponent::exportCSV()
                                             : (absOk ? (r.splAbsDB[i] - (float) r.peakAbsDb)
                                                      : r.splDB[i]);
                     const float spl = absOk ? r.splAbsDB[i] : rel;
-                    mos << juce::String (col * dx, 4) << ","
+                    mos << juce::String (r.worldX0 + col * dx, 4) << ","
                         << juce::String (y, 4) << ","
                         << juce::String (rel, 2) << ","
                         << juce::String (spl, 2) << "\n";

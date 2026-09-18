@@ -199,9 +199,11 @@ public:
     void mouseExit      (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
-    /** Fired when the view wants a different simulated region (metres).
-        The owner should push it into the next SimParams and re-run. */
-    std::function<void(double, double)> onViewExtentChanged;
+    /** Fired whenever the view wants a different solved region, as
+        (x0, y0, width, height) in metres. Zoom changes the size, panning
+        changes the origin; both arrive here. The owner should push it into the
+        next SimParams and re-run. */
+    std::function<void(double, double, double, double)> onViewRegionChanged;
 
     /** Requests a region `depthM` metres tall, widened to the plot's aspect so
         it fills the canvas exactly. Clamped to [kMinExtentM, kMaxExtentM]. */
@@ -225,6 +227,8 @@ private:
 
     // Simulated region the view is asking for, in metres.
     double extentW_ = 100.0, extentH_ = 100.0;
+    double regionX0_ = 0.0, regionY0_ = 0.0;   // its origin, moved by panning
+    void commitPan();                          // drag pixels -> new region origin
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
 

@@ -66,6 +66,15 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
 - **Dark theme hidden** - light theme only for this release (code intact).
 
 ### Fixed
+- **Pan did nothing** - the Pan tool was wired, but the solved region exactly fills the
+  view, so `clampViewToField`'s `jlimit(0, 0, x)` pinned the view offset back to zero on
+  every drag. Panning now moves the solved region itself: the rendered field slides for
+  a smooth drag and the region is re-solved once on release. **Middle-drag pans from any
+  tool**, so you no longer have to leave the tool you are drawing with.
+- **Zoom anchored on the region's corner** rather than the middle of the view, so
+  zooming in walked off into empty space instead of magnifying what you were looking at.
+- **SPL caption sat mid-canvas** - it was inset to the field's left edge, which mattered
+  while the view letterboxed a square world; it is hard against the canvas edge again.
 - **Predictions silently fell back to omnidirectional on other machines** - a stored
   `measurementSource` of 1 (the legacy Room / GYLT set) selected a combo id that does
   not exist, blanking the Measurement set control, and pointed the loader at a sidecar
