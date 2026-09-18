@@ -169,10 +169,10 @@ v140 = [
     ["Naming", C, "Heatmap -> Gradient Plot",
      "Canvas caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips",
      "2026-09-18"],
-    ["Plot", C, "Square, full-bleed grid",
-     "Uniform px/m so cells are square; the grid rules the whole canvas rather than "
-     "stopping at the field edge, and the field's floor tone fills the surround",
-     "2026-09-18"],
+    ["Plot", C, "Field stretched to fill the canvas",
+     "Whole 100 x 100 m world visible edge to edge, and the visible grid is exactly "
+     "the simulated area so units place anywhere grid is drawn. Cells are rectangles "
+     "on a non-square window", "2026-09-18"],
     ["Plot", C, "Contrast-aware axis numbers",
      "White with a halo over a rendered field, theme ink over the bare grid; colliding "
      "tick labels are skipped", "2026-09-18"],

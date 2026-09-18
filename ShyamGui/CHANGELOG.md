@@ -42,10 +42,12 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
 ### Changed
 - **Renamed "Heatmap" to "Gradient Plot"** everywhere it is user-visible - canvas
   caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips.
-- **Plot fits the whole field at a uniform scale** - grid cells are square, and the grid
-  rules the entire canvas rather than stopping at the field edge, so the view is
-  full-bleed with no dead margins. The field's floor tone fills the surround so it reads
-  as one continuous surface.
+- **Plot stretches the field to fill the canvas** - the whole 100 x 100 m world is
+  visible edge to edge with no dead margins, and the visible grid is exactly the
+  simulated area, so a unit can be placed anywhere grid is drawn. Cells are rectangles
+  rather than squares on a non-square window: a square field cannot fill a wide canvas
+  at a uniform scale, and ruling the leftover canvas instead produced grid that looked
+  placeable but clamped every click back to the field edge.
 - **Axis numbers follow the surface behind them** - white with a contrast halo over a
   rendered field, theme ink over the bare grid. Colliding tick labels are now skipped.
 - **Canvas caption ink** - brand red on the empty grid, white once a device is placed.

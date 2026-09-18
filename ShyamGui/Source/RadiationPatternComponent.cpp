@@ -3145,26 +3145,23 @@ void RadiationPatternComponent::fitView()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    // ONE px/m for both axes, so a metre is a metre in either direction and
-    // grid cells come out square. Taken from the smaller ratio so the entire
-    // field is on screen rather than cropped.
+    // Independent px/m per axis: the field is stretched to fill the plot
+    // exactly, so the visible grid and the simulated world are the SAME area.
     //
-    // A square field cannot also fill a non-square canvas at a uniform scale,
-    // so drawGrid() rules the leftover area too: the grid runs edge to edge
-    // and the field simply occupies the part of it that has data. That keeps
-    // square cells, the whole field, and a full-bleed canvas all at once --
-    // the three things a stretched view could not satisfy together.
-    const float sx = (float) (pb.getWidth()  / ww);
-    const float sy = (float) (pb.getHeight() / wh);
-    const float s  = juce::jmin (sx, sy);
-    baseScaleX_ = s;
-    baseScaleY_ = s;
+    // That equivalence is the point. A uniform scale keeps grid cells square
+    // but a square field cannot fill a non-square canvas, so something has to
+    // give: either dead margins, or -- as an earlier cut tried -- ruling the
+    // leftover canvas as though it were plot. The latter looked right and was
+    // actively misleading: speaker placement clamps to the world, so every
+    // click out in that extended region snapped back to the field's edge and
+    // units piled up in a line at x = worldW. Grid you can see but cannot use
+    // is worse than a grid with non-square cells.
+    baseScaleX_ = (float) (pb.getWidth()  / ww);
+    baseScaleY_ = (float) (pb.getHeight() / wh);
     zoom_       = 1.0f;
 
-    // World (0, 0) at the plot's bottom-left, so the extra room appears above
-    // and to the right as positive coordinates. Centring the field instead
-    // would put negative coordinates on the leading edges.
-    origin_ = { 0.0f, (float) pb.getHeight() - (float) wh * s };
+    // World and viewport coincide, so there is nothing to centre or offset.
+    origin_ = { 0.0f, 0.0f };
     viewInit_   = true;
     clampViewToField();
 }
@@ -3184,9 +3181,6 @@ void RadiationPatternComponent::clampViewToField()
     const float viewW = (float) pb.getWidth();
     const float viewH = (float) pb.getHeight();
 
-    // Fitted to contain, the world is smaller than the viewport on one axis.
-    // Pin it to the bottom-left there (see fitView) so the surplus shows as
-    // positive coordinates above and to the right, never negative ones.
     if (worldPxW >= viewW)
         origin_.x = juce::jlimit (viewW - worldPxW, 0.0f, origin_.x);
     else
@@ -3195,7 +3189,7 @@ void RadiationPatternComponent::clampViewToField()
     if (worldPxH >= viewH)
         origin_.y = juce::jlimit (viewH - worldPxH, 0.0f, origin_.y);
     else
-        origin_.y = viewH - worldPxH;
+        origin_.y = 0.0f;
 }
 
 void RadiationPatternComponent::resetView()
@@ -3352,17 +3346,7 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (pb);
         if (hasData_)
-        {
-            // A square field cannot fill a non-square canvas at the uniform
-            // scale that keeps grid cells square, so the field occupies only
-            // part of the plot. Lay its floor tone across the whole area first
-            // and the surplus reads as more of the same plot rather than a
-            // separate pale strip beside it -- and the white axis numbers stay
-            // legible out there too.
-            g.setColour (ColourMaps::sevenColor (0.0f));   // t=0 is the dB floor
-            g.fillRect (pb);
-            drawField (g, pb);
-        }
+            drawField (g, pb);   // stretched to fill pb exactly
         drawLayout   (g, pb);
         drawGrid     (g, pb);
         drawSpeakers (g, pb);
@@ -3477,14 +3461,18 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // Only draw lines that intersect the visible plot (needed at 1 mm density).
     const auto tl = screenToWorld ((float) bounds.getX(),      (float) bounds.getY());
     const auto br = screenToWorld ((float) bounds.getRight(),  (float) bounds.getBottom());
-    // Ticks span everything the viewport can see, no longer clipped to the
-    // field: at a uniform scale a square field cannot fill a wide canvas, and
-    // ruling the leftover area is what keeps the grid full-bleed. Clamped at
-    // zero so the surplus reads as positive coordinates only.
-    const double visX0 = juce::jmax (0.0, (double) std::min (tl.x, br.x));
-    const double visX1 = juce::jmax (0.0, (double) std::max (tl.x, br.x));
-    const double visY0 = juce::jmax (0.0, (double) std::min (tl.y, br.y));
-    const double visY1 = juce::jmax (0.0, (double) std::max (tl.y, br.y));
+    // Clipped to the field, so the grid never advertises area outside the
+    // simulated world -- speaker placement clamps to it, so ruled space beyond
+    // the edge is space you cannot actually click into.
+    const double visX0 = juce::jlimit (0.0, (double) ww, (double) std::min (tl.x, br.x));
+    const double visX1 = juce::jlimit (0.0, (double) ww, (double) std::max (tl.x, br.x));
+    const double visY0 = juce::jlimit (0.0, (double) wh, (double) std::min (tl.y, br.y));
+    const double visY1 = juce::jlimit (0.0, (double) wh, (double) std::max (tl.y, br.y));
+
+    const double xMin = 0.0;
+    const double xMax = (double) ww;
+    const double yMin = 0.0;
+    const double yMax = (double) wh;
 
     const juce::Colour minorCol = Brand::plotGrid().withMultipliedAlpha (0.45f);
     const juce::Colour majorCol = Brand::plotGrid();
@@ -3512,18 +3500,19 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
             fn ((double) i * step);
     };
 
-    // Full height / width of the plot, so the ruling continues past the field.
     auto vline = [&] (double xm, bool major)
     {
-        const float x = worldToScreen ((float) xm, 0.0f).x;
+        auto a = worldToScreen ((float) xm, (float) yMin);
+        auto b = worldToScreen ((float) xm, (float) yMax);
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (x, (float) bounds.getY(), x, (float) bounds.getBottom(), major ? 1.0f : 0.6f);
+        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
     };
     auto hline = [&] (double ym, bool major)
     {
-        const float y = worldToScreen (0.0f, (float) ym).y;
+        auto a = worldToScreen ((float) xMin, (float) ym);
+        auto b = worldToScreen ((float) xMax, (float) ym);
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine ((float) bounds.getX(), y, (float) bounds.getRight(), y, major ? 1.0f : 0.6f);
+        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
     };
 
     forTicks (visX0, visX1, minorStep, [&] (double x) { if (! isMajor (x)) vline (x, false); });
