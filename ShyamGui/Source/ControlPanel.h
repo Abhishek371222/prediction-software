@@ -32,9 +32,18 @@ public:
     std::function<void(int)> onMeasurementSourceChanged;  // 0 = Open Field, 1 = GYLT
     std::function<void(float)> onMeasurementDistanceChanged;  // metres
 
-    void setMeasurementSource (int idx)
+    /** @returns the index actually selected, which may differ from the one
+        asked for. Selecting an id the box does not contain leaves ComboBox
+        showing NOTHING, with no error -- a stale "measurementSource" of 1 in
+        the settings file blanked this control and gave no clue why. Fall back
+        to the first item instead and let the caller know. */
+    int setMeasurementSource (int idx)
     {
-        measSetBox_.setSelectedId (idx + 1, juce::dontSendNotification);
+        const int wanted = idx + 1;
+        const bool exists = measSetBox_.indexOfItemId (wanted) >= 0;
+        const int useId = exists ? wanted : measSetBox_.getItemId (0);
+        measSetBox_.setSelectedId (useId, juce::dontSendNotification);
+        return juce::jmax (0, useId - 1);
     }
 
     // Populate distance choices from loaded measurement set (0.5 / 1.0 / 2.0 m).

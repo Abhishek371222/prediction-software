@@ -59,6 +59,16 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
 - **Dark theme hidden** - light theme only for this release (code intact).
 
 ### Fixed
+- **Predictions silently fell back to omnidirectional on other machines** - a stored
+  `measurementSource` of 1 (the legacy Room / GYLT set) selected a combo id that does
+  not exist, blanking the Measurement set control, and pointed the loader at a sidecar
+  `shyamGuildMeasurements` folder that shipped builds do not carry. With no measured
+  data the engine lost the Q21S directivity entirely. The source is now validated
+  against data that is actually present, and the combo can never be left blank.
+- **Speaker markers rendered as flat elongated rectangles** - the cabinet footprint was
+  mapped through the view's stretched transform, so it inherited the anisotropy
+  (measured 3.33:1 against a true plan ratio of 1.22:1). The glyph is now sized from a
+  single px/m while its position still uses the stretched transform.
 - **Help icons shrank on a units or theme switch** - the header restyle stamped its own
   inset back onto the ribbon's adopted glyphs, and JUCE skips `resized()` when bounds do
   not change, so the smaller icons stuck.

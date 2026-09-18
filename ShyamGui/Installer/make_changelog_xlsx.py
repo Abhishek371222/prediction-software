@@ -188,6 +188,14 @@ v140 = [
      "Run info, export buttons and the status pill centred in their rows", "2026-09-18"],
     ["Theme", C, "Dark theme hidden",
      "Light theme only for this release; code intact", "2026-09-18"],
+    ["Measurements", F, "Prediction fell back to omni off-machine",
+     "A stored measurementSource of 1 selected a non-existent combo id (blank control) "
+     "and pointed at a sidecar shyamGuildMeasurements folder shipped builds lack, so "
+     "the engine lost Q21S directivity. Source is validated; combo never blanks",
+     "2026-09-18"],
+    ["Plot", F, "Speaker markers elongated",
+     "Cabinet footprint inherited the view's anisotropy (3.33:1 vs a true 1.22:1 plan "
+     "ratio); the glyph is now sized from a single px/m", "2026-09-18"],
     ["Help", F, "Icons shrank on units / theme switch",
      "Header restyle stamped its own inset onto the ribbon's adopted glyphs, and JUCE "
      "skips resized() when bounds do not change", "2026-09-18"],

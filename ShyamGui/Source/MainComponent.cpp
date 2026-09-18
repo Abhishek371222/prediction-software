@@ -537,8 +537,23 @@ MainComponent::MainComponent (ProjectData project)
 
     // Measured polar data: initial load + ~1 s live refresh ----------------
     measSource_ = AppSettings::get().measurementSource();
+
+    // Only the Q21S (OpenField) set is offered in the UI and only its CSVs are
+    // baked into the EXE. The legacy Room / GYLT set reads a sidecar
+    // shyamGuildMeasurements folder that shipped builds do not carry, so a
+    // stale setting pointing at it left the combo blank AND the engine with an
+    // empty directivity table -- which silently degrades every prediction to
+    // omnidirectional instead of the measured Q21S pattern. Fall back unless
+    // the data for the stored source is genuinely present.
+    if (measSource_ != MeasurementData::OpenField
+        && ! MeasurementData::folderForSource (measSource_).isDirectory())
+    {
+        measSource_ = MeasurementData::OpenField;
+        AppSettings::get().setMeasurementSource (measSource_);
+    }
+
     measDir_    = MeasurementData::folderForSource (measSource_);
-    controlPanel_.setMeasurementSource (measSource_);
+    measSource_ = controlPanel_.setMeasurementSource (measSource_);
     controlPanel_.onMeasurementSourceChanged = [this] (int s) { setMeasurementSource (s); };
     controlPanel_.onMeasurementDistanceChanged = [this] (float d) { setMeasurementDistance (d); };
     loadMeasurements();

@@ -3662,14 +3662,22 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const S
 
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
 {
-    const auto wr = speakerFootprintWorld (spk);
-    const auto p0 = worldToScreen (wr.getX(), wr.getY());
-    const auto p1 = worldToScreen (wr.getRight(), wr.getBottom());
-    const float x = juce::jmin (p0.x, p1.x);
-    const float y = juce::jmin (p0.y, p1.y);
-    const float w = std::abs (p1.x - p0.x);
-    const float h = std::abs (p1.y - p0.y);
-    return { x, y, juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
+    // ONE px/m for both sides, so the cabinet keeps its real plan proportions
+    // (917 mm deep x 750 mm wide -- very nearly square) instead of inheriting
+    // the view's anisotropy. The field is stretched to fill the canvas, which
+    // means x and y have different px/m; mapping the footprint's corners
+    // through that stretched transform smeared the cabinet into a wide
+    // rectangle roughly twice its true width-to-depth ratio.
+    //
+    // Position still comes from the stretched transform -- only the glyph's
+    // size is uniform -- so the marker stays exactly on its world coordinate.
+    // Hit-testing shares this rectangle, so clicks match what is drawn.
+    const auto c = worldToScreen (spk.x, spk.y);
+    const float s = juce::jmax (0.01f, worldScale());
+    const float w = Q21SCabinet::depthM * s;
+    const float h = Q21SCabinet::widthM * s;
+    return { c.x - w * 0.5f, c.y - h * 0.5f,
+             juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
 }
 
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)
