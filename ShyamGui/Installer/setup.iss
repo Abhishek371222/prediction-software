@@ -3,7 +3,7 @@
 ; EXE (no Excel / MeasurementIntegrationPack shipped).
 
 #define MyAppName "Atomik Simulation Engine"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.0.1"
 #define MyAppPublisher "Atomik"
 #define MyAppExeName "Atomik Simulation Engine.exe"
 #define RepoRoot "D:\WORKING_LATESTSHYAM_GUI"

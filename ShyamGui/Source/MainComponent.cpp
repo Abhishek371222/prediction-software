@@ -39,7 +39,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.0", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.0.1", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -3002,7 +3002,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.4.0");
+            line ("# Atomik Simulation Engine v1.4.0.1");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

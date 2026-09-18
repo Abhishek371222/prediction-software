@@ -109,6 +109,10 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.1", "2026-09-18", "No letterboxing + pan + true Q21S size",
+     "Fill-the-canvas fit is the zoom floor, so the plot never letterboxes; pan fixed "
+     "and middle-drag pans from any tool; Q21S cabinet corrected to 1546 x 679 x 1024 mm "
+     "and drawn to scale; SPL caption back at the canvas edge"],
     ["1.4.0", "2026-09-18", "Figma UI cut + square full-bleed grid",
      "New ATOMIK. wordmark, ribbon, sidebar and dashboard built to measured Figma geometry; "
      "Heatmap renamed Gradient Plot; square grid cells ruled edge to edge; contrast-aware axis "
@@ -148,7 +152,46 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0 detailed changes
+# Sheet 2: v1.4.0.1 detailed changes
+# ===========================================================================
+ws1401 = wb.create_sheet("v1.4.0.1 Changes")
+ws1401.sheet_view.showGridLines = False
+banner(ws1401, "v1.4.0.1  -  Detailed Changes",
+       "2026-09-18  |  No letterboxing + pan + true Q21S size", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1401 = [
+    ["Plot", A, "Middle-drag pans from any tool",
+     "No need to leave the tool you are drawing with", "2026-09-18"],
+    ["Plot", C, "Never letterboxes",
+     "The fill-the-canvas fit is the zoom floor, so no pale margins at any zoom. Field "
+     "stays 100 x 100 m with square cells; the cropped band is reached by panning",
+     "2026-09-18"],
+    ["Speakers", C, "Q21S dimensions corrected",
+     "1546 x 679 x 1024 mm (60.86 x 26.73 x 40.31 in) replaces an incorrect "
+     "750 x 784 x 917 mm set; footprint drawn at the field's px/m and the 1/r floor "
+     "follows the true depth", "2026-09-18"],
+    ["Plot", C, "SPL caption back at the canvas edge",
+     "Was inset to the field's left edge, left over from a letterboxed view",
+     "2026-09-18"],
+    ["Plot", F, "Pan did nothing",
+     "The view offset was clamped back to zero on every drag. Panning now moves the "
+     "view across the field with no re-solve, so it is instant and placement is exact",
+     "2026-09-18"],
+    ["Plot", F, "Zoom anchored on the field corner",
+     "Zooming in walked off into empty space; it now holds the view centre",
+     "2026-09-18"],
+    ["Packaging", C, "Version -> v1.4.0.1",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-18"],
+]
+write_table(ws1401, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1401, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1401.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0 detailed changes
 # ===========================================================================
 ws140 = wb.create_sheet("v1.4.0 Changes")
 ws140.sheet_view.showGridLines = False

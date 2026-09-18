@@ -18,9 +18,50 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.3.8** | 2026-09-04 | Command line: aliases, typed points, MOVE/ZOOM, dock/undock |
 | **1.3.9** | 2026-09-15 | 15W750 as a second measurement source, per-model frequency isolation |
 | **1.4.0** | 2026-09-18 | Figma UI cut: new wordmark, ribbon, dashboard, square full-bleed grid |
+| **1.4.0.1** | 2026-09-18 | Plot never letterboxes; pan fixed + middle-drag; true Q21S size |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.1] - 2026-09-18
+
+**Atomik Simulation Engine v1.4.0.1** - a follow-up to 1.4.0 covering how the plot
+fits the field, how you move around it, and the cabinet's real size.
+
+### Added
+- **Middle-drag pans from any tool** - no need to leave the tool you are drawing with.
+
+### Changed
+- **The plot never letterboxes.** The fill-the-canvas fit is now the zoom floor, so
+  there are no pale margins at any zoom level. The field stays 100 x 100 m and grid
+  cells stay square; the band cropped off the shorter axis is reached by panning
+  rather than by zooming out.
+- **Q21S cabinet corrected to the real product** - 1546 x 679 x 1024 mm
+  (60.86" x 26.73" x 40.31") replaces an incorrect 750 x 784 x 917 mm set. The plan
+  footprint is drawn at the field's own px/m, so the marker is to scale against the
+  grid, and the engine's 1/r singularity floor follows the true depth.
+- **SPL caption sits at the canvas's left edge** again.
+
+### Fixed
+- **Pan did nothing.** The tool was wired correctly, but the view offset was being
+  clamped straight back to zero on every drag. Panning now moves the view across the
+  field, with no re-solve, so it stays instant and a unit still lands exactly where it
+  is clicked.
+- **Zoom anchored on the field's corner** rather than the middle of the view, so
+  zooming in walked off into empty space instead of magnifying what was on screen.
+
+### Notes
+- An interim build sized the simulated region from the view, making range unbounded.
+  It was reverted before release: every zoom and pan became a re-solve, and it moved
+  both the placement frame and the Rel. SPL normalisation underneath the user.
+  `SimParams` / `SimResult` keep the `worldX0` / `worldY0` fields it introduced (both
+  zero here) so exported coordinates stay explicit.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0.1**.
+- **Windows Release** `Atomik-Windows-v1.4.0.1.exe` (Q21S + UI assets embedded).
 
 ---
 
