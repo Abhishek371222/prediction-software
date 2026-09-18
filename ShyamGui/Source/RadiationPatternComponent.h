@@ -207,6 +207,7 @@ public:
 private:
     void buildImage();
     void fitView();
+    float minZoomForFit() const;   // zoom floor: whole field on screen
     void clampViewToField();
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;

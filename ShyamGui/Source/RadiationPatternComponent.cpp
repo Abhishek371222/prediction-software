@@ -3146,27 +3146,48 @@ void RadiationPatternComponent::fitView()
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
     // ONE px/m for both axes. The world is square and the cabinets have real
-    // dimensions, so the view has to be isotropic for any of that to be true
-    // on screen: a metre across must be a metre up, or grid cells come out
+    // dimensions, so the view must be isotropic for any of that to be true on
+    // screen: a metre across has to be a metre up, or grid cells come out
     // rectangular and every speaker footprint is smeared by the same factor.
     //
-    // Taken from the smaller ratio so the whole field fits. On a non-square
-    // canvas that leaves margins on one axis -- unavoidable, and the honest
-    // cost of drawing a square field to scale. The grid still stops exactly at
-    // the field edge, so everywhere grid is drawn is still placeable.
+    // The LARGER of the two ratios, so the plot is filled edge to edge with no
+    // margins. On a non-square canvas that crops the field on the shorter axis
+    // -- the unavoidable counterpart to keeping both the scale honest and the
+    // canvas full. Nothing is lost: the grid still stops at the field edge so
+    // everywhere grid is drawn stays placeable, and zooming out past this fit
+    // is allowed (see clampViewToField) to bring the whole field into view.
     const float sx = (float) (pb.getWidth()  / ww);
     const float sy = (float) (pb.getHeight() / wh);
-    const float s  = juce::jmin (sx, sy);
+    const float s  = juce::jmax (sx, sy);
     baseScaleX_ = s;
     baseScaleY_ = s;
     zoom_       = 1.0f;
 
+    // Centre the crop, so the middle of the field is what you land on.
     const float worldPxW = (float) ww * s;
     const float worldPxH = (float) wh * s;
     origin_ = { 0.5f * ((float) pb.getWidth()  - worldPxW),
                 0.5f * ((float) pb.getHeight() - worldPxH) };
     viewInit_   = true;
     clampViewToField();
+}
+
+float RadiationPatternComponent::minZoomForFit() const
+{
+    // zoom 1.0 is the fill-the-canvas fit, which crops the field on the
+    // shorter axis. Zooming out past it is allowed so the whole field can be
+    // brought into view, but no further than that -- below this the world
+    // would just shrink into a corner of an empty canvas.
+    const auto pb = plotArea();
+    const double ww = (result_.worldW > 0 ? result_.worldW : params_.worldW);
+    const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return 1.0f;
+
+    const float sx = (float) (pb.getWidth()  / ww);
+    const float sy = (float) (pb.getHeight() / wh);
+    const float coverS = juce::jmax (sx, sy);
+    if (coverS <= 1.0e-6f) return 1.0f;
+    return juce::jmin (1.0f, juce::jmin (sx, sy) / coverS);
 }
 
 void RadiationPatternComponent::clampViewToField()
@@ -3176,8 +3197,8 @@ void RadiationPatternComponent::clampViewToField()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    if (zoom_ < 1.0f)
-        zoom_ = 1.0f;
+    if (zoom_ < minZoomForFit())
+        zoom_ = minZoomForFit();
 
     const float worldPxW = (float) ww * worldScaleX();
     const float worldPxH = (float) wh * worldScaleY();
@@ -3213,7 +3234,7 @@ void RadiationPatternComponent::zoomIn()
     const auto pb = plotArea();
     const float cx = (float) pb.getCentreX();
     const float cy = (float) pb.getCentreY();
-    const float newZoom = juce::jlimit (1.0f, kMaxZoom, zoom_ * 1.2f);
+    const float newZoom = juce::jlimit (minZoomForFit(), kMaxZoom, zoom_ * 1.2f);
     if (std::abs (newZoom - zoom_) < 1e-6f) return;
     auto worldUnder = screenToWorld (cx, cy);
     zoom_ = newZoom;
@@ -3232,7 +3253,7 @@ void RadiationPatternComponent::zoomOut()
     const auto pb = plotArea();
     const float cx = (float) pb.getCentreX();
     const float cy = (float) pb.getCentreY();
-    const float newZoom = juce::jlimit (1.0f, kMaxZoom, zoom_ / 1.2f);
+    const float newZoom = juce::jlimit (minZoomForFit(), kMaxZoom, zoom_ / 1.2f);
     if (std::abs (newZoom - zoom_) < 1e-6f) return;
     auto worldUnder = screenToWorld (cx, cy);
     zoom_ = newZoom;
@@ -5457,7 +5478,7 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
     ensureWorldExtents();
 
     const float factor = (wheel.deltaY > 0 ? 1.1f : 1.0f / 1.1f);
-    const float newZoom = juce::jlimit (1.0f, kMaxZoom, zoom_ * factor);
+    const float newZoom = juce::jlimit (minZoomForFit(), kMaxZoom, zoom_ * factor);
     if (std::abs (newZoom - zoom_) < 1e-6f) return;
 
     auto worldUnder = screenToWorld (e.position.x, e.position.y);
