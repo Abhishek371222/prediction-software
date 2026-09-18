@@ -346,6 +346,21 @@ namespace UiConfig
     // -------------------------------------------------------------------------
     // CONTROL CHROME — sliders, checkboxes (not text size)
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // PLOT GRID — how strongly the metre grid reads over the SPL field.
+    // The light theme's plotGrid token is an opaque mid-grey meant for a pale
+    // canvas; drawn at full strength over the near-black field it overpowered
+    // the data, so both weights are knocked back here. Raise these to make the
+    // grid more prominent, lower them to let the field dominate.
+    // -------------------------------------------------------------------------
+    namespace PlotGrid
+    {
+        constexpr float majorAlpha     = 0.42f;   // every labelled gridline
+        constexpr float minorAlpha     = 0.16f;   // the fine subdivisions
+        constexpr float majorThickness = 1.0f;
+        constexpr float minorThickness = 0.6f;
+    }
+
     namespace Control
     {
         constexpr float sliderTrackThickness = 2.0f;

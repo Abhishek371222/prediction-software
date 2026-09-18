@@ -3490,8 +3490,8 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     const double visY0 = juce::jlimit (yMin, yMax, (double) std::min (tl.y, br.y));
     const double visY1 = juce::jlimit (yMin, yMax, (double) std::max (tl.y, br.y));
 
-    const juce::Colour minorCol = Brand::plotGrid().withMultipliedAlpha (0.45f);
-    const juce::Colour majorCol = Brand::plotGrid();
+    const juce::Colour minorCol = Brand::plotGrid().withMultipliedAlpha (UiConfig::PlotGrid::minorAlpha);
+    const juce::Colour majorCol = Brand::plotGrid().withMultipliedAlpha (UiConfig::PlotGrid::majorAlpha);
     // Axis numbers sit ON the plot surface, so their colour has to follow what
     // is actually behind them rather than the app theme. With a result on
     // screen that surface is the SPL heatmap -- near-black at the dB floor --
@@ -3521,14 +3521,16 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
         auto a = worldToScreen ((float) xm, (float) yMin);
         auto b = worldToScreen ((float) xm, (float) yMax);
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
+        g.drawLine (a.x, a.y, b.x, b.y, major ? UiConfig::PlotGrid::majorThickness
+                                             : UiConfig::PlotGrid::minorThickness);
     };
     auto hline = [&] (double ym, bool major)
     {
         auto a = worldToScreen ((float) xMin, (float) ym);
         auto b = worldToScreen ((float) xMax, (float) ym);
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
+        g.drawLine (a.x, a.y, b.x, b.y, major ? UiConfig::PlotGrid::majorThickness
+                                             : UiConfig::PlotGrid::minorThickness);
     };
 
     forTicks (visX0, visX1, minorStep, [&] (double x) { if (! isMajor (x)) vline (x, false); });

@@ -112,7 +112,7 @@ rows = [
     ["1.4.0.1", "2026-09-18", "No letterboxing + pan + true Q21S size",
      "Fill-the-canvas fit is the zoom floor, so the plot never letterboxes; pan fixed "
      "and middle-drag pans from any tool; Q21S cabinet corrected to 1546 x 679 x 1024 mm "
-     "and drawn to scale; SPL caption back at the canvas edge"],
+     "and drawn to scale; SPL caption back at the canvas edge; lighter grid lines"],
     ["1.4.0", "2026-09-18", "Figma UI cut + square full-bleed grid",
      "New ATOMIK. wordmark, ribbon, sidebar and dashboard built to measured Figma geometry; "
      "Heatmap renamed Gradient Plot; square grid cells ruled edge to edge; contrast-aware axis "
@@ -174,6 +174,10 @@ v1401 = [
     ["Plot", C, "SPL caption back at the canvas edge",
      "Was inset to the field's left edge, left over from a letterboxed view",
      "2026-09-18"],
+    ["Plot", C, "Grid lines lighter over the field",
+     "The light theme's opaque plotGrid overpowered the near-black field: major lines "
+     "100% -> 42% alpha, minor 45% -> 16%. Weights and thicknesses collected in "
+     "UiConfig::PlotGrid", "2026-09-18"],
     ["Plot", F, "Pan did nothing",
      "The view offset was clamped back to zero on every drag. Panning now moves the "
      "view across the field with no re-solve, so it is instant and placement is exact",

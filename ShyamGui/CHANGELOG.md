@@ -43,6 +43,11 @@ fits the field, how you move around it, and the cabinet's real size.
   footprint is drawn at the field's own px/m, so the marker is to scale against the
   grid, and the engine's 1/r singularity floor follows the true depth.
 - **SPL caption sits at the canvas's left edge** again.
+- **Grid lines are lighter over the field.** The light theme's `plotGrid` token is an
+  opaque mid-grey meant for a pale canvas; at full strength over the near-black SPL
+  field it overpowered the data. Major lines drop from 100% to 42% alpha and minor
+  lines from 45% to 16%. Both weights and both thicknesses now live in one place,
+  `UiConfig::PlotGrid`, so the grid's prominence is a single edit.
 
 ### Fixed
 - **Pan did nothing.** The tool was wired correctly, but the view offset was being
