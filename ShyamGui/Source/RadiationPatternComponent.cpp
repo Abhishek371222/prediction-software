@@ -3145,23 +3145,26 @@ void RadiationPatternComponent::fitView()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    // Independent px/m per axis: the field is stretched to fill the plot
-    // exactly, so the visible grid and the simulated world are the SAME area.
+    // ONE px/m for both axes. The world is square and the cabinets have real
+    // dimensions, so the view has to be isotropic for any of that to be true
+    // on screen: a metre across must be a metre up, or grid cells come out
+    // rectangular and every speaker footprint is smeared by the same factor.
     //
-    // That equivalence is the point. A uniform scale keeps grid cells square
-    // but a square field cannot fill a non-square canvas, so something has to
-    // give: either dead margins, or -- as an earlier cut tried -- ruling the
-    // leftover canvas as though it were plot. The latter looked right and was
-    // actively misleading: speaker placement clamps to the world, so every
-    // click out in that extended region snapped back to the field's edge and
-    // units piled up in a line at x = worldW. Grid you can see but cannot use
-    // is worse than a grid with non-square cells.
-    baseScaleX_ = (float) (pb.getWidth()  / ww);
-    baseScaleY_ = (float) (pb.getHeight() / wh);
+    // Taken from the smaller ratio so the whole field fits. On a non-square
+    // canvas that leaves margins on one axis -- unavoidable, and the honest
+    // cost of drawing a square field to scale. The grid still stops exactly at
+    // the field edge, so everywhere grid is drawn is still placeable.
+    const float sx = (float) (pb.getWidth()  / ww);
+    const float sy = (float) (pb.getHeight() / wh);
+    const float s  = juce::jmin (sx, sy);
+    baseScaleX_ = s;
+    baseScaleY_ = s;
     zoom_       = 1.0f;
 
-    // World and viewport coincide, so there is nothing to centre or offset.
-    origin_ = { 0.0f, 0.0f };
+    const float worldPxW = (float) ww * s;
+    const float worldPxH = (float) wh * s;
+    origin_ = { 0.5f * ((float) pb.getWidth()  - worldPxW),
+                0.5f * ((float) pb.getHeight() - worldPxH) };
     viewInit_   = true;
     clampViewToField();
 }
@@ -3181,15 +3184,17 @@ void RadiationPatternComponent::clampViewToField()
     const float viewW = (float) pb.getWidth();
     const float viewH = (float) pb.getHeight();
 
+    // Fitted to contain, the world is smaller than the viewport on one axis.
+    // Centre it there rather than pinning it into a corner.
     if (worldPxW >= viewW)
         origin_.x = juce::jlimit (viewW - worldPxW, 0.0f, origin_.x);
     else
-        origin_.x = 0.0f;
+        origin_.x = 0.5f * (viewW - worldPxW);
 
     if (worldPxH >= viewH)
         origin_.y = juce::jlimit (viewH - worldPxH, 0.0f, origin_.y);
     else
-        origin_.y = 0.0f;
+        origin_.y = 0.5f * (viewH - worldPxH);
 }
 
 void RadiationPatternComponent::resetView()
@@ -3530,9 +3535,17 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // edge stranded the whole vertical axis out in the empty margin, detached
     // from the grid it annotates (and sitting on the page background, where
     // the over-the-heatmap white ink was unreadable).
-    // The grid now rules the whole plot, so the numbers belong on the plot's
-    // own edges again rather than on the field's.
-    const auto axisBox = bounds;
+    // Anchored to the WORLD's edges, not the component's. Fitted to contain,
+    // the field is centred with margins on one axis, and placing numbers at
+    // the component's edge stranded the whole vertical axis out in the empty
+    // margin -- detached from the grid it annotates, and on a pale background
+    // where the over-the-field white ink is unreadable.
+    const auto wtl = worldToScreen (0.0f, wh);      // world top-left on screen
+    const auto wbr = worldToScreen (ww,   0.0f);    // world bottom-right
+    const auto axisBox = bounds.getIntersection (
+        juce::Rectangle<int> (juce::roundToInt (wtl.x), juce::roundToInt (wtl.y),
+                              juce::jmax (1, juce::roundToInt (wbr.x - wtl.x)),
+                              juce::jmax (1, juce::roundToInt (wbr.y - wtl.y))));
 
     // The heatmap runs from a saturated red at 0 dB to near-black at the
     // floor, so a single flat ink colour cannot stay legible across all of it.
@@ -3652,6 +3665,21 @@ void RadiationPatternComponent::drawLayout (juce::Graphics& g, juce::Rectangle<i
     }
 }
 
+juce::Rectangle<int> RadiationPatternComponent::fieldScreenBounds() const
+{
+    const auto pb = plotArea();
+    const double ww = (result_.worldW > 0 ? result_.worldW : params_.worldW);
+    const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
+    if (ww <= 0 || wh <= 0) return pb;
+
+    const auto tl = worldToScreen (0.0f, (float) wh);
+    const auto br = worldToScreen ((float) ww, 0.0f);
+    return pb.getIntersection (
+        juce::Rectangle<int> (juce::roundToInt (tl.x), juce::roundToInt (tl.y),
+                              juce::jmax (1, juce::roundToInt (br.x - tl.x)),
+                              juce::jmax (1, juce::roundToInt (br.y - tl.y))));
+}
+
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const Speaker& spk) const
 {
     // Plan view: depth along X (firing), width along Y.
@@ -3662,22 +3690,19 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const S
 
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
 {
-    // ONE px/m for both sides, so the cabinet keeps its real plan proportions
-    // (917 mm deep x 750 mm wide -- very nearly square) instead of inheriting
-    // the view's anisotropy. The field is stretched to fill the canvas, which
-    // means x and y have different px/m; mapping the footprint's corners
-    // through that stretched transform smeared the cabinet into a wide
-    // rectangle roughly twice its true width-to-depth ratio.
-    //
-    // Position still comes from the stretched transform -- only the glyph's
-    // size is uniform -- so the marker stays exactly on its world coordinate.
-    // Hit-testing shares this rectangle, so clicks match what is drawn.
-    const auto c = worldToScreen (spk.x, spk.y);
-    const float s = juce::jmax (0.01f, worldScale());
-    const float w = Q21SCabinet::depthM * s;
-    const float h = Q21SCabinet::widthM * s;
-    return { c.x - w * 0.5f, c.y - h * 0.5f,
-             juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
+    // Straight through the view transform: with an isotropic view (see
+    // fitView) that renders the cabinet's true 679 x 1024 mm plan footprint at
+    // the same px/m as the field around it, so the marker is to scale rather
+    // than a fixed-size icon. Hit-testing shares this rectangle, so clicks
+    // match what is drawn.
+    const auto wr = speakerFootprintWorld (spk);
+    const auto p0 = worldToScreen (wr.getX(), wr.getY());
+    const auto p1 = worldToScreen (wr.getRight(), wr.getBottom());
+    const float x = juce::jmin (p0.x, p1.x);
+    const float y = juce::jmin (p0.y, p1.y);
+    const float w = std::abs (p1.x - p0.x);
+    const float h = std::abs (p1.y - p0.y);
+    return { x, y, juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
 }
 
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)

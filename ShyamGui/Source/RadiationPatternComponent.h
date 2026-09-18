@@ -199,6 +199,11 @@ public:
     void mouseExit      (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
+    /** The field's rectangle on screen, in this component's coordinates.
+        The view fits to contain, so this is smaller than the component on one
+        axis; callers that draw over the plot need it to stay on the field. */
+    juce::Rectangle<int> fieldScreenBounds() const;
+
 private:
     void buildImage();
     void fitView();

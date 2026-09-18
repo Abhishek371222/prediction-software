@@ -1997,8 +1997,13 @@ void MainComponent::resized()
         // keeps rescaling with the window. Semibold keeps the brand red legible
         // over the dark heatmap (Figma's mock canvas is empty/light).
         caption.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::panelTitle)));
-        caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
-                           juce::jmax (0, centreW - capPadX * 2), capH);
+        // On the field, not the canvas: the view fits to contain, so the canvas
+        // has pale margins where the over-the-field white ink is invisible.
+        const auto fieldRel = patternComp_.fieldScreenBounds();
+        const int capX = plotX + fieldRel.getX() + capPadX;
+        const int capY = bodyTop2 + fieldRel.getY() + capPadY;
+        caption.setBounds (capX, capY,
+                           juce::jmax (0, fieldRel.getWidth() - capPadX * 2), capH);
         caption.toFront (false);
         // PlotHeaderBar::lookAndFeelChanged() re-stamps the label red, so put
         // the contrast-aware colour back on every layout pass.

@@ -42,12 +42,16 @@ built to measured Figma geometry, and the plot draws a square, full-bleed grid.
 ### Changed
 - **Renamed "Heatmap" to "Gradient Plot"** everywhere it is user-visible - canvas
   caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips.
-- **Plot stretches the field to fill the canvas** - the whole 100 x 100 m world is
-  visible edge to edge with no dead margins, and the visible grid is exactly the
-  simulated area, so a unit can be placed anywhere grid is drawn. Cells are rectangles
-  rather than squares on a non-square window: a square field cannot fill a wide canvas
-  at a uniform scale, and ruling the leftover canvas instead produced grid that looked
-  placeable but clamped every click back to the field edge.
+- **Plot is drawn to scale** - one px/m on both axes, so the square 100 x 100 m world
+  renders square and grid cells are square in every window (measured 1.012 and 1.007
+  against an ideal 1.000). The visible grid is still exactly the simulated area, so a
+  unit can be placed anywhere grid is drawn. A square field cannot also fill a
+  non-square canvas, so margins appear on one axis -- the cost of an honest scale.
+- **Q21S cabinet corrected to the real product** - 1546 x 679 x 1024 mm
+  (60.86" x 26.73" x 40.31") replaces an incorrect 750 x 784 x 917 mm set. The plan
+  footprint is now drawn at the field's own px/m rather than as a fixed-size icon, so
+  the marker is genuinely to scale against the SPL grid, and the engine's 1/r
+  singularity floor follows the true depth.
 - **Axis numbers follow the surface behind them** - white with a contrast halo over a
   rendered field, theme ink over the bare grid. Colliding tick labels are now skipped.
 - **Canvas caption ink** - brand red on the empty grid, white once a device is placed.

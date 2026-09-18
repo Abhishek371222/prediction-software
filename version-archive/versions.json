@@ -10,7 +10,7 @@
                 "source": {
                     "available": true,
                     "filename": "v1.4.0/Atomik-Source-v1.4.0.zip",
-                    "size": 6281412
+                    "size": 6282378
                 },
                 "mac": {
                     "available": false
@@ -18,7 +18,7 @@
                 "windows": {
                     "available": true,
                     "filename": "v1.4.0/Atomik-Windows-v1.4.0.exe",
-                    "size": 5617032
+                    "size": 5615496
                 }
             }
         },

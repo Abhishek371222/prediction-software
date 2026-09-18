@@ -18,11 +18,22 @@ struct Speaker
 };
 
 // Q21S product cabinet dimensions (metres). Plan view uses width × depth.
+// Q21S enclosure, manufacturer figures: 1546 x 679 x 1024 mm
+// (60.86" x 26.73" x 40.31"), read in the pro-audio convention Height x
+// Width x Depth. Width 679 mm is a single 21" driver plus baffle either
+// side, and 1024 mm of depth suits the horn loading -- both consistent with
+// that reading. If the source actually lists W x H x D instead, swap widthM
+// and heightM here and nothing else needs touching.
+//
+// These replace an earlier 750 x 784 x 917 mm set that did not match the
+// product. Plan footprint (width x depth) is what the SPL view draws, and
+// halfExtentM feeds the engine's 1/r singularity floor, so both the marker
+// and the near-field level follow from these numbers.
 namespace Q21SCabinet
 {
-    constexpr float widthM  = 0.750f;   // 750 mm — left/right
-    constexpr float heightM = 0.784f;   // 784 mm — vertical
-    constexpr float depthM  = 0.917f;   // 917 mm — front/back (firing axis)
+    constexpr float widthM  = 0.679f;   // 679 mm — left/right, across the baffle
+    constexpr float heightM = 1.546f;   // 1546 mm — vertical
+    constexpr float depthM  = 1.024f;   // 1024 mm — front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
 }
 

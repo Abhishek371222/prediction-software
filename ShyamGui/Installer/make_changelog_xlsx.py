@@ -169,10 +169,14 @@ v140 = [
     ["Naming", C, "Heatmap -> Gradient Plot",
      "Canvas caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips",
      "2026-09-18"],
-    ["Plot", C, "Field stretched to fill the canvas",
-     "Whole 100 x 100 m world visible edge to edge, and the visible grid is exactly "
-     "the simulated area so units place anywhere grid is drawn. Cells are rectangles "
-     "on a non-square window", "2026-09-18"],
+    ["Plot", C, "Drawn to scale (square grid)",
+     "One px/m on both axes so the square 100 x 100 m world renders square and cells "
+     "are square in every window; grid is still exactly the simulated area. Margins "
+     "appear on one axis", "2026-09-18"],
+    ["Speakers", F, "Q21S dimensions corrected",
+     "1546 x 679 x 1024 mm (60.86 x 26.73 x 40.31 in) replaces an incorrect "
+     "750 x 784 x 917 mm set; footprint drawn at the field's px/m, so the marker is "
+     "to scale and the 1/r floor follows the true depth", "2026-09-18"],
     ["Plot", C, "Contrast-aware axis numbers",
      "White with a halo over a rendered field, theme ink over the bare grid; colliding "
      "tick labels are skipped", "2026-09-18"],
