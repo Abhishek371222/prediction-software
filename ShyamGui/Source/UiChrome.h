@@ -1,11 +1,11 @@
-#pragma once
+﻿#pragma once
 #include <JuceHeader.h>
 #include "BrandTheme.h"
 #include <functional>
 #include <utility>
 
 // ---------------------------------------------------------------------------
-// SectionHeader — collapsible sidebar section title with chevron.
+// SectionHeader â€” collapsible sidebar section title with chevron.
 // ---------------------------------------------------------------------------
 class SectionHeader : public juce::Component
 {
@@ -65,7 +65,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// ParamBar — plain-text simulation readouts (top bar, no chip boxes).
+// ParamBar â€” plain-text simulation readouts (top bar, no chip boxes).
 // ---------------------------------------------------------------------------
 class ParamBar : public juce::Component
 {
@@ -102,7 +102,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// PlotHeaderBar — workspace title + navigation toolbar.
+// PlotHeaderBar â€” workspace title + navigation toolbar.
 // ---------------------------------------------------------------------------
 class PlotHeaderBar : public juce::Component
 {
@@ -178,13 +178,13 @@ public:
         styleToolFile (btnEraser_,  "Eraser.svg",       "Eraser: scrub to remove drawings", true);
         styleToolFile (btnRuler_,   "Ruler.svg",        "Ruler: click two points to measure distance", true);
         styleTool (btnShape_,   kShapeSVG,   "Shape: Line, Polyline, Circle, Arc, Rectangle, Square, or Text Box", true);
-        styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the heatmap", false);
+        styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the gradient plot", false);
         styleToolFile (btnZoomIn_,  "Zoom In.svg",  "Zoom in");
         styleToolFile (btnZoomOut_, "Zoom Out.svg", "Zoom out");
 
         btnSelect_.setToggleState (true, juce::dontSendNotification);
 
-        // File cluster — Figma-exported PNGs, on a light chip so the (dark-ink)
+        // File cluster â€” Figma-exported PNGs, on a light chip so the (dark-ink)
         // icons stay visible on both themes' ribbon fill. Swap for in-house
         // vector icons later; wiring is real (Project menu actions) now.
         auto styleFileIcon = [&] (juce::DrawableButton& b, const juce::String& pngName,
@@ -209,7 +209,7 @@ public:
         styleFileIcon (btnFileNew_,    "figma_icon_file_add_new.png",     "New Project", &onFileNew);
         styleFileIcon (btnFileOpen_,   "figma_icon_file_open_folder.png", "Open Project", &onFileOpen);
         styleFileIcon (btnFileSave_,   "figma_icon_file_save.png",        "Save Project (Ctrl+S)", &onFileSave);
-        styleFileIcon (btnFileSaveAs_, "figma_icon_file_save_as.png",     "Save Project As…", &onFileSaveAs);
+        styleFileIcon (btnFileSaveAs_, "figma_icon_file_save_as.png",     "Save Project As...", &onFileSaveAs);
         styleFileIcon (btnFileExport_, "figma_icon_file_export_pdf.png",  "Export PDF Report", &onFileExport);
 
         auto styleClusterLabel = [&] (juce::Label& l, const juce::String& text)
@@ -295,7 +295,7 @@ public:
                       + " steps and to nearby edges/corners "
                         "(other shapes, mics, speakers). Turn on before drawing or moving.");
         styleMod (btnSplProbe_,
-                  "SPL: show dB SPL under the cursor on the heatmap "
+                  "SPL: show dB SPL under the cursor on the gradient plot "
                   "(Select tool). Turn off for a cleaner view.");
         btnSplProbe_.setToggleState (false, juce::dontSendNotification);
 
@@ -335,7 +335,7 @@ public:
             [] (double metres) { return juce::String (Units::metresToDisplay (metres), 1); };
         orthoGapSlider_.valueFromTextFunction =
             [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
-        orthoGapSlider_.setTooltip ("Linked centre-to-centre spacing — changing it updates all gaps");
+        orthoGapSlider_.setTooltip ("Linked centre-to-centre spacing â€” changing it updates all gaps");
         orthoGapSlider_.setColour (juce::Slider::trackColourId, Brand::border());
         orthoGapSlider_.setColour (juce::Slider::thumbColourId, Brand::accent());
         orthoGapSlider_.setColour (juce::Slider::backgroundColourId, Brand::plotToolbar());
@@ -522,7 +522,7 @@ public:
         addShape ("Arc",       3, { { "3 Points", 6 } });
         addShape ("Rectangle", 4, { { "2 Corners", 7 } });
         addShape ("Square",    5, { { "2 Corners", 8 } });
-        // Text Box: one click — no construction submenu.
+        // Text Box: one click â€” no construction submenu.
         root.addItem (1000 + 6 * 100 + 9, "Text Box");
 
         root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnShape_),
@@ -541,8 +541,8 @@ public:
                            armed ? Brand::accent().withAlpha (0.45f)
                                  : Brand::accent().withAlpha (0.28f));
         btnMic_.setTooltip (armed
-            ? "Mic: placement armed — click the field to place (Esc cancels)"
-            : "Mic: add virtual receivers on the heatmap");
+            ? "Mic: placement armed â€” click the field to place (Esc cancels)"
+            : "Mic: add virtual receivers on the gradient plot");
         btnMic_.repaint();
     }
 
@@ -571,12 +571,36 @@ public:
     juce::DrawableButton btnMic_    { "mic", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
+    /** Master switch for the "Options" cluster (Snap / Ortho) that sits after
+        Help in the ribbon. The Figma mock has no slot for it, so it is laid
+        out but not shown: flip this to true and the cluster appears in its
+        proper place, captioned and divided like every other cluster. All the
+        behaviour behind it stays live either way -- Ctrl+F, the SNAP / ORTHO
+        terminal verbs and MainComponent's handlers drive the same buttons. */
+    static constexpr bool kShowOptionsCluster = false;
+
+    /** Re-applies the ribbon's edge indent to the adopted Help glyphs.
+        MainComponent::refreshHeaderIcons() restyles them from scratch and
+        stamps the header's own inset back on, which leaves them visibly
+        smaller than every other glyph in the row. resized() normally corrects
+        that, but JUCE only calls it when the bounds actually change -- and a
+        units or theme switch changes neither -- so the shrunken icons stuck.
+        Call this whenever those buttons are restyled. */
+    void refreshHelpIconMetrics()
+    {
+        for (auto* hc : helpIcons_)
+            if (auto* hb = dynamic_cast<juce::DrawableButton*> (hc))
+                hb->setEdgeIndent (0);
+    }
+
     void setOrthoExtrasVisible (bool on)
     {
-        btnOrthoHoriz_.setVisible (on);
-        btnOrthoVert_.setVisible (on);
-        orthoGapLabel_.setVisible (on);
-        orthoGapSlider_.setVisible (on);
+        // H / V / Gap only ever show alongside the cluster they belong to.
+        const bool show = on && kShowOptionsCluster;
+        btnOrthoHoriz_.setVisible (show);
+        btnOrthoVert_.setVisible (show);
+        orthoGapLabel_.setVisible (show);
+        orthoGapSlider_.setVisible (show);
         resized();
     }
 
@@ -617,7 +641,7 @@ public:
     juce::Label          promptLabel_;
     juce::TextButton     colourSwatch_;
     juce::Label          alphaLabel_;
-    juce::Label          alphaValueLabel_;   // "52%" — top-right of the Opacity slot
+    juce::Label          alphaValueLabel_;   // "52%" â€” top-right of the Opacity slot
     juce::Slider         fillAlpha_;
     void syncAlphaReadout()
     {
@@ -627,7 +651,7 @@ public:
     juce::TextButton     fitBtn_;
     juce::TextButton     rangeBtn_;
 
-    // Figma redesign: File cluster (New/Open/Save/Save As/Export) — no existing
+    // Figma redesign: File cluster (New/Open/Save/Save As/Export) â€” no existing
     // in-app icons for these, so reuse the Figma-exported PNGs as-is for now.
     juce::DrawableButton btnFileNew_    { "fnew",    juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnFileOpen_   { "fopen",   juce::DrawableButton::ImageFitted };
@@ -687,13 +711,14 @@ public:
 
     // Help cluster icons are owned by MainComponent (existing Info/Settings/
     // Help badge buttons, reparented here) but laid out as a proper labeled
-    // cluster like every other group — set once via setHelpIcons().
+    // cluster like every other group â€” set once via setHelpIcons().
     juce::Component* helpIcons_[3] = { nullptr, nullptr, nullptr };
 
-    // "Ready" pill (also owned by MainComponent, reparented) — sits at the
+    // "Ready" pill (also owned by MainComponent, reparented) â€” sits at the
     // far right of this same ribbon row, exactly matching the Figma mock
     // (it is NOT in the title row above).
     juce::Component* readyPill_ = nullptr;
+    std::function<int()> readyPillWidth_;
 
 public:
     /** Left-to-right, in the Figma mock's order: settings gear, info, help. */
@@ -703,16 +728,21 @@ public:
         for (auto* c : helpIcons_) addAndMakeVisible (*c);
         resized();
     }
-    void setReadyPill (juce::Component& pill)
+    void setReadyPill (juce::Component& pill, std::function<int()> preferredWidth = {})
     {
         readyPill_ = &pill;
+        readyPillWidth_ = std::move (preferredWidth);
         addAndMakeVisible (pill);
         resized();
     }
 
+    /** Re-lays the ribbon after the status text changes, so the pill can
+        resize to fit it. */
+    void refreshStatusLayout() { resized(); }
+
     /** The red "SPL Heatmap | ... " caption. In the Figma design this sits at
         the canvas's top-left, NOT in the ribbon, so MainComponent reparents it
-        and positions it over the plot — setTitle() keeps working either way. */
+        and positions it over the plot â€” setTitle() keeps working either way. */
     juce::Label& getTitleLabel() noexcept { return title_; }
 private:
 
@@ -743,15 +773,12 @@ private:
         namespace L = UiConfig::Layout;
 
         // Anything the Figma ribbon has no slot for is hidden (code/logic
-        // untouched — flip setVisible back on to restore). The red
+        // untouched â€” flip setVisible back on to restore). The red
         // "SPL Heatmap | ..." caption belongs on the canvas, not here, so
         // MainComponent reparents title_ via getTitleLabel().
-        for (juce::Component* c : { (juce::Component*) &btnSnap_, (juce::Component*) &btnSplProbe_,
-                                     (juce::Component*) &btnOrtho_, (juce::Component*) &btnOrthoHoriz_,
-                                     (juce::Component*) &btnOrthoVert_, (juce::Component*) &orthoGapLabel_,
-                                     (juce::Component*) &orthoGapSlider_,
+        for (juce::Component* c : { (juce::Component*) &btnSplProbe_,
                                      (juce::Component*) &rangeBtn_,
-                                     (juce::Component*) &btnMic_, (juce::Component*) &lblOptions_,
+                                     (juce::Component*) &btnMic_,
                                      // superseded by their Figma-shaped equivalents
                                      (juce::Component*) &btnShape_,      // -> 6 shape icons
                                      (juce::Component*) &fitBtn_,        // -> btnFitView_ icon
@@ -779,7 +806,7 @@ private:
 
         // Every cluster's icon-start x and its closing divider come straight
         // from the Figma mock (px / 1.317), so the row is exact by construction
-        // rather than by accumulating pads — flow layout drifted further right
+        // rather than by accumulating pads â€” flow layout drifted further right
         // with each cluster. `shrink` scales the whole row down together when
         // the window is narrower than the design.
         struct Cluster { int iconX, dividerX; };
@@ -791,10 +818,17 @@ private:
         static constexpr Cluster kShapes  { 434, 578 };   //       478 / 668
         static constexpr Cluster kColours { 583, 643 };   //       675 / 754
         static constexpr Cluster kHelp    { 646, 714 };   //       758 / 847
+        // Options (Snap / Ortho) continues the row past Help on the same
+        // rhythm the mock uses elsewhere: 14 units of air after the preceding
+        // divider, then the controls, then 14 more before the next rule.
+        static constexpr Cluster kOptions { 728, 852 };
+        static constexpr int kOptionPillW = 50;           // "Snap" / "Ortho" pills
+        static constexpr int kOptionPillGap = 6;
         static constexpr int kPlateLeft = 15;             // Figma  20
         static constexpr int kPitch     = 23;             // Figma  30 icon pitch
 
-        const int designW = UiConfig::Scale::px (kHelp.dividerX + L::ribbonReadyRightPad + 100);
+        const int lastDividerX = kShowOptionsCluster ? kOptions.dividerX : kHelp.dividerX;
+        const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
         auto px2 = [&] (int v) { return juce::jmax (1, juce::roundToInt ((float) UiConfig::Scale::px (v) * shrink)); };
@@ -808,7 +842,7 @@ private:
         const int swatch     = juce::jmax (6, px2 (L::ribbonSwatch));
         const int pitchX     = juce::jmax (swatch + 1, px2 (L::ribbonSwatchPitchX));
         const int pitchY     = juce::jmax (swatch + 1, px2 (L::ribbonSwatchPitchY));
-        // Figma's glyphs are 24x24 in a 24px slot — no inset, so the artwork
+        // Figma's glyphs are 24x24 in a 24px slot â€” no inset, so the artwork
         // fills the button rather than sitting in a shrunken well.
         const int edgeIndent = 0;
 
@@ -834,12 +868,12 @@ private:
         {
             const auto capFont = Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel));
             for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_,
-                             &lblShapes_, &lblColours_, &lblHelp_ })
+                             &lblShapes_, &lblColours_, &lblHelp_, &lblOptions_ })
                 l->setFont (capFont);
         }
 
         // Lays a cluster's icons on the Figma pitch from its own start x, then
-        // centres the caption on the plate between the surrounding dividers —
+        // centres the caption on the plate between the surrounding dividers â€”
         // which is how the mock aligns them (e.g. "Navigation" is centred on
         // 182..272, not on its two icons).
         int plateLeft = px2 (kPlateLeft);
@@ -865,7 +899,7 @@ private:
         cluster (kTools, lblTools_, { &btnPencil_, &btnEraser_, &btnRuler_ });
 
         // Opacity: caption + percentage on one line, track beneath. It has no
-        // caption in the bottom label row — its own label sits up top instead.
+        // caption in the bottom label row â€” its own label sits up top instead.
         {
             const int x0 = px2 (kOpacity.iconX);
             const int w  = px2 (kOpacity.dividerX - 6) - x0;
@@ -881,7 +915,7 @@ private:
 
         // Line | Polyline | Arc | Circle | Rectangle | Text box, in the mock's
         // order. The fill-colour preview swatch that used to sit before the
-        // text box is gone — see the hidden-controls list above.
+        // text box is gone â€” see the hidden-controls list above.
         cluster (kShapes, lblShapes_,
                  { &btnShapeLine_, &btnShapePolyline_, &btnShapeArc_,
                    &btnShapeCircle_, &btnShapeRect_, &btnShapeText_ });
@@ -904,13 +938,73 @@ private:
         if (helpPresent)
             cluster (kHelp, lblHelp_, { helpIcons_[0], helpIcons_[1], helpIcons_[2] });
 
-        // "Ready" pill — far right of this same ribbon row (Figma puts it
+        // Options: Snap and Ortho, plus Ortho's H / V / Gap extras once it is
+        // on. These are text pills rather than glyphs, so they get their own
+        // widths instead of riding the icon pitch.
+        if (kShowOptionsCluster)
+        {
+            const int pillW = juce::jmax (24, px2 (kOptionPillW));
+            const int pillGap = juce::jmax (2, px2 (kOptionPillGap));
+            int x = px2 (kOptions.iconX);
+
+            btnSnap_.setBounds  (x, iconTop, pillW, tool); x += pillW + pillGap;
+            btnOrtho_.setBounds (x, iconTop, pillW, tool); x += pillW + pillGap;
+
+            // H / V / Gap sit on the caption row beneath the two pills so the
+            // cluster keeps its width when Ortho is switched on.
+            if (btnOrthoHoriz_.isVisible())
+            {
+                const int sq = juce::jmax (10, labelH);
+                int ex = px2 (kOptions.iconX);
+                btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
+                btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
+                const int gapLblW = juce::jmax (10, px2 (18));
+                orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
+                orthoGapSlider_.setBounds (ex, labelTop,
+                                           juce::jmax (20, px2 (kOptions.dividerX) - pillGap - ex), sq);
+                lblOptions_.setBounds (0, 0, 0, 0);
+            }
+            else
+            {
+                const int plateRight = px2 (kOptions.dividerX);
+                lblOptions_.setBounds (plateLeft, labelTop,
+                                       juce::jmax (10, plateRight - plateLeft), labelH);
+            }
+
+            const int plateRight = px2 (kOptions.dividerX);
+            dividerX_.push_back (plateRight);
+            plateLeft = plateRight;
+        }
+        else
+        {
+            // Hidden, never removed: the Figma ribbon has no Options slot, but
+            // Snap / Ortho stay fully functional through the keyboard and the
+            // terminal (see kShowOptionsCluster).
+            for (juce::Component* c : { (juce::Component*) &btnSnap_,  (juce::Component*) &btnOrtho_,
+                                        (juce::Component*) &btnOrthoHoriz_, (juce::Component*) &btnOrthoVert_,
+                                        (juce::Component*) &orthoGapLabel_, (juce::Component*) &orthoGapSlider_,
+                                        (juce::Component*) &lblOptions_ })
+            {
+                c->setVisible (false);
+                c->setBounds (0, 0, 0, 0);
+            }
+        }
+
+        // "Ready" pill â€” far right of this same ribbon row (Figma puts it
         // here, not in the title row above).
         if (readyPill_ != nullptr)
         {
-            const int readyW = px2 (100);
+            // Grow to fit longer status text, but never past the clusters.
+            int readyW = px2 (100);
+            if (readyPillWidth_)
+                readyW = juce::jmax (readyW, readyPillWidth_());
+            const int maxW = juce::jmax (px2 (60), getWidth() - fullReadyPad - plateLeft - px2 (12));
+            readyW = juce::jmin (readyW, maxW);
+            // Vertically centred in the row, which is also where Figma puts it
+            // (y=87 inside the 58..132 band). Sharing the icons' top edge left
+            // it riding high with the whole caption row empty beneath it.
             readyPill_->setBounds (juce::jmax (plateLeft, getWidth() - fullReadyPad - readyW),
-                                   iconTop, readyW, tool);
+                                   juce::jmax (0, (getHeight() - tool) / 2), readyW, tool);
         }
 
         // Draw prompts share the caption row, to the right of the clusters.
@@ -1000,14 +1094,14 @@ private:
     juce::Colour drawColour_ { 0xffffcc00 };
 
     // Pan / Pencil / Eraser / Ruler / Zoom / Full-screen ship as reference art
-    // in the project's /Icons folder (flat pre-coloured glyphs) — load them
+    // in the project's /Icons folder (flat pre-coloured glyphs) â€” load them
     // from disk rather than hand-drawing equivalents inline.
     /** Loads a toolbar glyph by base name, preferring the bitmap.
 
         Figma exports these icons as an SVG whose only content is a <pattern>
         fill referencing an embedded base64 PNG. JUCE's SVG parser doesn't
         implement pattern-with-image fills, so createFromSVG returns a shape
-        with no drawable content and the button renders as a solid block —
+        with no drawable content and the button renders as a solid block â€”
         which is what the whole View/Tools/Navigation row was doing. The real
         bitmaps are extracted alongside as .png, so try those first and only
         fall back to SVG for genuine vector art.
@@ -1066,12 +1160,12 @@ namespace ViewIcons
     static constexpr const char* kPhase = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" d="M2 12c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-7 5-7"/></svg>)SVG";
 }
 
-// Header icons — filled charcoal glyphs matching mockup Stats row.
+// Header icons â€” filled charcoal glyphs matching mockup Stats row.
 namespace HeaderIcons
 {
     // Filled badge: disk = #fff (recolour to charcoal), mark = #000 (recolour to white)
     static constexpr const char* kHelp = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path fill="#000" d="M10.2 8.6c.35-1.15 1.3-1.9 2.7-1.9 1.55 0 2.65.95 2.65 2.35 0 .95-.45 1.55-1.35 2.15-.85.55-1.15.95-1.15 1.7v.45h-1.55v-.55c0-1.15.4-1.7 1.3-2.3.7-.45 1-0.85 1-1.4 0-.7-.55-1.15-1.35-1.15-.8 0-1.35.45-1.55 1.2l-1.7-.4zm1.95 7.55c.65 0 1.15-.5 1.15-1.15s-.5-1.15-1.15-1.15-1.15.5-1.15 1.15.5 1.15 1.15 1.15z"/></svg>)SVG";
-    // Filled badge with lowercase “i” (info / keyboard shortcuts).
+    // Filled badge with lowercase â€œiâ€ (info / keyboard shortcuts).
     static constexpr const char* kInfo = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path fill="#000" d="M11.1 10.2h1.8v7.1h-1.8zm0-3.9h1.8V8h-1.8z"/></svg>)SVG";
     static constexpr const char* kGear = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.63-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 00-.6.22L2.77 8.84a.5.5 0 00.12.64l2.03 1.58c-.04.31-.07.63-.07.94s.03.63.07.94L2.89 14.5a.5.5 0 00-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>)SVG";
     static constexpr const char* kMenu = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2" fill="#fff"/><circle cx="12" cy="12" r="2" fill="#fff"/><circle cx="12" cy="19" r="2" fill="#fff"/></svg>)SVG";
@@ -1080,7 +1174,7 @@ namespace HeaderIcons
 }
 
 // ---------------------------------------------------------------------------
-// ViewTileButton — icon + caption tile for view mode switching.
+// ViewTileButton â€” icon + caption tile for view mode switching.
 // ---------------------------------------------------------------------------
 class ViewTileButton : public juce::Button
 {
@@ -1147,7 +1241,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// StatusStrip — STATUS | Ready + last run + elapsed.
+// StatusStrip â€” STATUS | Ready + last run + elapsed.
 // ---------------------------------------------------------------------------
 class StatusStrip : public juce::Component
 {
@@ -1160,12 +1254,24 @@ public:
     void setElapsed (const juce::String& t) { elapsed_ = t; repaint(); }
 
     /** Which of the Figma design's status surfaces this instance draws.
-        Full  — the legacy full-width strip (no longer used by the Figma layout).
-        Pill  — dot + state only, the ribbon's top-right "Ready" pill.
-        RunInfo — "Last run : …" / "Elapsed : …" stacked on two lines, the
+        Full  â€” the legacy full-width strip (no longer used by the Figma layout).
+        Pill  â€” dot + state only, the ribbon's top-right "Ready" pill.
+        RunInfo â€” "Last run : â€¦" / "Elapsed : â€¦" stacked on two lines, the
                   bottom strip's left side. */
     enum class Mode { Full, Pill, RunInfo };
     void setMode (Mode m) { mode_ = m; repaint(); }
+
+    /** Width the Pill needs for its current text. Status messages are far
+        longer than "Ready" ("Project saved: ...", "Could not open: ..."), and
+        since the full-width status strip is gone this pill is the only place
+        they surface â€” so the ribbon sizes it to fit instead of ellipsizing. */
+    int preferredPillWidth() const
+    {
+        const auto font = Brand::techMed (Brand::UI::scaledFont (Brand::Type::status));
+        const float dotR = 3.5f * Brand::UI::scale;
+        return (int) (dotR * 2.0f) + UiConfig::Scale::px (6)
+             + juce::roundToInt (font.getStringWidthFloat (state_)) + UiConfig::Scale::px (4);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1177,7 +1283,7 @@ public:
         if (mode_ == Mode::Pill)
         {
             // Figma redesign: header "Ready" pill's dot is always the brand
-            // red accent (not green/success) — matches the mock exactly.
+            // red accent (not green/success) â€” matches the mock exactly.
             g.setColour (ready_ ? Brand::accent() : Brand::warning());
             g.fillEllipse (0.0f, cy - dotR, dotR * 2.0f, dotR * 2.0f);
             const int stateX = (int) (dotR * 2.0f) + UiConfig::Scale::px (6);
@@ -1217,13 +1323,13 @@ public:
                     juce::Rectangle<int> (stateX, 0, third - stateX, getHeight()),
                     juce::Justification::centredLeft, true);
 
-        // Centre: last run — evenly distributed across the middle third.
+        // Centre: last run â€” evenly distributed across the middle third.
         g.setColour (Brand::text().withAlpha (0.78f));
         g.drawText (lastRun_,
                     getLocalBounds().withTrimmedLeft (third).withTrimmedRight (third),
                     juce::Justification::centred, true);
 
-        // Right: elapsed — same padding from the right edge as the left.
+        // Right: elapsed â€” same padding from the right edge as the left.
         g.drawText (elapsed_,
                     getLocalBounds().withTrimmedLeft (2 * third).withTrimmedRight (edgePad),
                     juce::Justification::centredRight, true);

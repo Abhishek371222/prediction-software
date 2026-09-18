@@ -30,7 +30,7 @@ namespace ReportExport
                                            const ProjectData& proj,
                                            const SimParams&   p,
                                            const SimResult&   r,
-                                           const juce::String& reportTitle = "SPL Heatmap")
+                                           const juce::String& reportTitle = "SPL Gradient Plot")
     {
         const juce::Colour ink     (0xff20242a);
         const juce::Colour subInk  (0xff5b6068);
@@ -173,7 +173,7 @@ namespace ReportExport
 
         g.setColour (juce::Colours::white.withAlpha (0.80f));
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.3.8",
+        g.drawText ("Generated  " + liveStamp() + "    v1.4.0",
                     footer.getRight() - 620, y + 72, 600, 18, juce::Justification::centredRight);
 
         return img;

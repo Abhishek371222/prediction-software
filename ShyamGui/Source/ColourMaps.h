@@ -10,25 +10,24 @@
 namespace ColourMaps
 {
 
-// Atomik Rel. SPL legend (mockup + Graph colors.pdf).
-// Legend top→bottom = 0 db → -36 db:
-//   #530000 → #B21619 → #ED2227 → (magenta bridge) → #3281B9 → #0A4D74 → #231F20
-// t = 1 → peak / 0 db (top of bar); t = 0 → floor / -36 db (bottom).
+// Atomik Rel. SPL legend gradient, straight off the Figma colour picker.
+// Legend top->bottom = 0 db -> -36 db, 7 evenly spaced stops:
+//   #E60001 -> #C43135 -> #856A9C -> #3281B9 -> #0A599C -> #003A6C -> #151515
+// t = 1 -> peak / 0 db (top of bar); t = 0 -> floor / -36 db (bottom).
 inline juce::Colour sevenColor (float t)
 {
     // Positions are distance from the TOP of the Rel. SPL bar (0 = 0 db).
     static const float stops[][4] = {
-        { 0.00f, 0.325f, 0.000f, 0.000f },  // #530000  0 db
-        { 0.17f, 0.698f, 0.086f, 0.098f },  // #B21619
-        { 0.36f, 0.929f, 0.133f, 0.153f },  // #ED2227
-        { 0.50f, 0.651f, 0.275f, 0.369f },  // #A6465E  red→blue bridge
-        { 0.58f, 0.498f, 0.349f, 0.486f },  // #7F597C
-        { 0.68f, 0.196f, 0.506f, 0.725f },  // #3281B9
-        { 0.84f, 0.039f, 0.302f, 0.455f },  // #0A4D74
-        { 1.00f, 0.137f, 0.122f, 0.125f }   // #231F20 -36 db
+        { 0.00f, 0.902f, 0.000f, 0.004f },  // #E60001  0 db
+        { 0.17f, 0.769f, 0.192f, 0.208f },  // #C43135
+        { 0.33f, 0.522f, 0.416f, 0.612f },  // #856A9C
+        { 0.50f, 0.196f, 0.506f, 0.725f },  // #3281B9
+        { 0.67f, 0.039f, 0.349f, 0.612f },  // #0A599C
+        { 0.83f, 0.000f, 0.227f, 0.424f },  // #003A6C
+        { 1.00f, 0.082f, 0.082f, 0.082f }  // #151515  -36 db
     };
-    const float u = 1.0f - juce::jlimit (0.0f, 1.0f, t); // peak → top of legend
-    constexpr int n = 7;
+    const float u = 1.0f - juce::jlimit (0.0f, 1.0f, t); // peak -> top of legend
+    constexpr int n = 6;   // segments = stops - 1
     int i = 0;
     while (i < n && u > stops[i + 1][0]) ++i;
     const float span = stops[i + 1][0] - stops[i][0];
@@ -100,23 +99,10 @@ inline juce::Colour gray (float t)
 }
 
 // ---------------------------------------------------------------------------
-// Discrete bands matching Rel. SPL mockup ticks (0 → −36 db, 6 db steps).
 // dB floor is display range only — it does NOT stretch colours. A level of
-// −6 dB is always the same palette stop whether floor is −36 or −54.
+// -6 dB is always the same colour whether the floor is -36 or -54; the floor
+// just clips everything below it to the bottom of the scale.
 // ---------------------------------------------------------------------------
-inline const juce::Colour* splPalette()
-{
-    static const juce::Colour bands[7] = {
-        juce::Colour (0xff530000),  //  0 db
-        juce::Colour (0xffb21619),  // -6 db
-        juce::Colour (0xffed2227),  // -12 db
-        juce::Colour (0xff7f597c),  // -18 db  magenta bridge
-        juce::Colour (0xff3281b9),  // -24 db
-        juce::Colour (0xff0a4d74),  // -30 db
-        juce::Colour (0xff231f20)   // -36 db (and quieter / below floor)
-    };
-    return bands;
-}
 
 // Design span of sevenColor / palette (0 … −36 dB).
 inline constexpr float kRelSplDesignSpanDB = 36.0f;
@@ -132,18 +118,22 @@ inline float relDbToColourT (float dB, float floorDB) noexcept
 
 // Hard-banded colour for a relative SPL value in dB (<= 0).
 // Fixed step size (6 dB default, or 3 dB contour bands). Floor clips only.
+// Contour mode quantises the SAME gradient the legend draws, rather than
+// indexing the 7-entry palette. Indexing only lined up when the step was 6 dB
+// (7 entries x 6 dB = the 0..-36 span); at the UI's 3 dB step it ran out of
+// entries by -18 dB and flattened everything quieter than that to black.
 inline juce::Colour splBand (float dB, float stepDB = 6.0f)
 {
     if (stepDB < 0.5f) stepDB = 0.5f;
-    int idx = (int) std::floor ((-dB) / stepDB + 1.0e-4f);
-    idx = juce::jlimit (0, 6, idx);
-    return splPalette()[idx];
+    const float bandTopDB = -std::floor ((-dB) / stepDB + 1.0e-4f) * stepDB;
+    // floorDB = 0 so nothing is clipped here; the caller applies the dB floor.
+    return sevenColor (relDbToColourT (bandTopDB, 0.0f));
 }
 
 inline juce::Colour splBandForFloor (float dB, float floorDB, float stepDB = 6.0f)
 {
     if (floorDB < 0.0f && dB <= floorDB)
-        return splPalette()[6];
+        return sevenColor (0.0f);   // bottom of the gradient
     return splBand (dB, stepDB);
 }
 

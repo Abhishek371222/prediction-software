@@ -5,17 +5,16 @@
 #include "ProjectData.h"
 
 // ---------------------------------------------------------------------------
-// DashboardComponent - the project launcher shown at startup. Lets the user
-// create a new project (collecting full metadata), open an existing .atmk
-// project, or pick from recent projects. When a project is ready it fires
-// onProjectReady, and the app swaps in the main simulation window.
+// DashboardComponent — the launch screen ("Home Screen" in the Figma file).
+// Two views inside one centred card: a menu (New / Open / Recent) and the
+// new-project details form.
 // ---------------------------------------------------------------------------
 class DashboardComponent : public juce::Component
 {
 public:
     DashboardComponent();
 
-    std::function<void(ProjectData)> onProjectReady;
+    std::function<void (ProjectData)> onProjectReady;
 
     void paint   (juce::Graphics&) override;
     void resized () override;
@@ -32,6 +31,11 @@ private:
     void openProjectFile (const juce::File&);
     void applyColours();
 
+    /** The card is a fixed design footprint, centred in whatever window size
+        we're given; everything inside is laid out against it. */
+    juce::Rectangle<int> cardBounds() const;
+    float cardScale() const;
+
     struct Field
     {
         juce::Label      label;
@@ -47,13 +51,11 @@ private:
 
     std::unique_ptr<juce::Drawable> logo_;
 
-    // Menu view
-    juce::Label      title_, subtitle_, recentHdr_, noRecent_;
+    juce::Label      title_, footer_;
     juce::TextButton newBtn_, openBtn_;
-    juce::OwnedArray<juce::TextButton> recentBtns_;
+    juce::ComboBox   recentBox_;
+    juce::Array<juce::File> recentFiles_;
 
-    // New-project form view
-    juce::Label      formTitle_;
     juce::OwnedArray<Field> fields_;
     juce::TextButton createBtn_, cancelBtn_;
 

@@ -126,7 +126,7 @@ namespace ReportBuilder
         pdf.drawImage (logoTile (430, 70, Brand::white(), Brand::charcoal()),
                        M, 40, 215, 52);
         pdf.textRight (W - M, 64, 13, softwareName.toUpperCase(), juce::Colour (0xffd7d9de), false);
-        pdf.textRight (W - M, 84, 10, "v1.3.8  -  Q21S Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
+        pdf.textRight (W - M, 84, 10, "v1.4.0  -  Q21S Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
 
         pdf.text (M, 300, 14, "ACOUSTIC SIMULATION REPORT", Brand::accent(), true);
         pdf.text (M, 322, 36, S (meta.projectName), ink, true);
@@ -246,9 +246,9 @@ namespace ReportBuilder
             yy = y;
             kv (x1, yy, colW, "Coverage within 6 dB", juce::String (cov6, 1) + " %"); yy += rh;
             if (in.result.hasAbsoluteSpl)
-                kv (x1, yy, colW, "Peak SPL (heatmap 0 dB)", juce::String (in.result.peakAbsDb, 1) + " dB SPL");
+                kv (x1, yy, colW, "Peak SPL (gradient plot 0 dB)", juce::String (in.result.peakAbsDb, 1) + " dB SPL");
             else
-                kv (x1, yy, colW, "Peak SPL (heatmap 0 dB)", "0 dB (relative)");
+                kv (x1, yy, colW, "Peak SPL (gradient plot 0 dB)", "0 dB (relative)");
             yy += rh;
             kv (x1, yy, colW, "Directivity model",    in.result.usedMeasuredDirectivity ? "Measured" : "Model"); yy += rh;
             kv (x1, yy, colW, "Display dynamic range", juce::String ((int) -in.params.dBfloor) + " dB"); yy += rh;
@@ -258,7 +258,7 @@ namespace ReportBuilder
             ny = sectionTitle (ny, "3.1  Overview");
             pdf.textWrapped (M, ny, cw, 12.0,
                 "The table above summarises predicted SPL coverage for the current array. "
-                "Peak SPL is the absolute level at the heatmap's Rel. SPL = 0 dB cell "
+                "Peak SPL is the absolute level at the gradient plot's Rel. SPL = 0 dB cell "
                 "(loudest point on the map). Coverage is the share of the field within "
                 "3 dB / 6 dB of that peak, using the selected measurement distance and "
                 "frequency-dependent directivity.", sub, false);
@@ -281,7 +281,7 @@ namespace ReportBuilder
             pdf.text (M + 160, capY + 22, 14, juce::String (hmEntry.coveragePct, 1) + " %", ink);
             if (hmEntry.hasAbsoluteSpl)
             {
-                pdf.text (M + 360, capY + 8,  11, "PEAK (heatmap 0 dB)", sub, true);
+                pdf.text (M + 360, capY + 8,  11, "PEAK (gradient 0 dB)", sub, true);
                 pdf.text (M + 360, capY + 22, 14, juce::String (hmEntry.peakAbsDb, 1) + " dB SPL", ink);
                 pdf.text (M + 520, capY + 8,  11, "SCALE", sub, true);
                 pdf.text (M + 520, capY + 22, 14,

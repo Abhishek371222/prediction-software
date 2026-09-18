@@ -2,19 +2,43 @@
 
 namespace
 {
-    void styleButton (juce::TextButton& b, bool primary)
+    // Card design footprint (logical px, matching the Figma frame). Everything
+    // inside is positioned against these and scaled together.
+    constexpr int   kCardW    = 540;
+    constexpr int   kCardH    = 344;
+    constexpr int   kMargin   = 40;     // page gutter around the card
+    constexpr float kMinScale = 0.85f;
+    constexpr float kMaxScale = 1.70f;
+    // Text gets its own floor: the card may shrink on a small window, but the
+    // labels must stay readable rather than scaling all the way down with it.
+    constexpr float kMinTextScale = 0.95f;
+
+    juce::Colour cardFill()  { return juce::Colour (0xfff6f6f6); }
+    juce::Colour cardEdge()  { return juce::Colour (0xffcfcfcf); }
+    juce::Colour fieldFill() { return juce::Colour (0xffe8e8e8); }
+
+    void stylePrimary (juce::TextButton& b)
     {
-        b.setColour (juce::TextButton::buttonColourId,   primary ? Brand::accent() : Brand::btnIn());
+        b.setColour (juce::TextButton::buttonColourId,   Brand::accent());
         b.setColour (juce::TextButton::buttonOnColourId, Brand::accent());
-        b.setColour (juce::TextButton::textColourOffId,  primary ? Brand::white() : Brand::onBtnIn());
+        b.setColour (juce::TextButton::textColourOffId,  Brand::white());
         b.setColour (juce::TextButton::textColourOnId,   Brand::white());
+    }
+
+    void styleSecondary (juce::TextButton& b)
+    {
+        b.setColour (juce::TextButton::buttonColourId,   juce::Colours::white);
+        b.setColour (juce::TextButton::buttonOnColourId, juce::Colours::white);
+        b.setColour (juce::TextButton::textColourOffId,  Brand::text());
+        b.setColour (juce::TextButton::textColourOnId,   Brand::text());
     }
 
     void styleEditor (juce::TextEditor& e)
     {
-        e.setColour (juce::TextEditor::backgroundColourId, Brand::btnIn());
-        e.setColour (juce::TextEditor::textColourId,       Brand::onBtnIn());
-        e.setColour (juce::TextEditor::outlineColourId,    Brand::border());
+        // Figma draws these as flat grey wells with no outline.
+        e.setColour (juce::TextEditor::backgroundColourId, fieldFill());
+        e.setColour (juce::TextEditor::textColourId,       Brand::text());
+        e.setColour (juce::TextEditor::outlineColourId,    juce::Colours::transparentBlack);
         e.setColour (juce::TextEditor::focusedOutlineColourId, Brand::accent());
         e.setColour (juce::TextEditor::highlightColourId,  Brand::accent().withAlpha (0.3f));
         e.setColour (juce::CaretComponent::caretColourId,  Brand::accent());
@@ -28,68 +52,65 @@ DashboardComponent::DashboardComponent()
     logo_ = Brand::createLogo (Brand::text());
 
     title_.setText ("ACOUSTIC SIMULATION ENGINE", juce::dontSendNotification);
-    title_.setFont (Brand::tech (26.0f, true));
     title_.setColour (juce::Label::textColourId, Brand::text());
-    title_.setJustificationType (juce::Justification::centredLeft);
+    title_.setJustificationType (juce::Justification::centred);
     title_.setMinimumHorizontalScale (1.0f);
     title_.setBorderSize ({});
     addAndMakeVisible (title_);
 
-    subtitle_.setText ("Project Dashboard", juce::dontSendNotification);
-    subtitle_.setFont (Brand::tech (Brand::Type::dashSubtitle));
-    subtitle_.setColour (juce::Label::textColourId, Brand::ash());
-    subtitle_.setJustificationType (juce::Justification::centredLeft);
-    subtitle_.setMinimumHorizontalScale (1.0f);
-    subtitle_.setBorderSize ({});
-    addAndMakeVisible (subtitle_);
+    footer_.setText ("Atomik - Simulation Engine - v1.4.0", juce::dontSendNotification);
+    footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
+    footer_.setJustificationType (juce::Justification::centred);
+    footer_.setMinimumHorizontalScale (1.0f);
+    footer_.setBorderSize ({});
+    addAndMakeVisible (footer_);
 
     newBtn_.setButtonText ("NEW PROJECT");
     openBtn_.setButtonText ("OPEN EXISTING PROJECT");
     newBtn_.setComponentID ("dashAction");
     openBtn_.setComponentID ("dashAction");
-    styleButton (newBtn_,  true);
-    styleButton (openBtn_, false);
+    stylePrimary (newBtn_);
+    styleSecondary (openBtn_);
     addAndMakeVisible (newBtn_);
     addAndMakeVisible (openBtn_);
     newBtn_.onClick  = [this] { showNewForm(); };
     openBtn_.onClick = [this] { openExisting(); };
 
-    recentHdr_.setText ("RECENT PROJECTS", juce::dontSendNotification);
-    recentHdr_.setFont (Brand::tech (Brand::Type::dashRecentHeader, true));
-    recentHdr_.setColour (juce::Label::textColourId, Brand::heading());
-    recentHdr_.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (recentHdr_);
+    recentBox_.setComponentID ("ctrlCombo");
+    recentBox_.setTextWhenNothingSelected ("Recent Projects");
+    recentBox_.setTextWhenNoChoicesAvailable ("Recent Projects");
+    recentBox_.setColour (juce::ComboBox::backgroundColourId, juce::Colours::white);
+    recentBox_.setColour (juce::ComboBox::textColourId,       Brand::text());
+    recentBox_.onChange = [this]
+    {
+        const int i = recentBox_.getSelectedId() - 1;
+        if (juce::isPositiveAndBelow (i, recentFiles_.size()))
+        {
+            const auto f = recentFiles_[i];
+            recentBox_.setSelectedId (0, juce::dontSendNotification);
+            openProjectFile (f);
+        }
+    };
+    addAndMakeVisible (recentBox_);
 
-    noRecent_.setText ("No recent projects yet.", juce::dontSendNotification);
-    noRecent_.setFont (Brand::mono (Brand::Type::dashRecentItem));
-    noRecent_.setColour (juce::Label::textColourId, Brand::ash());
-    noRecent_.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (noRecent_);
-
-    // --- New-project form --------------------------------------------------
-    formTitle_.setText ("NEW PROJECT DETAILS", juce::dontSendNotification);
-    formTitle_.setFont (Brand::tech (24.0f, true));
-    formTitle_.setColour (juce::Label::textColourId, Brand::heading());
-    formTitle_.setJustificationType (juce::Justification::centredLeft);
-    addChildComponent (formTitle_);
-
-    addField ("projectName",  "Project Name");
-    addField ("engineerName", "Engineer Name");
-    addField ("ownerName",    "Owner Name");
-    addField ("address",      "Address");
-    addField ("city",         "City");
-    addField ("country",      "Country");
-    addField ("email",        "Email");
-    addField ("mobile",       "Mobile Number");
-    if (auto* d = addField ("date", "Date"))
+    // New-project form. Fields are added in Figma reading order (left column,
+    // then right, row by row) so the 2-column layout below just alternates.
+    addField ("ownerName",    "Owner Name*");
+    addField ("engineerName", "Engineer Name*");
+    addField ("projectName",  "Project Name*");
+    addField ("city",         "City*");
+    addField ("email",        "Email*");
+    addField ("address",      "Address*");
+    addField ("mobile",       "Contact Number*");
+    if (auto* d = addField ("date", "Date*"))
         d->editor.setText (ProjectMeta::today(), false);
 
     createBtn_.setButtonText ("CREATE PROJECT");
     cancelBtn_.setButtonText ("CANCEL");
     createBtn_.setComponentID ("dashAction");
     cancelBtn_.setComponentID ("dashAction");
-    styleButton (createBtn_, true);
-    styleButton (cancelBtn_, false);
+    stylePrimary (createBtn_);
+    styleSecondary (cancelBtn_);
     addChildComponent (createBtn_);
     addChildComponent (cancelBtn_);
     createBtn_.onClick = [this] { createFromForm(); };
@@ -106,13 +127,14 @@ DashboardComponent::Field* DashboardComponent::addField (const juce::String& key
     auto* f = fields_.add (new Field());
     f->key = key;
     f->label.setText (label, juce::dontSendNotification);
-    f->label.setFont (Brand::tech (16.0f));
-    f->label.setColour (juce::Label::textColourId, Brand::ash());
+    f->label.setColour (juce::Label::textColourId, Brand::text());
     f->label.setJustificationType (juce::Justification::centredLeft);
+    f->label.setMinimumHorizontalScale (1.0f);
+    f->label.setBorderSize ({});
     addChildComponent (f->label);
 
-    f->editor.setFont (Brand::tech (18.0f));
     f->editor.setTextToShowWhenEmpty (placeholder, Brand::ash().withAlpha (0.6f));
+    f->editor.setIndents (8, 4);
     styleEditor (f->editor);
     addChildComponent (f->editor);
     return f;
@@ -125,18 +147,32 @@ juce::String DashboardComponent::fieldText (const juce::String& key) const
 }
 
 // ---------------------------------------------------------------------------
+float DashboardComponent::cardScale() const
+{
+    const float sx = (float) getWidth()  / (float) (kCardW + 2 * kMargin);
+    const float sy = (float) getHeight() / (float) (kCardH + 2 * kMargin);
+    return juce::jlimit (kMinScale, kMaxScale, juce::jmin (sx, sy));
+}
+
+juce::Rectangle<int> DashboardComponent::cardBounds() const
+{
+    const float s = cardScale();
+    const int w = juce::roundToInt (kCardW * s);
+    const int h = juce::roundToInt (kCardH * s);
+    return juce::Rectangle<int> ((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
+}
+
+// ---------------------------------------------------------------------------
 void DashboardComponent::showMenu()
 {
     view_ = View::Menu;
-    const bool m = true;
-    title_.setVisible (m); subtitle_.setVisible (m);
-    newBtn_.setVisible (m); openBtn_.setVisible (m);
-    recentHdr_.setVisible (m);
-    rebuildRecent();
-
-    formTitle_.setVisible (false);
-    createBtn_.setVisible (false); cancelBtn_.setVisible (false);
+    newBtn_.setVisible (true);
+    openBtn_.setVisible (true);
+    recentBox_.setVisible (true);
+    createBtn_.setVisible (false);
+    cancelBtn_.setVisible (false);
     for (auto* f : fields_) { f->label.setVisible (false); f->editor.setVisible (false); }
+    rebuildRecent();
     resized();
     repaint();
 }
@@ -144,13 +180,11 @@ void DashboardComponent::showMenu()
 void DashboardComponent::showNewForm()
 {
     view_ = View::NewForm;
-    title_.setVisible (false); subtitle_.setVisible (false);
-    newBtn_.setVisible (false); openBtn_.setVisible (false);
-    recentHdr_.setVisible (false); noRecent_.setVisible (false);
-    for (auto* b : recentBtns_) b->setVisible (false);
-
-    formTitle_.setVisible (true);
-    createBtn_.setVisible (true); cancelBtn_.setVisible (true);
+    newBtn_.setVisible (false);
+    openBtn_.setVisible (false);
+    recentBox_.setVisible (false);
+    createBtn_.setVisible (true);
+    cancelBtn_.setVisible (true);
     for (auto* f : fields_) { f->label.setVisible (true); f->editor.setVisible (true); }
     resized();
     repaint();
@@ -159,25 +193,19 @@ void DashboardComponent::showNewForm()
 
 void DashboardComponent::rebuildRecent()
 {
-    recentBtns_.clear();
-    auto recents = AppSettings::get().recentProjects();
-    const bool any = ! recents.isEmpty() && view_ == View::Menu;
-    noRecent_.setVisible (view_ == View::Menu && recents.isEmpty());
+    recentBox_.clear (juce::dontSendNotification);
+    recentFiles_.clearQuick();
 
-    for (const auto& path : recents)
+    int id = 1;
+    for (const auto& path : AppSettings::get().recentProjects())
     {
         juce::File f (path);
-        auto* b = recentBtns_.add (new juce::TextButton());
-        b->setComponentID ("dashRecent");
-        b->setButtonText (f.getFileNameWithoutExtension() + "   -   " + f.getFullPathName());
-        b->setColour (juce::TextButton::buttonColourId,   Brand::panel());
-        b->setColour (juce::TextButton::textColourOffId,  f.existsAsFile() ? Brand::text() : Brand::ash());
-        b->onClick = [this, f] { openProjectFile (f); };
-        addAndMakeVisible (*b);
-        b->setVisible (view_ == View::Menu);
+        recentFiles_.add (f);
+        recentBox_.addItem (f.getFileNameWithoutExtension(), id);
+        recentBox_.setItemEnabled (id, f.existsAsFile());
+        ++id;
     }
-    juce::ignoreUnused (any);
-    resized();
+    recentBox_.setSelectedId (0, juce::dontSendNotification);
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +217,6 @@ void DashboardComponent::createFromForm()
     meta.ownerName    = fieldText ("ownerName");
     meta.address      = fieldText ("address");
     meta.city         = fieldText ("city");
-    meta.country      = fieldText ("country");
     meta.email        = fieldText ("email");
     meta.mobile       = fieldText ("mobile");
     meta.date         = fieldText ("date");
@@ -199,7 +226,8 @@ void DashboardComponent::createFromForm()
     {
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
             "Project Name required", "Please enter a project name before creating the project.");
-        if (! fields_.isEmpty()) fields_.getFirst()->editor.grabKeyboardFocus();
+        for (auto* f : fields_)
+            if (f->key == "projectName") { f->editor.grabKeyboardFocus(); break; }
         return;
     }
 
@@ -251,15 +279,17 @@ void DashboardComponent::openProjectFile (const juce::File& f)
 void DashboardComponent::applyColours()
 {
     logo_ = Brand::createLogo (Brand::text());
-    title_.setColour    (juce::Label::textColourId, Brand::text());
-    subtitle_.setColour (juce::Label::textColourId, Brand::ash());
-    recentHdr_.setColour(juce::Label::textColourId, Brand::heading());
-    noRecent_.setColour (juce::Label::textColourId, Brand::ash());
-    formTitle_.setColour(juce::Label::textColourId, Brand::heading());
-    styleButton (newBtn_, true);  styleButton (openBtn_, false);
-    styleButton (createBtn_, true); styleButton (cancelBtn_, false);
-    for (auto* f : fields_) { f->label.setColour (juce::Label::textColourId, Brand::ash()); styleEditor (f->editor); }
-    rebuildRecent();
+    title_.setColour  (juce::Label::textColourId, Brand::text());
+    footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
+    stylePrimary (newBtn_);    styleSecondary (openBtn_);
+    stylePrimary (createBtn_); styleSecondary (cancelBtn_);
+    recentBox_.setColour (juce::ComboBox::backgroundColourId, juce::Colours::white);
+    recentBox_.setColour (juce::ComboBox::textColourId,       Brand::text());
+    for (auto* f : fields_)
+    {
+        f->label.setColour (juce::Label::textColourId, Brand::text());
+        styleEditor (f->editor);
+    }
 }
 
 void DashboardComponent::lookAndFeelChanged()
@@ -271,73 +301,81 @@ void DashboardComponent::lookAndFeelChanged()
 // ---------------------------------------------------------------------------
 void DashboardComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (Brand::base());
+    g.fillAll (juce::Colours::white);
 
-    Brand::UI::applyWindowScale (getWidth(), getHeight());
-    const float pad = (float) UiConfig::Scale::px (40);
-    const float logoH = (float) UiConfig::Scale::px (26);  // legibility pass: fine strokes were smudging at 19px
+    const auto card = cardBounds().toFloat();
+    const float s = cardScale();
+    const float radius = 6.0f * s;
+
+    g.setColour (cardFill());
+    g.fillRoundedRectangle (card, radius);
+    g.setColour (cardEdge());
+    g.drawRoundedRectangle (card.reduced (0.5f), radius, 1.0f);
+
+    // Wordmark, centred near the top of the card.
+    const float logoH = 20.0f * s;
     const float logoW = logoH * Brand::logoAspect;
-    Brand::drawLogo (g, logo_.get(), { pad, (float) UiConfig::Scale::px (28), logoW, logoH });
-
-    const float divY = (float) UiConfig::Scale::px (104);
-    g.setColour (Brand::border());
-    g.drawLine (pad, divY, (float) getWidth() - pad, divY, 1.0f);
+    const float logoY = card.getY() + (view_ == View::Menu ? 46.0f : 30.0f) * s;
+    Brand::drawLogo (g, logo_.get(),
+                     { card.getCentreX() - logoW * 0.5f, logoY, logoW, logoH });
 }
 
 void DashboardComponent::resized()
 {
+    // Keep the app-wide scale coherent for this window too — the LookAndFeel
+    // sizes button text from it.
     Brand::UI::applyWindowScale (getWidth(), getHeight());
-    const int pad = UiConfig::Scale::px (40);
-    const int W = getWidth() - 2 * pad;
 
-    // Divider line sits under the logo (see paint); keep title + content below it.
-    const int divY = UiConfig::Scale::px (104);
-    title_.setBounds    (pad, divY + UiConfig::Scale::px (12), W, UiConfig::Scale::px (34));
-    subtitle_.setBounds (pad, title_.getBottom() + UiConfig::Scale::px (2), W, UiConfig::Scale::px (28));
+    const auto card = cardBounds();
+    const float s = cardScale();
+    const float ts = juce::jmax (kMinTextScale, s);   // text scale
+    auto px = [s] (float v) { return juce::roundToInt (v * s); };
+
+    // Sizes calibrated against the Figma render's ink-width-to-card-width
+    // ratios; JUCE's Font height is the whole line box, so these run larger
+    // than the design's nominal point sizes.
+    title_.setFont (Brand::techSemi (15.0f * ts));
+    footer_.setFont (Brand::tech (11.0f * ts));
 
     if (view_ == View::Menu)
     {
-        int y = subtitle_.getBottom() + UiConfig::Scale::px (18);
-        const int bw = (W - UiConfig::Scale::px (16)) / 2;
-        const int btnH = UiConfig::Scale::px (56);
-        const int gap = UiConfig::Scale::px (16);
-        newBtn_.setBounds  (pad, y, bw, btnH);
-        openBtn_.setBounds (pad + bw + gap, y, bw, btnH);
-        y += btnH + UiConfig::Scale::px (30);
+        title_.setBounds (card.getX(), card.getY() + px (100), card.getWidth(), px (20));
 
-        recentHdr_.setBounds (pad, y, W, UiConfig::Scale::px (26)); y += UiConfig::Scale::px (34);
-        noRecent_.setBounds (pad, y, W, UiConfig::Scale::px (26));
-        for (auto* b : recentBtns_)
-        {
-            b->setBounds (pad, y, W, UiConfig::Scale::px (40));
-            y += UiConfig::Scale::px (44);
-        }
+        const int btnW = px (215), btnH = px (33), gap = px (11);
+        const int rowX = card.getCentreX() - (btnW * 2 + gap) / 2;
+        const int rowY = card.getY() + px (150);
+        newBtn_.setBounds  (rowX, rowY, btnW, btnH);
+        openBtn_.setBounds (rowX + btnW + gap, rowY, btnW, btnH);
+
+        recentBox_.setBounds (rowX, rowY + btnH + px (17), btnW, px (32));
+
+        footer_.setBounds (card.getX(), card.getBottom() - px (34), card.getWidth(), px (16));
     }
     else // NewForm
     {
-        int y = subtitle_.getBottom() + UiConfig::Scale::px (8);
-        formTitle_.setBounds (pad, y, W, UiConfig::Scale::px (38)); y += UiConfig::Scale::px (52);
+        title_.setBounds (card.getX(), card.getY() + px (66), card.getWidth(), px (20));
+        footer_.setBounds (0, 0, 0, 0);
 
-        const int colGap = UiConfig::Scale::px (24);
-        const int colW = (W - colGap) / 2;
-        const int rowH = UiConfig::Scale::px (72);   // raised for the bigger label/editor fonts below
-        int idx = 0;
-        for (auto* f : fields_)
+        const int colW = px (212), colGap = px (16);
+        const int leftX = card.getCentreX() - (colW * 2 + colGap) / 2;
+        const int labelH = px (16), editH = px (22), rowPitch = px (41);
+        const int top = card.getY() + px (106);
+
+        for (int i = 0; i < fields_.size(); ++i)
         {
-            const int col = idx % 2;
-            const int rx = pad + col * (colW + colGap);
-            if (col == 0 && idx > 0) y += rowH;
-            f->label.setBounds  (rx, y, colW, UiConfig::Scale::px (24));
-            f->editor.setBounds (rx, y + UiConfig::Scale::px (26), colW, UiConfig::Scale::px (36));
-            ++idx;
+            auto* f = fields_[i];
+            const int col = i % 2, row = i / 2;
+            const int x = leftX + col * (colW + colGap);
+            const int y = top + row * rowPitch;
+            f->label.setFont (Brand::tech (11.5f * ts));
+            f->label.setBounds  (x, y, colW, labelH);
+            f->editor.setFont (Brand::tech (12.5f * ts));
+            f->editor.setBounds (x, y + labelH, colW, editH);
         }
-        y += rowH + UiConfig::Scale::px (16);
 
-        createBtn_.setBounds (getWidth() - pad - UiConfig::Scale::px (180),
-                              getHeight() - UiConfig::Scale::px (60),
-                              UiConfig::Scale::px (180), UiConfig::Scale::px (38));
-        cancelBtn_.setBounds (getWidth() - pad - UiConfig::Scale::px (180) - UiConfig::Scale::px (140),
-                              getHeight() - UiConfig::Scale::px (60),
-                              UiConfig::Scale::px (130), UiConfig::Scale::px (38));
+        const int rows = (fields_.size() + 1) / 2;
+        const int btnY = top + rows * rowPitch + px (14);
+        createBtn_.setBounds (leftX, btnY, colW, px (27));
+        cancelBtn_.setBounds (leftX + colW + colGap, btnY, colW, px (27));
     }
 }

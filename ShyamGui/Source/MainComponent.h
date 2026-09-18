@@ -62,6 +62,12 @@ private:
     void runSimulation();
     void applyResult (const SimResult& r);
     void updateSettingsBar();
+    // Header row 1's document title: "Atomik Simulation Engine - <project>",
+    // mirroring the OS window title (Figma row 1 shows the same composite).
+    void refreshTitleLabel();
+    // The canvas caption's ink: brand red on the bare grid, white once a field
+    // is rendered under it. Same contrast problem the axis numbers had.
+    void refreshCaptionColour();
     void updatePlotChrome();
     void setViewMode (ViewMode mode);
     void highlightViewBtn (ViewMode mode);
@@ -169,7 +175,14 @@ private:
     static bool launchAppInstance (const juce::String& args = {});
     void refreshHeaderIcons();
     std::unique_ptr<class PreferencesComponent> prefsPanel_;
+    // Help cluster's info / "?" popups. A panel rather than an AlertWindow:
+    // the stock message box forces an icon disc and an OK button.
+    std::unique_ptr<class InfoDialogComponent>  infoPanel_;
     void layoutPrefsPanel();
+    void showInfoPanel (const juce::String& heading,
+                        const juce::String& subtitle,
+                        const juce::String& body);
+    void layoutInfoPanel();
 
     ProjectData project_;
 

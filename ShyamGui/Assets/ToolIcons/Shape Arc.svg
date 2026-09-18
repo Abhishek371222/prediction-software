@@ -1,7 +1,5 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<!-- Figma "Vector 77" (10x20 curve, stroke #434343 w2) from the Shapes
-     cluster, centred in the 24x24 slot the other tool glyphs use. -->
 <g transform="translate(7,2)">
-<path d="M1.00027 1.00027C4.63769 2.21902 11.1851 7.52527 8.27512 19.0003" stroke="#434343" stroke-width="2" stroke-linecap="round"/>
+<path d="M1.00024 1.00027C4.63767 2.21902 11.185 7.52527 8.27509 19.0003" stroke="#434343" stroke-width="2" stroke-linecap="round"/>
 </g>
 </svg>

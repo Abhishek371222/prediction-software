@@ -19,7 +19,29 @@ namespace UiConfig
         constexpr int   referenceWidth  = 1340;
         constexpr int   referenceHeight = 820;
         constexpr float minFactor       = 0.78f;  // allow shrink on smaller screens
-        constexpr float maxFactor       = 1.85f;
+        // The ceiling used to be 1.85, which a 4K client area (needing 2.63)
+        // slammed into: every band then rendered ~30% thinner than its share of
+        // the screen and the whole UI read as miniature. 2.70 clears 3840x2160
+        // while still catching a runaway window size.
+        constexpr float maxFactor       = 2.70f;
+
+        // The design is 1920x1080: the sidebar is 340 of those 1920 px. The
+        // scale factor above is min(W/ref, H/ref), so at 16:9 it is driven by
+        // height and the sidebar's share of the width comes out exact -- but at
+        // any other aspect it drifts, because a fixed px width is a different
+        // fraction of a wider or narrower window. 21:9 squeezed it to 13.3% and
+        // 4:3 bloated it to 19.6%. Sizing it from the window width instead
+        // holds the design's share at every aspect.
+        constexpr float sidebarWidthFraction = 340.0f / 1920.0f;
+        // Bounds are in design units, so they scale with the factor. The floor
+        // is the design width itself: the control rows (label column + slider +
+        // value box) are laid out for it, and dropping under it collapsed the
+        // unit combo to a bare arrow and squashed the sliders to a stub at
+        // 1024x768. So this only ever widens the sidebar, never narrows it.
+        // The ceiling stops an ultrawide spending its extra width on chrome --
+        // the plot is the better home for it.
+        constexpr int   sidebarWidthMin = 258;   // == Layout::sidebarWidth
+        constexpr int   sidebarWidthMax = 310;
 
         inline float factor = 1.0f;
 
@@ -46,8 +68,14 @@ namespace UiConfig
     namespace FontSize
     {
         // --- Top header bar --------------------------------------------------
-        // "Atomik Simulation Engine" centred title
-        constexpr float appTitle            = 13.0f;
+        // "Atomik Simulation Engine - <project>" centred title. Calibrated
+        // against the Figma render, where the full composite string measures
+        // 288px of ink on a 1920-wide canvas (x=815..1102).
+        constexpr float appTitle            = 22.25f;
+        // "Auto Save" label beside the header checkbox: 70px of ink in Figma
+        // (x=173..242). Its own token so it does not drag the shared
+        // label/input sizes used all over the rest of the app.
+        constexpr float headerToggleLabel   = 16.6f;
         // Small version / build label beside the title (also used for subtitle ratio)
         constexpr float appVersion          = 9.0f;
 
@@ -259,9 +287,17 @@ namespace UiConfig
         // as an illegible smudge. Raised to use more of the available
         // headerBandHeight (44, minus padY top+bottom) while still leaving
         // clear vertical padding.
-        constexpr int headerLogoMaxHeight     = 22;
-        constexpr int headerLogoPadX          = 18;
+        // Figma row 1 (y=0..58): the wordmark's ink box is x=20..113, y=22..35
+        // -- 94x14 px on the 1920-wide canvas. Divided by the 1.317 scale
+        // factor that Scale::px applies at that size, that is 15 / 11 base.
+        constexpr int headerLogoMaxHeight     = 11;   // -> 14px tall ink
+        constexpr int headerLogoPadX          = 15;   // -> 20px from the left edge
         constexpr int headerLogoPadY          = 10;
+        // "Auto Save": 20x20 checkbox at Figma x=143, label starting at x=173.
+        // drawToggleButton paints the tick box 1px inside the button, so the
+        // button's left edge is one pixel left of the Figma checkbox.
+        constexpr int headerAutoSaveX         = 108;  // -> 142px
+        constexpr int headerAutoSaveW         = 90;   // -> 119px (box + label)
 
         // Help / Settings / More icon buttons (top-right)
         constexpr int headerIconWidth         = 36;
@@ -321,6 +357,8 @@ namespace UiConfig
         constexpr float sidebarChevronScale    = 1.0f;
         constexpr float sidebarComboArrowScale = 1.0f;
         constexpr float sidebarTickScale       = 1.0f;
+        // Header "Auto Save" box is 20px in Figma vs the sidebar's 24px.
+        constexpr float headerTickScale        = 20.0f / 24.0f;
         // Legacy names
         constexpr float freqChevronScale     = sidebarChevronScale;
         constexpr float freqComboArrowScale  = sidebarComboArrowScale;

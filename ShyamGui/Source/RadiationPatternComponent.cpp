@@ -6,6 +6,7 @@
 #include "SpeakerPropertiesDialog.h"
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -3144,19 +3145,26 @@ void RadiationPatternComponent::fitView()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    // Uniform px/m so metre grid cells stay square. Cover the plot (may crop
-    // one axis); origin (0, 0) is world bottom-left on screen.
+    // ONE px/m for both axes, so a metre is a metre in either direction and
+    // grid cells come out square. Taken from the smaller ratio so the entire
+    // field is on screen rather than cropped.
+    //
+    // A square field cannot also fill a non-square canvas at a uniform scale,
+    // so drawGrid() rules the leftover area too: the grid runs edge to edge
+    // and the field simply occupies the part of it that has data. That keeps
+    // square cells, the whole field, and a full-bleed canvas all at once --
+    // the three things a stretched view could not satisfy together.
     const float sx = (float) (pb.getWidth()  / ww);
     const float sy = (float) (pb.getHeight() / wh);
-    const float s  = juce::jmax (sx, sy);
+    const float s  = juce::jmin (sx, sy);
     baseScaleX_ = s;
     baseScaleY_ = s;
     zoom_       = 1.0f;
 
-    const float worldPxW = (float) ww * s;
-    const float worldPxH = (float) wh * s;
-    origin_ = { 0.5f * ((float) pb.getWidth()  - worldPxW),
-                0.5f * ((float) pb.getHeight() - worldPxH) };
+    // World (0, 0) at the plot's bottom-left, so the extra room appears above
+    // and to the right as positive coordinates. Centring the field instead
+    // would put negative coordinates on the leading edges.
+    origin_ = { 0.0f, (float) pb.getHeight() - (float) wh * s };
     viewInit_   = true;
     clampViewToField();
 }
@@ -3176,6 +3184,9 @@ void RadiationPatternComponent::clampViewToField()
     const float viewW = (float) pb.getWidth();
     const float viewH = (float) pb.getHeight();
 
+    // Fitted to contain, the world is smaller than the viewport on one axis.
+    // Pin it to the bottom-left there (see fitView) so the surplus shows as
+    // positive coordinates above and to the right, never negative ones.
     if (worldPxW >= viewW)
         origin_.x = juce::jlimit (viewW - worldPxW, 0.0f, origin_.x);
     else
@@ -3184,7 +3195,7 @@ void RadiationPatternComponent::clampViewToField()
     if (worldPxH >= viewH)
         origin_.y = juce::jlimit (viewH - worldPxH, 0.0f, origin_.y);
     else
-        origin_.y = 0.0f;
+        origin_.y = viewH - worldPxH;
 }
 
 void RadiationPatternComponent::resetView()
@@ -3341,7 +3352,17 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (pb);
         if (hasData_)
+        {
+            // A square field cannot fill a non-square canvas at the uniform
+            // scale that keeps grid cells square, so the field occupies only
+            // part of the plot. Lay its floor tone across the whole area first
+            // and the surplus reads as more of the same plot rather than a
+            // separate pale strip beside it -- and the white axis numbers stay
+            // legible out there too.
+            g.setColour (ColourMaps::sevenColor (0.0f));   // t=0 is the dB floor
+            g.fillRect (pb);
             drawField (g, pb);
+        }
         drawLayout   (g, pb);
         drawGrid     (g, pb);
         drawSpeakers (g, pb);
@@ -3456,19 +3477,26 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // Only draw lines that intersect the visible plot (needed at 1 mm density).
     const auto tl = screenToWorld ((float) bounds.getX(),      (float) bounds.getY());
     const auto br = screenToWorld ((float) bounds.getRight(),  (float) bounds.getBottom());
-    const double visX0 = juce::jlimit (0.0, (double) ww, (double) std::min (tl.x, br.x));
-    const double visX1 = juce::jlimit (0.0, (double) ww, (double) std::max (tl.x, br.x));
-    const double visY0 = juce::jlimit (0.0, (double) wh, (double) std::min (tl.y, br.y));
-    const double visY1 = juce::jlimit (0.0, (double) wh, (double) std::max (tl.y, br.y));
-
-    const double xMin = 0.0;
-    const double xMax = (double) ww;
-    const double yMin = 0.0;
-    const double yMax = (double) wh;
+    // Ticks span everything the viewport can see, no longer clipped to the
+    // field: at a uniform scale a square field cannot fill a wide canvas, and
+    // ruling the leftover area is what keeps the grid full-bleed. Clamped at
+    // zero so the surplus reads as positive coordinates only.
+    const double visX0 = juce::jmax (0.0, (double) std::min (tl.x, br.x));
+    const double visX1 = juce::jmax (0.0, (double) std::max (tl.x, br.x));
+    const double visY0 = juce::jmax (0.0, (double) std::min (tl.y, br.y));
+    const double visY1 = juce::jmax (0.0, (double) std::max (tl.y, br.y));
 
     const juce::Colour minorCol = Brand::plotGrid().withMultipliedAlpha (0.45f);
     const juce::Colour majorCol = Brand::plotGrid();
-    const juce::Colour labelInk = Brand::axisLabel();
+    // Axis numbers sit ON the plot surface, so their colour has to follow what
+    // is actually behind them rather than the app theme. With a result on
+    // screen that surface is the SPL heatmap -- near-black at the dB floor --
+    // and the light theme's black ink disappeared into it entirely. White over
+    // the heatmap, the theme ink over the bare plot background.
+    const bool         overField = hasData_ && fieldImage_.isValid();
+    const juce::Colour labelInk  = overField ? Brand::white() : Brand::axisLabel();
+    const juce::Colour labelHalo = (overField ? juce::Colours::black : Brand::plotBg())
+                                       .withAlpha (0.55f);
 
     auto isMajor = [&] (double v)
     {
@@ -3484,19 +3512,18 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
             fn ((double) i * step);
     };
 
+    // Full height / width of the plot, so the ruling continues past the field.
     auto vline = [&] (double xm, bool major)
     {
-        auto a = worldToScreen ((float) xm, (float) yMin);
-        auto b = worldToScreen ((float) xm, (float) yMax);
+        const float x = worldToScreen ((float) xm, 0.0f).x;
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
+        g.drawLine (x, (float) bounds.getY(), x, (float) bounds.getBottom(), major ? 1.0f : 0.6f);
     };
     auto hline = [&] (double ym, bool major)
     {
-        auto a = worldToScreen ((float) xMin, (float) ym);
-        auto b = worldToScreen ((float) xMax, (float) ym);
+        const float y = worldToScreen (0.0f, (float) ym).y;
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? 1.0f : 0.6f);
+        g.drawLine ((float) bounds.getX(), y, (float) bounds.getRight(), y, major ? 1.0f : 0.6f);
     };
 
     forTicks (visX0, visX1, minorStep, [&] (double x) { if (! isMajor (x)) vline (x, false); });
@@ -3506,28 +3533,79 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
 
     // Axis labels follow major spacing so zoom reveals 62, 63, 64… then cm/mm.
     g.setFont (Brand::techMed (Brand::Type::gridNum));
-    g.setColour (labelInk);
     const int labelW = Units::imperial() ? 72 : 56;
+
+    // Anchor the numbers to the WORLD's edges, not the component's. Now that
+    // the view fits the whole field, the world is usually narrower than the
+    // plot area and centred in it -- placing labels at the component's left
+    // edge stranded the whole vertical axis out in the empty margin, detached
+    // from the grid it annotates (and sitting on the page background, where
+    // the over-the-heatmap white ink was unreadable).
+    // The grid now rules the whole plot, so the numbers belong on the plot's
+    // own edges again rather than on the field's.
+    const auto axisBox = bounds;
+
+    // The heatmap runs from a saturated red at 0 dB to near-black at the
+    // floor, so a single flat ink colour cannot stay legible across all of it.
+    // A one-pixel halo in the opposite tone keeps the digits readable over
+    // every band without putting an opaque chip on top of the data.
+    // Labels are drawn left-justified from their tick, so when the window gets
+    // small enough that major ticks fall closer together than a label is wide
+    // they run into each other ("90 m100 m"). Track the last one placed on each
+    // axis and skip any that would collide.
+    static constexpr int kNoTick = std::numeric_limits<int>::min();
+    int lastTickPos = kNoTick;
+    auto drawTick = [&] (const juce::String& txt, juce::Rectangle<int> r)
+    {
+        g.setColour (labelHalo);
+        for (auto d : { juce::Point<int> (-1, 0), juce::Point<int> (1, 0),
+                        juce::Point<int> (0, -1), juce::Point<int> (0, 1) })
+            g.drawText (txt, r.translated (d.x, d.y), juce::Justification::left);
+        g.setColour (labelInk);
+        g.drawText (txt, r, juce::Justification::left);
+    };
+
+    // Distance from the last label placed, NOT a directional "past the right
+    // edge" test: world y increases upward while screen y increases downward,
+    // so the vertical run walks backwards and a one-sided comparison rejects
+    // every label after the first.
+    auto tickFits = [&] (int pos, int need)
+    {
+        if (lastTickPos != kNoTick && std::abs (pos - lastTickPos) < need)
+            return false;
+        lastTickPos = pos;
+        return true;
+    };
     forTicks (visX0, visX1, majorStep, [&] (double x)
     {
         auto a = worldToScreen ((float) x, 0.0f);
         if (a.x < (float) bounds.getX() - 4.0f || a.x > (float) bounds.getRight() + 4.0f)
             return;
-        const int chipX = juce::jlimit (bounds.getX() + 2, bounds.getRight() - labelW, (int) a.x + 2);
-        const int chipY = bounds.getBottom() - 16;
-        g.drawText (formatGridLabel (x),
-                    juce::Rectangle<int> (chipX, chipY, labelW, 14),
-                    juce::Justification::left);
+        // Clamp against the label's real glyph width, not the roomy chip it is
+        // drawn into: using the chip width shoved the final tick ("100 m")
+        // far enough left to collide with its neighbour and be dropped, which
+        // lost exactly the label that confirms the field's full extent.
+        const auto txt  = formatGridLabel (x);
+        const int  inkW = juce::roundToInt (g.getCurrentFont().getStringWidthFloat (txt));
+        const int chipX = juce::jlimit (axisBox.getX() + 2,
+                                        juce::jmax (axisBox.getX() + 2, axisBox.getRight() - inkW - 2),
+                                        (int) a.x + 2);
+        const int chipY = axisBox.getBottom() - 16;
+        if (tickFits (chipX, inkW + 6))
+            drawTick (txt, { chipX, chipY, labelW, 14 });
     });
+    lastTickPos = kNoTick;   // vertical axis: its own run
     forTicks (visY0, visY1, majorStep, [&] (double y)
     {
         auto a = worldToScreen (0.0f, (float) y);
         if (a.y < (float) bounds.getY() - 4.0f || a.y > (float) bounds.getBottom() + 4.0f)
             return;
-        const int chipY = juce::jlimit (bounds.getY() + 2, bounds.getBottom() - 16, (int) a.y - 7);
-        g.drawText (formatGridLabel (y),
-                    juce::Rectangle<int> (bounds.getX() + 2, chipY, labelW, 14),
-                    juce::Justification::left);
+        const int chipY = juce::jlimit (axisBox.getY() + 2, juce::jmax (axisBox.getY() + 2,
+                                        axisBox.getBottom() - 16), (int) a.y - 7);
+        // Stacked vertically, so the collision test is on y, not x.
+        if (! tickFits (chipY, 16))
+            return;
+        drawTick (formatGridLabel (y), { axisBox.getX() + 2, chipY, labelW, 14 });
     });
 }
 

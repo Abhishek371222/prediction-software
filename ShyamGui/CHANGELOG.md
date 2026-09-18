@@ -16,9 +16,60 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.3.6** | 2026-08-31 | Mic ring snap restored; shape-edge Snap tak; start.md |
 | **1.3.7** | 2026-09-02 | Gain fix; multi-delete; text box; clean slate; drawing UX |
 | **1.3.8** | 2026-09-04 | Command line: aliases, typed points, MOVE/ZOOM, dock/undock |
+| **1.3.9** | 2026-09-15 | 15W750 as a second measurement source, per-model frequency isolation |
+| **1.4.0** | 2026-09-18 | Figma UI cut: new wordmark, ribbon, dashboard, square full-bleed grid |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0] - 2026-09-18
+
+**Atomik Simulation Engine v1.4.0** - the Figma "Home Screen 1.1" design landed across
+the whole shell: title strip, tool ribbon, sidebar, bottom strip and dashboard are now
+built to measured Figma geometry, and the plot draws a square, full-bleed grid.
+
+### Added
+- **ATOMIK. wordmark** - new horizontal logo (with the trailing dot) at the Figma
+  size and position; light and dark ink variants generated from the source art.
+- **Snap / Ortho ribbon slot** - laid out after Help, captioned and divided like every
+  other cluster, behind `PlotHeaderBar::kShowOptionsCluster` (off by default). Both stay
+  fully functional meanwhile via Ctrl+F and the SNAP / ORTHO terminal verbs.
+- **Info panel** - replaces the stock message box for the Help cluster's info and "?"
+  popups: no icon disc, no OK button, red close cross top-right.
+
+### Changed
+- **Renamed "Heatmap" to "Gradient Plot"** everywhere it is user-visible - canvas
+  caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips.
+- **Plot fits the whole field at a uniform scale** - grid cells are square, and the grid
+  rules the entire canvas rather than stopping at the field edge, so the view is
+  full-bleed with no dead margins. The field's floor tone fills the surround so it reads
+  as one continuous surface.
+- **Axis numbers follow the surface behind them** - white with a contrast halo over a
+  rendered field, theme ink over the bare grid. Colliding tick labels are now skipped.
+- **Canvas caption ink** - brand red on the empty grid, white once a device is placed.
+- **Sidebar tracks window width** - holds the design's 17.7% share at any aspect ratio
+  instead of only at 16:9 (was 13.3% at 21:9, 12.4% at 4K).
+- **Scale ceiling raised to 2.70** - a 4K client area needs 2.63 and was being clamped
+  to 1.85, rendering every band ~30% thinner than its share of the screen.
+- **Run info, export buttons and the status pill are vertically centred** in their rows.
+- **Dark theme hidden** - light theme only for this release (code intact).
+
+### Fixed
+- **Help icons shrank on a units or theme switch** - the header restyle stamped its own
+  inset back onto the ribbon's adopted glyphs, and JUCE skips `resized()` when bounds do
+  not change, so the smaller icons stuck.
+- **Ribbon icons rendered as black squares** - the Figma SVGs wrap base64 bitmaps in a
+  pattern fill, which JUCE cannot render; the bitmaps are extracted and preferred as PNG.
+- **Legend overlapped the plot at full screen** - the Rel. SPL bar is anchored to the
+  gutter's left edge instead of right-anchored.
+- **Contour bands collapsed below -18 dB** - `splBand` now quantizes the gradient rather
+  than indexing a 7-entry palette that ran out at the UI's 3 dB step.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0**.
+- **Windows Release** `Atomik-Windows-v1.4.0.exe` (Q21S embedded).
 
 ---
 

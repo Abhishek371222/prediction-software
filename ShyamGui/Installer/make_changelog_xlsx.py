@@ -109,6 +109,14 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0", "2026-09-18", "Figma UI cut + square full-bleed grid",
+     "New ATOMIK. wordmark, ribbon, sidebar and dashboard built to measured Figma geometry; "
+     "Heatmap renamed Gradient Plot; square grid cells ruled edge to edge; contrast-aware axis "
+     "numbers and caption; sidebar holds its width share at any aspect; 4K scale ceiling; "
+     "icon-free info panels with a close cross; v1.4.0 Windows Release"],
+    ["1.3.9", "2026-09-15", "15W750 second measurement source",
+     "15W750 added alongside Q21S as a fully isolated source; per-model frequency isolation so "
+     "browsing one model never affects the active simulation"],
     ["1.3.8", "2026-09-04", "Command line + aliases",
      "Command registry (short=full); typed-point DRAW; MOVE/ZOOM sessions; "
      "dock/undock terminal; Atomik HELP; Esc keeps float focused; v1.3.8 Windows Release"],
@@ -140,7 +148,68 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.3.8 detailed changes
+# Sheet 2: v1.4.0 detailed changes
+# ===========================================================================
+ws140 = wb.create_sheet("v1.4.0 Changes")
+ws140.sheet_view.showGridLines = False
+banner(ws140, "v1.4.0  -  Detailed Changes",
+       "2026-09-18  |  Figma UI cut + square full-bleed grid", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v140 = [
+    ["Branding", A, "ATOMIK. wordmark",
+     "New horizontal logo (with trailing dot) at Figma size/position; light and dark ink "
+     "variants generated from the source art", "2026-09-18"],
+    ["Ribbon", A, "Snap / Ortho slot",
+     "Laid out after Help, captioned and divided like every other cluster, behind "
+     "kShowOptionsCluster (off). Ctrl+F and the SNAP / ORTHO verbs stay live", "2026-09-18"],
+    ["Help", A, "Info panel",
+     "Replaces the stock message box for the info and ? popups: no icon disc, no OK "
+     "button, red close cross top-right", "2026-09-18"],
+    ["Naming", C, "Heatmap -> Gradient Plot",
+     "Canvas caption, stats chip, terminal VIEWSPL, PDF report title and rows, tooltips",
+     "2026-09-18"],
+    ["Plot", C, "Square, full-bleed grid",
+     "Uniform px/m so cells are square; the grid rules the whole canvas rather than "
+     "stopping at the field edge, and the field's floor tone fills the surround",
+     "2026-09-18"],
+    ["Plot", C, "Contrast-aware axis numbers",
+     "White with a halo over a rendered field, theme ink over the bare grid; colliding "
+     "tick labels are skipped", "2026-09-18"],
+    ["Plot", C, "Canvas caption ink",
+     "Brand red on the empty grid, white once a device is placed", "2026-09-18"],
+    ["Layout", C, "Sidebar tracks window width",
+     "Holds the design's 17.7% share at any aspect (was 13.3% at 21:9, 12.4% at 4K)",
+     "2026-09-18"],
+    ["Layout", C, "Scale ceiling 1.85 -> 2.70",
+     "A 4K client area needs 2.63 and was clamped, rendering every band ~30% thinner "
+     "than its share of the screen", "2026-09-18"],
+    ["Layout", C, "Vertical centring",
+     "Run info, export buttons and the status pill centred in their rows", "2026-09-18"],
+    ["Theme", C, "Dark theme hidden",
+     "Light theme only for this release; code intact", "2026-09-18"],
+    ["Help", F, "Icons shrank on units / theme switch",
+     "Header restyle stamped its own inset onto the ribbon's adopted glyphs, and JUCE "
+     "skips resized() when bounds do not change", "2026-09-18"],
+    ["Ribbon", F, "Icons rendered as black squares",
+     "Figma SVGs wrap base64 bitmaps in a pattern fill JUCE cannot render; bitmaps "
+     "extracted and preferred as PNG", "2026-09-18"],
+    ["Legend", F, "Rel. SPL bar overlapped the plot",
+     "Anchored to the gutter's left edge instead of right-anchored", "2026-09-18"],
+    ["Plot", F, "Contour bands collapsed below -18 dB",
+     "splBand quantizes the gradient instead of indexing a 7-entry palette that ran out "
+     "at the UI's 3 dB step", "2026-09-18"],
+    ["Packaging", C, "Version -> v1.4.0",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-18"],
+]
+write_table(ws140, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v140, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws140.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.3.8 detailed changes
 # ===========================================================================
 ws138 = wb.create_sheet("v1.3.8 Changes")
 ws138.sheet_view.showGridLines = False

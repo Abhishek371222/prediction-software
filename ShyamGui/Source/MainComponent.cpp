@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "PreferencesComponent.h"
+#include "InfoDialogComponent.h"
 #include "ReportExport.h"
 #include "ReportBuilder.h"
 #include "AcousticAnalysis.h"
@@ -30,12 +31,15 @@ MainComponent::MainComponent (ProjectData project)
                          juce::dontSendNotification);
     titleLabel_.setMinimumHorizontalScale (1.0f);
     titleLabel_.setBorderSize ({});
-    titleLabel_.setFont (Brand::techSemi (Brand::Type::appTitle));
+    titleLabel_.setFont (Brand::tech (Brand::Type::appTitle));
     titleLabel_.setColour (juce::Label::textColourId, Brand::text());
-    titleLabel_.setJustificationType (juce::Justification::centredRight);
+    // Centred inside its own box: resized() sizes that box to the measured
+    // string plus a small slack, so right-justifying would push the ink off
+    // the window's centre line by exactly that slack.
+    titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.3.8", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.0", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -133,7 +137,8 @@ MainComponent::MainComponent (ProjectData project)
     btnProject_.onClick = [this] { showProjectMenu(); };
     addAndMakeVisible (btnProject_);
 
-    toggleAutosave_.setButtonText ("AutoSave");
+    toggleAutosave_.setButtonText ("Auto Save");   // Figma row 1 spells it as two words
+    toggleAutosave_.setComponentID ("headerToggle");
     toggleAutosave_.setTooltip ("AutoSave on/off (writes automatically when dirty)");
     toggleAutosave_.setToggleState (AppSettings::get().autosaveEnabled(),
                                     juce::dontSendNotification);
@@ -171,8 +176,7 @@ MainComponent::MainComponent (ProjectData project)
         const juce::String stats = statChips_.isEmpty()
             ? juce::String ("No simulation stats yet. Run a simulation to see live values.")
             : statChips_.joinIntoString ("\n");
-        juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
-            "Simulation Stats", stats);
+        showInfoPanel ("Simulation Stats", {}, stats);
     };
     refreshHeaderIcons();
 
@@ -240,6 +244,14 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setDrawColour (c);
         plotHeader_.setDrawColour (c);
     };
+
+    // Figma File cluster. Tooltips are set alongside the icons in UiChrome.h
+    // ("New Project", "Save Project (Ctrl+S)", ...), these are the actions.
+    plotHeader_.onFileNew    = [this] { launchNewProjectInstance(); };
+    plotHeader_.onFileOpen   = [this] { openProjectInCurrentWindow(); };
+    plotHeader_.onFileSave   = [this] { saveProject(); };
+    plotHeader_.onFileSaveAs = [this] { saveProjectAs(); };
+    plotHeader_.onFileExport = [this] { exportPdfReport(); };
 
     plotHeader_.btnShape_.onClick = [this, chooseShape]
     {
@@ -354,7 +366,8 @@ MainComponent::MainComponent (ProjectData project)
     statusStrip_.setMode (StatusStrip::Mode::RunInfo);
     // Figma redesign: "Ready" lives in row 2's ribbon (far right, same row
     // as the tool icons), not the title row — reparent into plotHeader_.
-    plotHeader_.setReadyPill (headerStatus_);
+    plotHeader_.setReadyPill (headerStatus_,
+                              [this] { return headerStatus_.preferredPillWidth(); });
     // ...and the red "SPL Heatmap | ..." caption belongs on the canvas's
     // top-left, not inside the ribbon. Reparent it here; plotHeader_.setTitle()
     // still drives its text from every existing call site.
@@ -611,6 +624,33 @@ void MainComponent::layoutPrefsPanel()
     const int h = UiConfig::Scale::px (UiConfig::Layout::prefsPanelHeight);
     prefsPanel_->setBounds ((getWidth()  - w) / 2,
                             (getHeight() - h) / 2, w, h);
+}
+
+void MainComponent::showInfoPanel (const juce::String& heading,
+                                   const juce::String& subtitle,
+                                   const juce::String& body)
+{
+    if (infoPanel_ == nullptr)
+    {
+        infoPanel_ = std::make_unique<InfoDialogComponent>();
+        infoPanel_->onClose = [this] { if (infoPanel_ != nullptr) infoPanel_->setVisible (false); };
+        addChildComponent (*infoPanel_);
+    }
+
+    infoPanel_->setContent (heading, subtitle, body);
+    infoPanel_->setVisible (true);
+    infoPanel_->toFront (true);
+    layoutInfoPanel();
+}
+
+void MainComponent::layoutInfoPanel()
+{
+    if (infoPanel_ == nullptr || ! infoPanel_->isVisible()) return;
+    const int w = UiConfig::Scale::px (UiConfig::Layout::prefsPanelWidth);
+    const int h = juce::jmin (getHeight() - UiConfig::Scale::px (40),
+                              infoPanel_->preferredHeight (w));
+    infoPanel_->setBounds ((getWidth()  - w) / 2,
+                           (getHeight() - h) / 2, w, h);
 }
 
 // ---------------------------------------------------------------------------
@@ -917,6 +957,9 @@ void MainComponent::reportStatus (const juce::String& state, bool ready)
 {
     statusStrip_.setStatus (state, ready);
     headerStatus_.setStatus (state, ready);
+    // The pill sizes itself to its text, so the ribbon has to re-lay-out when
+    // the message changes — otherwise longer statuses stay clipped.
+    plotHeader_.refreshStatusLayout();
 }
 
 void MainComponent::preferTerminalFocus()
@@ -994,9 +1037,8 @@ void MainComponent::dockTerminal()
 
 void MainComponent::showKeyboardShortcuts()
 {
+    // "Manage workflow" is the panel's subtitle now, not the first body line.
     const juce::String body =
-        "Manage workflow\n"
-        "\n"
         "Ctrl+C    Copy object\n"
         "Ctrl+X    Cut object\n"
         "Ctrl+V    Paste object\n"
@@ -1011,9 +1053,7 @@ void MainComponent::showKeyboardShortcuts()
         "\n"
         "Ctrl+S    Save project";
 
-    juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
-                                            "Keyboard Shortcuts",
-                                            body);
+    showInfoPanel ("Keyboard Shortcuts", "Manage workflow", body);
 }
 
 bool MainComponent::parseAnnotPoint (const juce::String& text, juce::Point<float>& out)
@@ -1456,7 +1496,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
     if (verb == "viewspl")
     {
         setViewMode (ViewMode::SPL);
-        return TerminalResult::ok ("View: SPL Heat Map.");
+        return TerminalResult::ok ("View: SPL Gradient Plot.");
     }
     if (verb == "viewdir")
     {
@@ -1802,7 +1842,9 @@ void MainComponent::resized()
     // setReadyPill in the constructor) — matching the Figma mock, where
     // Ready sits in the same row as the tool icons, not the title row.
     const int rightPad = UiConfig::Scale::px (12);
-    const int headerBtnTop = UiConfig::Scale::px (8);
+    // Figma centres the 20px "Auto Save" checkbox on y=28.5 inside the 58px
+    // row; the button is headerIconH tall, so its top sits half that above.
+    const int headerBtnTop = UiConfig::Scale::px (6);
 
     for (juce::Component* c : { (juce::Component*) &btnStats_, (juce::Component*) &btnProject_,
                                  (juce::Component*) &btnMore_ })
@@ -1811,60 +1853,58 @@ void MainComponent::resized()
         c->setBounds (0, 0, 0, 0);
     }
 
-    const auto statsFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::headerStatsButton));
-    const int toggleW = juce::jmax (UiConfig::Scale::px (120),
-                                    juce::roundToInt (statsFont.getStringWidthFloat (toggleAutosave_.getButtonText())
-                                                     + UiConfig::Scale::px (52)));
-
     {
-        // Logo | AutoSave | title + version | flexible space.
-        // Version is never ellipsized: it keeps its full glyph width at every scale.
-        const int logoRight   = Brand::headerLogoRightReserve();
-        const int autosaveGap = UiConfig::Scale::px (14);
-        toggleAutosave_.setBounds (logoRight + autosaveGap, headerBtnTop, toggleW, Brand::UI::headerIconH);
-        const int titleLeft  = logoRight + autosaveGap + toggleW + autosaveGap;
-        const int regionR   = W - rightPad;
-        const int regionW   = juce::jmax (1, regionR - titleLeft);
-        const int pairGap   = UiConfig::Scale::px (10);
+        // Figma row 1 (node 39-2): logo at x=20, the "Auto Save" checkbox at
+        // x=143 with its label at x=173, and the document title centred on the
+        // full window width (Figma's title box is x=815..1104, midpoint 959.5
+        // against a canvas centre of 960). Nothing else lives in this row.
+        //
+        // These are absolute Figma positions rather than a left-to-right flow:
+        // a flow accumulates each element's padding and drifts right, which is
+        // exactly what pushed the ribbon clusters out of place before.
+        toggleAutosave_.setBounds (UiConfig::Scale::px (UiConfig::Layout::headerAutoSaveX),
+                                   headerBtnTop,
+                                   UiConfig::Scale::px (UiConfig::Layout::headerAutoSaveW),
+                                   Brand::UI::headerIconH);
+
+        // Figma has no version chip in the title row. Hidden, not removed --
+        // versionLabel_ still carries the build string for the Help/About box.
+        versionLabel_.setVisible (false);
+        versionLabel_.setBounds (0, 0, 0, 0);
+
+        const int autosaveRight = toggleAutosave_.getRight() + UiConfig::Scale::px (12);
+        const int regionR = W - rightPad;
+
+        // Figma renders the document title in the Regular weight, not SemiBold.
+        juce::Font titleFont = Brand::tech (Brand::UI::scaledFont (Brand::Type::appTitle));
+        float fontH = titleFont.getHeight();
 
         auto glyphW = [] (const juce::Font& font, const juce::String& text) -> int
         {
             return juce::roundToInt (font.getStringWidthFloat (text) + 8.0f);
         };
 
-        juce::Font titleFont = Brand::techSemi (Brand::UI::scaledFont (Brand::Type::appTitle));
-        float fontH = titleFont.getHeight();
-        juce::Font versionFont = Brand::techSemi (juce::jmax (UiConfig::Laf::versionMin,
-                                                              fontH * UiConfig::Laf::versionFromTitle));
-        versionLabel_.setFont (versionFont);
-
         const juce::String titleText = titleLabel_.getText();
-        const juce::String verText   = versionLabel_.getText();
-        int vw = glyphW (versionFont, verText);
         int tw = glyphW (titleFont, titleText);
 
-        while (fontH > UiConfig::Laf::titleShrinkMin
-               && tw + pairGap + vw > regionW)
+        // Shrink only if the title would collide with AutoSave or the right pad.
+        const int regionW = juce::jmax (1, regionR - autosaveRight);
+        while (fontH > UiConfig::Laf::titleShrinkMin && tw > regionW)
         {
             fontH -= 0.5f;
             titleFont = titleFont.withHeight (fontH);
             tw = glyphW (titleFont, titleText);
         }
         titleLabel_.setFont (titleFont);
+        tw = juce::jmin (tw, regionW);
 
-        if (tw + pairGap + vw > regionW)
-            tw = juce::jmax (48, regionW - pairGap - vw);
-
-        const int pairW = tw + pairGap + vw;
-        float pairX = 0.5f * (float) W - 0.5f * (float) pairW;
-        pairX = juce::jlimit ((float) titleLeft,
-                              (float) juce::jmax (titleLeft, regionR - pairW),
-                              pairX);
+        // Centred on the window, nudged right only if AutoSave is in the way.
+        int titleX = juce::roundToInt (0.5f * (float) (W - tw));
+        titleX = juce::jlimit (autosaveRight, juce::jmax (autosaveRight, regionR - tw), titleX);
 
         const int titleTop = UiConfig::Scale::px (6);
         const int labelH   = juce::jmax (16, titleH - UiConfig::Scale::px (8));
-        titleLabel_.setBounds ((int) pairX, titleTop, tw, labelH);
-        versionLabel_.setBounds ((int) pairX + tw + pairGap, titleTop, vw, labelH);
+        titleLabel_.setBounds (titleX, titleTop, tw, labelH);
     }
 
     // Param stats live in Help; keep bar out of the layout.
@@ -1945,6 +1985,9 @@ void MainComponent::resized()
         caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
                            juce::jmax (0, centreW - capPadX * 2), capH);
         caption.toFront (false);
+        // PlotHeaderBar::lookAndFeelChanged() re-stamps the label red, so put
+        // the contrast-aware colour back on every layout pass.
+        refreshCaptionColour();
     }
 
     // Bottom strip (Figma y=979..1080, x=340..1920): "Last run" / "Elapsed"
@@ -1973,7 +2016,10 @@ void MainComponent::resized()
         const int btnH    = UiConfig::Scale::px (L::bottomButtonHeight);
         const int btnGap  = UiConfig::Scale::px (L::bottomButtonGap);
         const int rightPd = UiConfig::Scale::px (L::bottomButtonRightPad);
-        const int btnTop  = bottomTop + UiConfig::Scale::px (L::bottomButtonBaseline);
+        // Centre the row's contents in the strip rather than hanging them from
+        // its top edge: both the run-info block and these buttons sat high,
+        // leaving all the slack underneath.
+        const int btnTop  = bottomTop + (bottomH - btnH) / 2;
 
         int erx = W - rightPd - btnW;
         btnExportCSV_.setBounds (erx, btnTop, btnW, btnH);
@@ -1981,11 +2027,12 @@ void MainComponent::resized()
         btnExportPNG_.setBounds (erx, btnTop, btnW, btnH);
 
         const int infoX = plotX + UiConfig::Scale::px (L::bottomRunInfoLeft);
-        const int infoY = bottomTop + UiConfig::Scale::px (L::bottomRunInfoTop);
         const int infoH = UiConfig::Scale::px (L::bottomRunInfoLineGap) * 2;
+        const int infoY = bottomTop + (bottomH - infoH) / 2;
         statusStrip_.setBounds (infoX, infoY, juce::jmax (0, erx - infoX), infoH);
     }
     layoutPrefsPanel();
+    layoutInfoPanel();
 }
 
 // ---------------------------------------------------------------------------
@@ -2063,7 +2110,7 @@ void MainComponent::syncRenderer()
 void MainComponent::updatePlotChrome()
 {
     const auto& p = lastParams_;
-    const char* vmName = (currentView_ == ViewMode::SPL)         ? "SPL Heatmap"
+    const char* vmName = (currentView_ == ViewMode::SPL)         ? "SPL Gradient Plot"
                        : (currentView_ == ViewMode::Directivity) ? "Directivity"
                                                                : "Measured Polar";
 
@@ -2080,6 +2127,19 @@ void MainComponent::updatePlotChrome()
         title += "  |  Measured @ " + Units::metres ((double) simDist, 1);
     }
     plotHeader_.setTitle (title);
+    refreshCaptionColour();
+}
+
+void MainComponent::refreshCaptionColour()
+{
+    // With no devices the canvas is the pale empty grid and the brand red
+    // reads well on it. As soon as a speaker is placed the field renders
+    // underneath -- near-black at the dB floor -- and red on that is as good
+    // as invisible, so the caption switches to white.
+    const bool overField = lastResult_.activeSpeakers > 0;
+    plotHeader_.getTitleLabel().setColour (juce::Label::textColourId,
+                                           overField ? Brand::white()
+                                                     : Brand::plotTitle());
 }
 
 void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool,
@@ -2187,8 +2247,22 @@ void MainComponent::showDrawColourPicker()
                                             nullptr);
 }
 
+void MainComponent::refreshTitleLabel()
+{
+    const auto name = project_.displayName();
+    const juce::String text = name.isNotEmpty()
+                                ? "Atomik Simulation Engine - " + name
+                                : juce::String ("Atomik Simulation Engine");
+    if (titleLabel_.getText() != text)
+    {
+        titleLabel_.setText (text, juce::dontSendNotification);
+        resized();   // the title is centre-anchored, so its width drives its x
+    }
+}
+
 void MainComponent::updateSettingsBar()
 {
+    refreshTitleLabel();
     const auto& p = lastParams_;
     juce::StringArray chips;
 
@@ -2202,7 +2276,7 @@ void MainComponent::updateSettingsBar()
     }
     else
     {
-        const char* vm = (currentView_ == ViewMode::SPL) ? "SPL Heatmap" : "Directivity";
+        const char* vm = (currentView_ == ViewMode::SPL) ? "SPL Gradient Plot" : "Directivity";
         chips.add ("f = " + juce::String ((int) p.frequency) + " Hz");
         chips.add ("lambda = " + juce::String (Units::metresToDisplay (lastResult_.lambda), 2)
                      + " " + Units::lengthUnit());
@@ -2362,6 +2436,11 @@ void MainComponent::refreshHeaderIcons()
     if (! styleFromFile (btnHelp_, "Help"))      styleBadge (btnHelp_, kHelpMarkPath);
     if (! styleFromFile (btnPrefsIcon_, "Settings")) style (btnPrefsIcon_, HeaderIcons::kGear, false);
     style (btnMore_,      HeaderIcons::kMenu, false);
+
+    // The gear / info / "?" live in the ribbon's Help cluster, so the ribbon --
+    // not this header styling -- owns their sizing. Without this they shrink
+    // every time the units or theme change.
+    plotHeader_.refreshHelpIconMetrics();
 }
 
 void MainComponent::showOverflowMenu()
@@ -2509,7 +2588,7 @@ void MainComponent::showProjectMenu()
 {
     juce::PopupMenu m;
     m.addItem (4, "Save Project\tCtrl+S", true, false);
-    m.addItem (5, "Save Project As…", true, false);
+    m.addItem (5, "Save Project As...", true, false);
     m.addSeparator();
     m.addItem (1, "Open Project (New Window)");
     m.addItem (2, "Open Project (Current Window)");
@@ -2900,7 +2979,7 @@ void MainComponent::exportCSV()
                 fos.writeText (s + "\n", false, false, nullptr);
             };
 
-            line ("# Atomik Simulation Engine v1.3.8");
+            line ("# Atomik Simulation Engine v1.4.0");
             line ("# Product,Q21S");
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

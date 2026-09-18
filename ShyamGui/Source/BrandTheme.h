@@ -233,6 +233,7 @@ namespace Brand
         constexpr float dashRecentItem       = UiConfig::FontSize::dashRecentItem;
         constexpr float plotFitButton      = UiConfig::FontSize::plotFitButton;
         constexpr float headerStatsButton  = UiConfig::FontSize::headerStatsButton;
+        constexpr float headerToggleLabel  = UiConfig::FontSize::headerToggleLabel;
         constexpr float plotToolbarLabel   = UiConfig::FontSize::plotToolbarLabel;
         constexpr float ribbonClusterLabel = UiConfig::FontSize::ribbonClusterLabel;
 
@@ -313,7 +314,12 @@ namespace Brand
             btnGap     = px (5);
             sliderBoxW = px (UiConfig::Layout::sliderBoxWidth);
             sliderBoxH = px (UiConfig::Layout::sliderBoxHeight);
-            sidebarW   = px (UiConfig::Layout::sidebarWidth);
+            // Proportional to the window width so the sidebar keeps the
+            // design's share of the screen at any aspect ratio, not just 16:9.
+            sidebarW   = juce::jlimit (px (UiConfig::Scale::sidebarWidthMin),
+                                       px (UiConfig::Scale::sidebarWidthMax),
+                                       juce::roundToInt ((float) windowW
+                                           * UiConfig::Scale::sidebarWidthFraction));
             sidebarCollapsedW = px (UiConfig::Layout::sidebarCollapsedWidth);
             infoPanelW = px (UiConfig::Layout::infoPanelWidth);
             paramBarH  = px (UiConfig::Layout::paramBarHeight);
@@ -479,8 +485,12 @@ namespace Brand
         return juce::ImageFileFormat::loadFrom (raw.getData(), raw.getDataSize());
     }
 
-    // ATOMIK-only wordmark aspect (from cropped brand assets).
-    constexpr float logoAspect = 1942.0f / 323.0f;
+    // ATOMIK-only wordmark aspect. Measured from the tight ink crop of the
+    // Figma "Horizontal Logo - Black 1" art (4096x615), which is the wordmark
+    // WITH the trailing dot. Figma renders it 94x14 in the header (6.71) --
+    // the 0.8% difference is Figma's own box rounding, so the art's true
+    // aspect is used here and nothing is stretched.
+    constexpr float logoAspect = 4096.0f / 615.0f;
 
     // Drop the stacked "AUDIO" line from the historic two-line mark.
     inline juce::Image cropToAtomikOnly (juce::Image img)
@@ -644,8 +654,10 @@ namespace Brand
         const float padX = (float) UiConfig::Scale::px (UiConfig::Layout::headerLogoPadX);
         const float padY = (float) UiConfig::Scale::px (UiConfig::Layout::headerLogoPadY);
         const float maxH = (float) UiConfig::Scale::px (UiConfig::Layout::headerLogoMaxHeight);
-        // Floor tracks scaled max so small windows stay readable without clipping.
-        const float minH = juce::jmax (10.0f, maxH * 0.85f);
+        // Floor tracks scaled max so small windows stay readable without
+        // clipping. Never let the floor exceed the ceiling: at the bottom of
+        // the window-scale range maxH itself drops below the old flat 10px.
+        const float minH = juce::jmin (maxH, juce::jmax (9.0f, maxH * 0.85f));
         const float h = juce::jlimit (minH, maxH, headerBandH - 2.0f * padY);
         const float w = h * logoAspect;
         return { padX, 0.5f * (headerBandH - h), w, h };
@@ -1084,8 +1096,13 @@ namespace Brand
                                bool highlighted, bool down) override
         {
             const bool sidebar = isSidebarControl (button);
+            // Header "Auto Save": its own size, tagged by component ID so the
+            // generic non-sidebar toggle styling is left untouched.
+            const bool headerBar = button.getComponentID() == "headerToggle";
             // Sidebar: fixed solid SemiBold size (do not crush by row height).
-            const float fontSize = sidebar
+            const float fontSize = headerBar
+                ? UI::scaledFont (Type::headerToggleLabel)
+                : sidebar
                 ? UI::scaledFont (Type::sidebarFieldLabel)
                 : juce::jlimit (UI::scaledFont (Type::label),
                                 UI::scaledFont (Type::input),
@@ -1097,7 +1114,8 @@ namespace Brand
                             : sidebar   ? tech (fontSize)
                                         : tech (fontSize);
             // UI::tickSize is already window-scaled — do not multiply by UI::scale again.
-            const float tickScale = sidebar ? UiConfig::Control::sidebarTickScale : 1.0f;
+            const float tickScale = headerBar ? UiConfig::Control::headerTickScale
+                                             : UiConfig::Control::sidebarTickScale;
             const int maxSide = juce::jmax (1, button.getHeight() - 2);
             const int tickW = juce::jlimit (12, maxSide,
                                            juce::roundToInt (UI::tickSize * tickScale));
@@ -1114,7 +1132,7 @@ namespace Brand
 
             g.setColour (textCol); // full opacity when enabled
             g.setFont (font);
-            const int tickPad = tickW + (sidebar ? 8 : 12);
+            const int tickPad = tickW + (headerBar ? 11 : sidebar ? 8 : 12);
             g.drawFittedText (button.getButtonText(),
                               button.getLocalBounds()
                                   .withTrimmedLeft (tickPad)

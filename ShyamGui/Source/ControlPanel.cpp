@@ -293,7 +293,7 @@ ControlPanel::ControlPanel()
 
     clearAllBtn_.setButtonText ("Clear All");
     styleTextLink (clearAllBtn_, "ctrlClearAllLink");
-    clearAllBtn_.setTooltip ("Remove all drawings, lines, rulers, and shapes from the SPL heatmap");
+    clearAllBtn_.setTooltip ("Remove all drawings, lines, rulers, and shapes from the SPL gradient plot");
     clearAllBtn_.onClick = [this]
     {
         willEdit();

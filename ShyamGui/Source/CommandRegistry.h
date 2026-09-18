@@ -111,7 +111,7 @@ namespace CommandRegistry
             { "COORDS",  aCoords, "Toggle coordinate / SPL probe", false },
             { "ORTHO",   aOrtho,  "Toggle ortho", false },
             { "RUN",     aRun,    "Run simulation", false },
-            { "VIEWSPL", aViewSpl,"SPL heatmap view", false },
+            { "VIEWSPL", aViewSpl,"SPL gradient plot view", false },
             { "VIEWDIR", aViewDir,"Directivity view", false },
             { "VIEWMEAS",aViewMeas,"Measured polar view", false },
             { "PENCIL",  aPencil, "Freehand pencil", false },
