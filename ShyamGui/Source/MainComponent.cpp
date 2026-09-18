@@ -323,15 +323,6 @@ MainComponent::MainComponent (ProjectData project)
     // The plot drives the simulated region: zooming changes how many metres
     // are solved for, not how much of a fixed box is visible, so the field
     // always covers the canvas and the reachable range is unbounded.
-    // Zoom resizes the solved region, panning moves it; either way the field
-    // is re-solved for exactly what is on screen.
-    patternComp_.onViewRegionChanged = [this] (double x, double y, double w, double h)
-    {
-        controlPanel_.setWorldExtent (w, h);
-        controlPanel_.setWorldOrigin (x, y);
-        scheduleRecompute();
-    };
-
     plotHeader_.btnSnap_.onClick = [this]
     {
         patternComp_.setDrawGridSnap (plotHeader_.btnSnap_.getToggleState());
@@ -1995,11 +1986,6 @@ void MainComponent::resized()
     plotHeader_.setBounds (0, titleH, W, toolbarStripH);
 
     patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
-
-    // Re-shape the simulated region to the plot's new aspect so it keeps
-    // filling the canvas after a resize. requestViewExtent no-ops when the
-    // region is unchanged, so this does not re-run on every layout pass.
-    patternComp_.requestViewExtent (patternComp_.viewExtentH());
 
     // Red "SPL Heatmap | ..." caption: canvas top-left, as in the Figma mock
     // (it used to sit inside the ribbon and push every cluster to the right).

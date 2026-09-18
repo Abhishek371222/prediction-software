@@ -3151,17 +3151,14 @@ void RadiationPatternComponent::fitView()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    // The simulated region now follows the viewport (see requestViewExtent),
-    // so the world's aspect already matches the plot's and a single px/m fills
-    // it exactly: no crop, no margins, and square grid cells because the two
-    // axes share that one scale.
-    //
-    // jmin rather than jmax only matters in the instant between a resize and
-    // the re-run catching up, where it errs toward showing everything rather
-    // than cropping.
+    // ONE px/m for both axes, so grid cells are square and the cabinets are
+    // drawn to scale. The LARGER ratio, so the plot is filled edge to edge
+    // with no margins; on a non-square canvas that crops the fixed field on
+    // the shorter axis, and zooming out past this fit (see minZoomForFit)
+    // brings the whole field back into view.
     const float sx = (float) (pb.getWidth()  / ww);
     const float sy = (float) (pb.getHeight() / wh);
-    const float s  = juce::jmin (sx, sy);
+    const float s  = juce::jmax (sx, sy);
     baseScaleX_ = s;
     baseScaleY_ = s;
     zoom_       = 1.0f;
@@ -3174,41 +3171,40 @@ void RadiationPatternComponent::fitView()
     clampViewToField();
 }
 
-/** Asks for a new simulated region, sized to the plot's aspect so it fills the
-    canvas exactly, and tells the owner to re-run.
-
-    This is what makes the range unbounded: zooming does not crop a fixed
-    100 x 100 m box any more, it changes how many metres the simulation covers.
-    depthM is the world height to cover; width follows from the plot's shape.
-*/
-void RadiationPatternComponent::requestViewExtent (double depthM)
+void RadiationPatternComponent::zoomAboutCentre (float factor)
 {
     const auto pb = plotArea();
-    if (pb.getWidth() <= 0 || pb.getHeight() <= 0) return;
+    const float newZoom = juce::jlimit (minZoomForFit(), kMaxZoom, zoom_ * factor);
+    if (std::abs (newZoom - zoom_) < 1e-6f) return;
 
-    // Floor keeps a click from collapsing the world to nothing; ceiling keeps
-    // a held zoom-out from asking for a continent (and a grid step so fine or
-    // coarse that currentGridMetrics has nothing sensible to pick).
-    depthM = juce::jlimit (kMinExtentM, kMaxExtentM, depthM);
+    const float cx = (float) pb.getCentreX();
+    const float cy = (float) pb.getCentreY();
+    const auto worldUnder = screenToWorld (cx, cy);
+    zoom_ = newZoom;
+    origin_.x = cx - (float) pb.getX() - worldUnder.x * worldScaleX();
+    origin_.y = cy - (float) pb.getY()
+                  - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    clampViewToField();
+    layoutTextBoxEditor();
+    repaint();
+}
 
-    const double aspect = (double) pb.getWidth() / (double) pb.getHeight();
-    const double w = depthM * aspect;
-    if (std::abs (depthM - extentH_) < 1.0e-6 && std::abs (w - extentW_) < 1.0e-6)
-        return;
+float RadiationPatternComponent::minZoomForFit() const
+{
+    // zoom 1.0 is the fill-the-canvas fit, which crops the fixed field on the
+    // shorter axis. Zooming out past it is allowed so the whole field can be
+    // brought into view, but no further -- below that the world would just
+    // shrink into a corner of an empty canvas.
+    const auto pb = plotArea();
+    const double ww = (result_.worldW > 0 ? result_.worldW : params_.worldW);
+    const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return 1.0f;
 
-    // Zoom about the middle of what is on screen. Resizing the region while
-    // holding its origin would anchor every zoom to the region's corner, so
-    // zooming in walked the view off into empty space instead of magnifying
-    // whatever you were looking at.
-    const double cx = result_.worldX0 + result_.worldW * 0.5;
-    const double cy = result_.worldY0 + result_.worldH * 0.5;
-
-    extentH_ = depthM;
-    extentW_ = w;
-    regionX0_ = cx - extentW_ * 0.5;
-    regionY0_ = cy - extentH_ * 0.5;
-
-    if (onViewRegionChanged) onViewRegionChanged (regionX0_, regionY0_, extentW_, extentH_);
+    const float sx = (float) (pb.getWidth()  / ww);
+    const float sy = (float) (pb.getHeight() / wh);
+    const float coverS = juce::jmax (sx, sy);
+    if (coverS <= 1.0e-6f) return 1.0f;
+    return juce::jmin (1.0f, juce::jmin (sx, sy) / coverS);
 }
 
 void RadiationPatternComponent::clampViewToField()
@@ -3218,9 +3214,8 @@ void RadiationPatternComponent::clampViewToField()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    // zoom_ stays at 1: the extent, not the zoom factor, is what changes.
-    if (zoom_ < 1.0f)
-        zoom_ = 1.0f;
+    if (zoom_ < minZoomForFit())
+        zoom_ = minZoomForFit();
 
     const float worldPxW = (float) ww * worldScaleX();
     const float worldPxH = (float) wh * worldScaleY();
@@ -3253,9 +3248,7 @@ void RadiationPatternComponent::zoomIn()
     if (params_.viewMode == ViewMode::Directivity) return;
     if (params_.viewMode == ViewMode::MeasuredPolar && ! showingBemHeatmap()) return;
 
-    // Zoom shrinks the simulated region rather than cropping a fixed one, so
-    // the owner re-runs and fitView refits to the new world.
-    requestViewExtent (extentH_ / 1.2);
+    zoomAboutCentre (1.2f);
 }
 
 void RadiationPatternComponent::zoomOut()
@@ -3263,9 +3256,7 @@ void RadiationPatternComponent::zoomOut()
     if (params_.viewMode == ViewMode::Directivity) return;
     if (params_.viewMode == ViewMode::MeasuredPolar && ! showingBemHeatmap()) return;
 
-    // Grows the simulated region: this is what makes the reachable range
-    // unbounded instead of capped at a fixed world.
-    requestViewExtent (extentH_ * 1.2);
+    zoomAboutCentre (1.0f / 1.2f);
 }
 
 void RadiationPatternComponent::resized()
@@ -5185,25 +5176,6 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     }
 }
 
-void RadiationPatternComponent::commitPan()
-{
-    // Convert the pixels dragged into metres and shift the solved region by
-    // that much, then hand it back so the owner re-runs. origin_ returns to
-    // zero because the new region starts exactly where the view now looks.
-    const float sx = worldScaleX(), sy = worldScaleY();
-    if (std::abs (origin_.x) < 0.5f && std::abs (origin_.y) < 0.5f) return;
-    if (sx < 1.0e-6f || sy < 1.0e-6f) return;
-
-    const double dxM = -(double) origin_.x / (double) sx;   // drag right -> region moves left
-    const double dyM =  (double) origin_.y / (double) sy;   // screen y is inverted
-
-    origin_ = { 0.0f, 0.0f };
-    regionX0_ = result_.worldX0 + dxM;
-    regionY0_ = result_.worldY0 + dyM;
-    if (onViewRegionChanged)
-        onViewRegionChanged (regionX0_, regionY0_, result_.worldW, result_.worldH);
-}
-
 void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag_ == Drag::Pencil && ! annotations_.empty())
@@ -5419,15 +5391,13 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (drag_ == Drag::Pan)
     {
-        // Slide the already-rendered field for a smooth drag. The solved
-        // region itself is moved once, on release -- re-solving every mouse
-        // move would be unusable with a few units on a fine grid.
-        //
-        // No clampViewToField here: the region exactly fills the view, so the
-        // clamp's jlimit(0, 0, x) would pin origin_ back to zero and the pan
-        // would do nothing at all. That is why the Pan tool looked dead.
+        // View-only: slides the window over the fixed field, no re-solve, so
+        // dragging stays smooth and the prediction underneath never changes.
+        // The clamp keeps the view inside the field, which is possible again
+        // now that the fit crops rather than exactly filling.
         origin_ += (e.position - lastMouse_);
         lastMouse_ = e.position;
+        clampViewToField();
         if (tool_ == Tool::Select)
             updateSplProbeAt (e.position);
         repaint();
@@ -5471,7 +5441,6 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 {
     if (drag_ == Drag::Pan)
     {
-        commitPan();
         drag_ = Drag::None;
         updateMouseCursorForTool();
         repaint();
@@ -5532,8 +5501,18 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
     ensureWorldExtents();
 
     const float factor = (wheel.deltaY > 0 ? 1.1f : 1.0f / 1.1f);
-    // Same as the buttons: the wheel resizes the simulated region.
-    requestViewExtent (extentH_ / (double) factor);
+    // Zoom about the pointer so the point under the cursor stays put.
+    const float newZoom = juce::jlimit (minZoomForFit(), kMaxZoom, zoom_ * factor);
+    if (std::abs (newZoom - zoom_) < 1e-6f) return;
+    const auto worldUnder = screenToWorld (e.position.x, e.position.y);
+    zoom_ = newZoom;
+    const auto pb = plotArea();
+    origin_.x = e.position.x - (float) pb.getX() - worldUnder.x * worldScaleX();
+    origin_.y = e.position.y - (float) pb.getY()
+                  - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    clampViewToField();
+    layoutTextBoxEditor();
+    repaint();
 }
 
 void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)

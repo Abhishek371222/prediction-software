@@ -199,22 +199,6 @@ public:
     void mouseExit      (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
-    /** Fired whenever the view wants a different solved region, as
-        (x0, y0, width, height) in metres. Zoom changes the size, panning
-        changes the origin; both arrive here. The owner should push it into the
-        next SimParams and re-run. */
-    std::function<void(double, double, double, double)> onViewRegionChanged;
-
-    /** Requests a region `depthM` metres tall, widened to the plot's aspect so
-        it fills the canvas exactly. Clamped to [kMinExtentM, kMaxExtentM]. */
-    void requestViewExtent (double depthM);
-
-    double viewExtentW() const noexcept { return extentW_; }
-    double viewExtentH() const noexcept { return extentH_; }
-
-    static constexpr double kMinExtentM = 2.0;
-    static constexpr double kMaxExtentM = 20000.0;
-
     /** The field's rectangle on screen, in this component's coordinates.
         The view fits to contain, so this is smaller than the component on one
         axis; callers that draw over the plot need it to stay on the field. */
@@ -224,11 +208,8 @@ private:
     void buildImage();
     void fitView();
     void clampViewToField();
-
-    // Simulated region the view is asking for, in metres.
-    double extentW_ = 100.0, extentH_ = 100.0;
-    double regionX0_ = 0.0, regionY0_ = 0.0;   // its origin, moved by panning
-    void commitPan();                          // drag pixels -> new region origin
+    float minZoomForFit() const;        // zoom floor: whole field on screen
+    void zoomAboutCentre (float factor);
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
 

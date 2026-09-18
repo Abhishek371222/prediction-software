@@ -799,9 +799,10 @@ SimParams ControlPanel::getParams() const
     const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                  freqBox_.getSelectedId() - 1);
     p.frequency  = kSupportedFrequencies[fi];
-    // The simulated region is whatever the plot is currently showing, so the
-    // field always covers the canvas exactly and the reachable range is set by
-    // how far you zoom out rather than by a fixed 100 x 100 m box.
+    // Fixed 100 x 100 m domain. Tying it to the visible region instead made
+    // every zoom and pan a re-solve, which was slow and moved the goalposts
+    // for placement and for the Rel. SPL normalisation. The view's job is to
+    // show this field well, not to redefine it.
     p.worldX0    = worldX0_;
     p.worldY0    = worldY0_;
     p.worldW     = worldW_;
