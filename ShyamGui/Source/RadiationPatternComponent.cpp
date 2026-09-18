@@ -3191,20 +3191,13 @@ void RadiationPatternComponent::zoomAboutCentre (float factor)
 
 float RadiationPatternComponent::minZoomForFit() const
 {
-    // zoom 1.0 is the fill-the-canvas fit, which crops the fixed field on the
-    // shorter axis. Zooming out past it is allowed so the whole field can be
-    // brought into view, but no further -- below that the world would just
-    // shrink into a corner of an empty canvas.
-    const auto pb = plotArea();
-    const double ww = (result_.worldW > 0 ? result_.worldW : params_.worldW);
-    const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
-    if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return 1.0f;
-
-    const float sx = (float) (pb.getWidth()  / ww);
-    const float sy = (float) (pb.getHeight() / wh);
-    const float coverS = juce::jmax (sx, sy);
-    if (coverS <= 1.0e-6f) return 1.0f;
-    return juce::jmin (1.0f, juce::jmin (sx, sy) / coverS);
+    // zoom 1.0 IS the floor: it is the fill-the-canvas fit, so the plot is
+    // never letterboxed. An earlier cut let you zoom out past it to see the
+    // whole square field at once, which meant pale margins down both sides --
+    // the thing the full-bleed layout exists to avoid. The field stays
+    // 100 x 100 m either way; you just pan to reach the cropped band instead
+    // of shrinking everything to fit it on screen.
+    return 1.0f;
 }
 
 void RadiationPatternComponent::clampViewToField()
