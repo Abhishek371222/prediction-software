@@ -223,6 +223,13 @@ private:
         void timerCallback() override { if (fn) fn(); }
     };
     LambdaTimer measPoll_;
+    // Autosave cadence. The tick is how often a dirty project is checked; the
+    // gap is the floor between two writes so a continuous drag cannot write on
+    // every tick. Keep the gap <= the tick, or the two fight each other and
+    // saves are delayed by their difference.
+    static constexpr int         kAutosaveTickMs   = 2000;
+    static constexpr juce::int64 kAutosaveMinGapMs = 2000;
+
     LambdaTimer autoSaveTimer_;
     bool        projectDirty_ = false;
     juce::int64 lastAutosaveMs_ = 0;

@@ -156,7 +156,7 @@ namespace UiConfig
         constexpr float sidebarMainValue      = 14.3f;  // -> 12px ink  values / combo text
         constexpr float sidebarSectionTitle   = 19.1f;  // -> 14px ink  "1. FREQUENCY (Hz)"
         constexpr float sidebarButtonText     = 14.3f;  // -> 12px ink  + Add / Delete
-        constexpr float sidebarFieldLabel     = 14.3f;  // -> 12px ink  labels, checkbox text
+        constexpr float sidebarFieldLabel     = 15.1f;  // labels, checkbox text (was 14.3)
 
         // Aliases (frequency card uses the same sidebar scale)
         constexpr float freqValue             = sidebarMainValue;
@@ -185,6 +185,10 @@ namespace UiConfig
         // prompt ("LINE: click the plot…"). Were hardcoded literals (10px, no
         // scale) — named + scaled here so they track the legibility pass above.
         constexpr float plotToolbarLabel      = 12.5f;
+        // Ribbon "Opacity" caption and its percentage. Its own size because the
+        // shared plotToolbarLabel rendered these too small to read in the
+        // ribbon's narrow Opacity slot.
+        constexpr float ribbonOpacityLabel    = 16.0f;
         // Ribbon cluster captions ("File", "Navigation", ...). Calibrated by
         // measuring rendered ink against the Figma render rather than by
         // converting a CSS px value — JUCE's Font height is the whole line box,

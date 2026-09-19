@@ -166,8 +166,13 @@ namespace Brand
     inline juce::Colour card()          { return btnIn(); }
     inline juce::Colour disabled()      { return muted(); }
 
-    // Sidebar control outline: thin grey hairline (reads softer than solid black).
-    inline juce::Colour controlBorder() { return juce::Colour (0xff0c0c0c); } // Figma redesign: solid #0C0C0C hairline
+    // Sidebar control outline: a genuine grey hairline. It had been #0C0C0C --
+    // effectively black -- which put a hard frame around every combo, value box,
+    // button and checkbox and made the sidebar read as a grid of boxes rather
+    // than as fields. This one token drives all of them (see the ComboBox,
+    // Slider textBox, TextEditor and Label outline colours, and the button
+    // stroke), so the weight of the whole control set is set here.
+    inline juce::Colour controlBorder() { return juce::Colour (0xffafafaf); }
     constexpr float controlBorderPx   = 1.0f;
     constexpr float valueBoxCorner    = 3.0f;   // slider numeric boxes
     constexpr float controlCorner     = 2.0f;   // Figma redesign: flat 2px radius on combos / buttons
@@ -236,6 +241,7 @@ namespace Brand
         constexpr float headerStatsButton  = UiConfig::FontSize::headerStatsButton;
         constexpr float headerToggleLabel  = UiConfig::FontSize::headerToggleLabel;
         constexpr float plotToolbarLabel   = UiConfig::FontSize::plotToolbarLabel;
+        constexpr float ribbonOpacityLabel = UiConfig::FontSize::ribbonOpacityLabel;
         constexpr float ribbonClusterLabel = UiConfig::FontSize::ribbonClusterLabel;
 
         // --- Preferences dialog ----------------------------------------------

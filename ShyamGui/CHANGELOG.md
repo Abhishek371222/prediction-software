@@ -32,6 +32,11 @@ fits the field, how you move around it, and the cabinet's real size.
 
 ### Added
 - **Middle-drag pans from any tool** - no need to leave the tool you are drawing with.
+- **Q21S units are capped at 8.** Enforced in `ControlPanel::addSpeakerAt`, which every
+  add path funnels through (+ Add, click-to-place, and the terminal's `SPK`), so there
+  is no way round it. Each path reports the limit rather than silently doing nothing:
+  + Add refuses to arm placement, click-to-place disarms instead of swallowing clicks,
+  and the terminal returns a failure.
 
 ### Changed
 - **The plot never letterboxes.** The fill-the-canvas fit is now the zoom floor, so
@@ -43,6 +48,32 @@ fits the field, how you move around it, and the cabinet's real size.
   footprint is drawn at the field's own px/m, so the marker is to scale against the
   grid, and the engine's 1/r singularity floor follows the true depth.
 - **SPL caption sits at the canvas's left edge** again.
+- **The SPL solve runs on all cores** - 0.4s -> 0.1s for 8 units at 400 Hz,
+  resolution 400. The grid loop was single-threaded on one core of sixteen; rows are
+  now split across workers. Each cell only ever writes its own index, so the only
+  shared state was four running maxima, which each worker accumulates locally and
+  merges at the end. The per-cell scratch vectors are per-worker now -- they were
+  shared, which would have been a data race.
+- **Opacity is greyed out until it has a fill to change** - a selected filled shape,
+  or an armed shape tool that draws one. Lines, polylines, arcs and rulers have no
+  fill, so the control no longer looks live when dragging it would do nothing. The
+  tooltip says why when it is disabled.
+- **Opacity caption and percentage are larger** and the slot is wide enough for them:
+  at a legible size "Opacity" and "100%" did not fit the Figma mock's 56-unit slot, so
+  the caption lost its last letter and the value lost its % sign. Widened by 60 units
+  with the clusters after it shifted to match, and both labels are now sized from
+  their measured glyphs rather than a fixed split.
+- **Sidebar control outlines are grey** (`#AFAFAF`) rather than near-black `#0C0C0C`,
+  which framed every combo, value box, button and checkbox and made the sidebar read
+  as a grid of boxes. One token, `Brand::controlBorder()`, sets the weight of all of
+  them.
+- **Sidebar field labels are ~6% larger** (`sidebarFieldLabel` 14.3 -> 15.1).
+- **Recent Projects on the dashboard is bigger** - spans the full button row, is
+  taller, and both its own text and its dropdown list are larger. The list needed its
+  own LookAndFeel: the closed control and the popup read different hooks, and the
+  shared one caps the size regardless of the box's height.
+- **Measurement set is hidden** - only the Q21S (Ground Plane) set ships, so it had
+  exactly one choice. The loader and its validation are untouched behind it.
 - **Grid lines are lighter over the field.** The light theme's `plotGrid` token is an
   opaque mid-grey meant for a pale canvas; at full strength over the near-black SPL
   field it overpowered the data. Major lines drop from 100% to 42% alpha and minor
@@ -56,6 +87,24 @@ fits the field, how you move around it, and the cabinet's real size.
   is clicked.
 - **Zoom anchored on the field's corner** rather than the middle of the view, so
   zooming in walked off into empty space instead of magnifying what was on screen.
+- **The Opacity percentage never changed.** `PlotHeaderBar` set
+  `fillAlpha_.onValueChange` to update its readout, then `MainComponent` assigned over
+  that same hook, discarding it -- so the number sat frozen at its initial value. The
+  bar owns the slider callback now and exposes `onFillAlphaChanged` for outside code,
+  so the readout cannot be clobbered again.
+- **Autosave was slow enough to look broken.** The timer checked every 15 s while a
+  second throttle refused to write unless 30 s had passed, so a dirty project could
+  sit unsaved for up to 45 s. The two now agree: a 2 s tick with a 2 s floor between
+  writes, both named in `MainComponent` with a note to keep the gap <= the tick.
+- **Edits never showed as unsaved.** `applyResult()` reported a blanket "Ready" after
+  every recompute -- and since every edit triggers one, it overwrote the "Unsaved
+  changes" set milliseconds earlier. It reports the real save state now.
+- **A freshly opened project claimed unsaved changes.** Wiring the panels during
+  construction runs through the same change hooks a real edit does, so the flag is
+  now cleared once at the end of construction: a project just opened is unmodified.
+- **The status pill no longer contradicts itself** - "Unsaved changes" is reserved for
+  when nothing will write (autosave off); with autosave on it reads "Saving..." then
+  "Autosaved: <file>". Toggling autosave refreshes it immediately.
 
 ### Notes
 - An interim build sized the simulated region from the view, making range unbounded.

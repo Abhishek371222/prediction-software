@@ -100,7 +100,14 @@ public:
     /** Append speakers (e.g. paste); returns new indices. Does not fire onSelectionChanged. */
     std::vector<int> appendSpeakers (const std::vector<Speaker>& added);
     /** Place a new Q21S at world metres (click-to-place). */
-    void addSpeakerAt (float x, float y);
+    /** Hard cap on Q21S units. Enforced in addSpeakerAt, which every add path
+        funnels through (the + Add button, click-to-place, and the terminal's
+        ADDSPEAKER), so there is no way round it. */
+    static constexpr int kMaxSpeakers = 8;
+    bool canAddSpeaker() const noexcept { return (int) speakers_.size() < kMaxSpeakers; }
+
+    /** @returns false when the cap is already reached and nothing was added. */
+    bool addSpeakerAt (float x, float y);
     /** Remove speakers by index (highest first). */
     void removeSpeakers (const std::vector<int>& indices);
     void resetToDefaults();

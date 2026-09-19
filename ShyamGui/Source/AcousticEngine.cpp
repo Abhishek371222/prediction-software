@@ -1,6 +1,7 @@
 #include "AcousticEngine.h"
 #include <cmath>
 #include <algorithm>
+#include <thread>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -153,17 +154,30 @@ SimResult AcousticEngine::compute (const SimParams& p)
     std::vector<double> Iavg ((size_t) N * N);
     std::vector<double> Iabs ((size_t) N * N);
 
-    std::vector<double> rGeom ((size_t) srcs.size());
-    std::vector<double> rSpread ((size_t) srcs.size());
-    std::vector<double> theta ((size_t) srcs.size());
-
     double maxI = 0.0;
     double maxIUnity = 0.0;
     double maxAbsRe = 0.0;
     double maxAbsReUnity = 0.0;
 
-    for (int row = 0; row < N; ++row)
+    // Rows are split across cores. Every cell writes only its own index in P /
+    // Iavg / Iabs, so the only shared state is the four running maxima, which
+    // each worker accumulates locally and merges once at the end. The scratch
+    // vectors are per-worker for the same reason -- they were shared before,
+    // which is exactly what would have made this unsafe.
+    const int hw = (int) std::thread::hardware_concurrency();
+    const int nThreads = std::min (16, std::max (1, hw > 0 ? hw : 1));
+
+    struct Partial { double maxI = 0, maxIUnity = 0, maxAbsRe = 0, maxAbsReUnity = 0; };
+    std::vector<Partial> partials ((size_t) nThreads);
+
+    auto runRows = [&] (int rowBegin, int rowEnd, Partial& acc)
     {
+        std::vector<double> rGeom ((size_t) srcs.size());
+        std::vector<double> rSpread ((size_t) srcs.size());
+        std::vector<double> theta ((size_t) srcs.size());
+
+        for (int row = rowBegin; row < rowEnd; ++row)
+        {
         const double Y = res.worldY0 + row * dy;
         for (int col = 0; col < N; ++col)
         {
@@ -223,11 +237,40 @@ SimResult AcousticEngine::compute (const SimParams& p)
             Iavg[idx] = Iband;
             Iabs[idx] = incoh;
 
-            maxI         = std::max (maxI, Iband);
-            maxIUnity    = std::max (maxIUnity, IbandUnity);
-            maxAbsRe     = std::max (maxAbsRe, std::abs (centre.real()));
-            maxAbsReUnity = std::max (maxAbsReUnity, std::abs (centreUnity.real()));
+            acc.maxI         = std::max (acc.maxI, Iband);
+            acc.maxIUnity    = std::max (acc.maxIUnity, IbandUnity);
+            acc.maxAbsRe     = std::max (acc.maxAbsRe, std::abs (centre.real()));
+            acc.maxAbsReUnity = std::max (acc.maxAbsReUnity, std::abs (centreUnity.real()));
         }
+        }
+    };
+
+    if (nThreads <= 1)
+    {
+        runRows (0, N, partials[0]);
+    }
+    else
+    {
+        std::vector<std::thread> workers;
+        workers.reserve ((size_t) nThreads - 1);
+        const int chunk = (N + nThreads - 1) / nThreads;
+        for (int t = 1; t < nThreads; ++t)
+        {
+            const int b = std::min (N, t * chunk);
+            const int e = std::min (N, b + chunk);
+            if (b >= e) break;
+            workers.emplace_back ([&, b, e, t] { runRows (b, e, partials[(size_t) t]); });
+        }
+        runRows (0, std::min (N, chunk), partials[0]);   // this thread takes the first chunk
+        for (auto& w : workers) w.join();
+    }
+
+    for (const auto& pr : partials)
+    {
+        maxI          = std::max (maxI, pr.maxI);
+        maxIUnity     = std::max (maxIUnity, pr.maxIUnity);
+        maxAbsRe      = std::max (maxAbsRe, pr.maxAbsRe);
+        maxAbsReUnity = std::max (maxAbsReUnity, pr.maxAbsReUnity);
     }
 
     if (maxI < 1e-300)          maxI = 1.0;

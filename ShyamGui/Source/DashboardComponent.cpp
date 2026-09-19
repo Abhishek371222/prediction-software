@@ -46,6 +46,13 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
+DashboardComponent::~DashboardComponent()
+{
+    // JUCE requires this before the LookAndFeel goes out of scope, or the
+    // combo is left pointing at freed memory during teardown.
+    recentBox_.setLookAndFeel (nullptr);
+}
+
 DashboardComponent::DashboardComponent()
 {
     setSize (760, 600);
@@ -91,6 +98,7 @@ DashboardComponent::DashboardComponent()
             openProjectFile (f);
         }
     };
+    recentBox_.setLookAndFeel (&recentLnf_);
     addAndMakeVisible (recentBox_);
 
     // New-project form. Fields are added in Figma reading order (left column,
@@ -347,7 +355,10 @@ void DashboardComponent::resized()
         newBtn_.setBounds  (rowX, rowY, btnW, btnH);
         openBtn_.setBounds (rowX + btnW + gap, rowY, btnW, btnH);
 
-        recentBox_.setBounds (rowX, rowY + btnH + px (17), btnW, px (32));
+        // Spans the full button row rather than sitting under NEW PROJECT
+        // alone, and tall enough for a readable face.
+        recentLnf_.fontPx = 13.0f * ts;
+        recentBox_.setBounds (rowX, rowY + btnH + px (17), btnW * 2 + gap, px (40));
 
         footer_.setBounds (card.getX(), card.getBottom() - px (34), card.getWidth(), px (16));
     }

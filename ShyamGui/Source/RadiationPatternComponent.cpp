@@ -284,6 +284,23 @@ float RadiationPatternComponent::getActiveFillAlpha() const noexcept
     return drawFillAlpha_;
 }
 
+bool RadiationPatternComponent::hasFillTarget() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
+        && isFilledShapeKind (annotations_[(size_t) selectedAnnot_].kind))
+        return true;
+
+    // Nothing selected: the slider still sets the fill for the NEXT shape, but
+    // only if that shape actually has a fill.
+    if (tool_ == Tool::Shape)
+        return drawShape_ == DrawShape::Circle
+            || drawShape_ == DrawShape::Rectangle
+            || drawShape_ == DrawShape::Square
+            || drawShape_ == DrawShape::TextBox;
+
+    return false;
+}
+
 void RadiationPatternComponent::clearAnnotations()
 {
     annotations_.clear();

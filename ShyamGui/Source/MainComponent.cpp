@@ -146,10 +146,13 @@ MainComponent::MainComponent (ProjectData project)
     {
         const bool on = toggleAutosave_.getToggleState();
         AppSettings::get().setAutosaveEnabled (on);
+        // The pill's wording depends on this, so refresh it now rather than
+        // leaving a stale "Unsaved changes" until the next edit.
+        updateSaveIndicator();
         if (on)
         {
             if (! autoSaveTimer_.isTimerRunning())
-                autoSaveTimer_.startTimer (15000);
+                autoSaveTimer_.startTimer (kAutosaveTickMs);
         }
         else
         {
@@ -231,6 +234,7 @@ MainComponent::MainComponent (ProjectData project)
         applyPlotTool (RadiationPatternComponent::Tool::Shape, false, true);
         plotHeader_.setActiveTool (PlotHeaderBar::ActiveTool::Shape);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+        plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
         patternComp_.grabKeyboardFocus();
     };
 
@@ -335,7 +339,7 @@ MainComponent::MainComponent (ProjectData project)
     plotHeader_.colourSwatch_.onClick = [this] { showDrawColourPicker(); };
     plotHeader_.setDrawColour (patternComp_.getDrawColour());
     plotHeader_.setFillAlpha01 (patternComp_.getDrawFillAlpha());
-    plotHeader_.fillAlpha_.onValueChange = [this]
+    plotHeader_.onFillAlphaChanged = [this]
     {
         patternComp_.setDrawFillAlpha (plotHeader_.getFillAlpha01());
         plotHeader_.repaint();
@@ -345,10 +349,12 @@ MainComponent::MainComponent (ProjectData project)
         // Swatch + opacity follow the selected shape (or the draw brush if none).
         plotHeader_.setFillAlpha01 (patternComp_.getActiveFillAlpha());
         plotHeader_.setDrawColour (patternComp_.getActiveDrawColour());
+        plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
         plotHeader_.repaint();
     };
     patternComp_.onToolChanged = [this] (RadiationPatternComponent::Tool t)
     {
+        plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
         using T = RadiationPatternComponent::Tool;
         using A = PlotHeaderBar::ActiveTool;
         plotHeader_.setActiveTool (t == T::Select ? A::Select
@@ -475,6 +481,13 @@ MainComponent::MainComponent (ProjectData project)
     };
     controlPanel_.onAddSpeakerRequest = [this]
     {
+        if (! controlPanel_.canAddSpeaker())
+        {
+            reportStatus ("Limit reached: "
+                          + juce::String (ControlPanel::kMaxSpeakers)
+                          + " Q21S units max — delete one to add another", false);
+            return;
+        }
         patternComp_.setAddSpeakerArmed (true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         reportStatus ("Click the plot to place a Q21S", true);
@@ -493,19 +506,35 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onPlaceSpeakerAt = [this] (float x, float y)
     {
+        if (! controlPanel_.addSpeakerAt (x, y))
+        {
+            // At the cap: stop placement mode rather than silently swallowing
+            // clicks, so it is obvious why nothing is appearing.
+            patternComp_.setAddSpeakerArmed (false);
+            plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
+            reportStatus ("Limit reached: "
+                          + juce::String (ControlPanel::kMaxSpeakers)
+                          + " Q21S units max — delete one to add another", false);
+            return;
+        }
+
         willEdit();
-        controlPanel_.addSpeakerAt (x, y);
         syncRenderer();
         scheduleRecompute();
         commitEdit();
-        reportStatus ("Q21S placed — click again to add another (Esc cancels)", true);
+        const int n = (int) controlPanel_.getParams().speakers.size();
+        reportStatus (n >= ControlPanel::kMaxSpeakers
+                          ? juce::String ("Q21S placed — limit of ")
+                                + juce::String (ControlPanel::kMaxSpeakers) + " reached"
+                          : juce::String ("Q21S placed — click again to add another (Esc cancels)"),
+                      true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
     patternComp_.onAddSpeakerArmedChanged = [this]
     {
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         if (! patternComp_.isAddSpeakerArmed())
-            reportStatus ("Ready", true);
+            updateSaveIndicator();
     };
     patternComp_.onPasteSpeakers = [this] (std::vector<Speaker> added)
     {
@@ -565,7 +594,7 @@ MainComponent::MainComponent (ProjectData project)
 
     autoSaveTimer_.fn = [this] { autosaveIfNeeded(); };
     if (AppSettings::get().autosaveEnabled())
-        autoSaveTimer_.startTimer (15000);   // check every 15 s; writes when dirty
+        autoSaveTimer_.startTimer (kAutosaveTickMs);   // writes shortly after an edit
 
     highlightViewBtn (currentView_);
     updatePlotChrome();
@@ -598,6 +627,19 @@ MainComponent::MainComponent (ProjectData project)
         undockTerminal();
     else
         syncTerminalDockChrome();
+
+    // A project that has just been opened is, by definition, unmodified.
+    // Wiring up the panels during construction runs through the same change
+    // hooks a real edit does, which left a freshly opened file already
+    // reporting "Unsaved changes". State the invariant instead of trying to
+    // suppress each hook individually.
+    projectDirty_   = false;
+    lastAutosaveMs_ = 0;
+    updateSaveIndicator();
+
+    // Opacity starts greyed: the Select tool with nothing selected has no fill
+    // to act on. setFillAlphaEnabled is the only thing that flips it.
+    plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
 }
 
 MainComponent::~MainComponent()
@@ -767,10 +809,18 @@ void MainComponent::markProjectDirty()
 
 void MainComponent::updateSaveIndicator()
 {
-    if (projectDirty_)
-        reportStatus ("Unsaved changes", false);
-    else
+    if (! projectDirty_)
+    {
         reportStatus ("Ready", true);
+        return;
+    }
+
+    // With autosave on the edit is about to be written, so say that rather than
+    // "Unsaved changes" -- which read as a warning and, with the old timing,
+    // could sit there for the best part of a minute while autosave was in fact
+    // working. "Unsaved changes" is now reserved for when nothing will write.
+    const bool autoOn = AppSettings::get().autosaveEnabled();
+    reportStatus (autoOn ? "Saving..." : "Unsaved changes", autoOn);
 }
 
 juce::File MainComponent::autosaveFileForProject() const
@@ -814,9 +864,14 @@ void MainComponent::autosaveIfNeeded()
     if (juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0)
         return;
 
+    // The timer already paces this; a second, much longer throttle on top of
+    // it was the reason autosave felt broken. The timer ran every 15 s but a
+    // write was refused unless 30 s had passed, so a dirty project could sit
+    // unsaved for up to 45 s with "Unsaved changes" showing the whole time.
+    // Keep only a short floor so a continuous drag does not write every tick.
     const auto now = juce::Time::currentTimeMillis();
-    if (lastAutosaveMs_ > 0 && (now - lastAutosaveMs_) < 30000)
-        return; // at most once per 30 s
+    if (lastAutosaveMs_ > 0 && (now - lastAutosaveMs_) < kAutosaveMinGapMs)
+        return;
 
     juce::File target = project_.file;
     if (target == juce::File())
@@ -1575,7 +1630,10 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
         juce::Point<float> pt;
         if (! parseAnnotPoint (args, pt))
             return TerminalResult::fail ("Usage: SPK  or  SPK x,y");
-        controlPanel_.addSpeakerAt (pt.x, pt.y);
+        if (! controlPanel_.addSpeakerAt (pt.x, pt.y))
+            return TerminalResult::fail ("Limit reached: "
+                                         + juce::String (ControlPanel::kMaxSpeakers)
+                                         + " Q21S units max.");
         return TerminalResult::ok ("Speaker placed.");
     }
 
@@ -1654,7 +1712,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
         if (on)
         {
             if (! autoSaveTimer_.isTimerRunning())
-                autoSaveTimer_.startTimer (15000);
+                autoSaveTimer_.startTimer (kAutosaveTickMs);
         }
         else
             autoSaveTimer_.stopTimer();
@@ -2115,7 +2173,11 @@ void MainComponent::applyResult (const SimResult& r)
     syncRenderer();
     updateSettingsBar();
     refreshFrequencyResponse();
-    reportStatus ("Ready", true);
+    // Not a blanket "Ready": every edit triggers a recompute, so hard-coding
+    // it here overwrote the "Unsaved changes" that markProjectDirty had just
+    // set, milliseconds earlier. The pill then always read "Ready" no matter
+    // how much unsaved work was pending. Report the actual save state.
+    updateSaveIndicator();
     // Figma's bottom strip spells these "Last run : 11 JUL 2026 14:52:31" and
     // "Elapsed : 1.5s" — spaced colon, uppercase month, no space before "s".
     statusStrip_.setLastRun ("Last run : "

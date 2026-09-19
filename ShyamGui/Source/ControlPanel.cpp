@@ -388,8 +388,11 @@ void ControlPanel::addSpeaker()
     addSpeakerAt ((float) (50.0 + speakers_.size()), 50.0f);
 }
 
-void ControlPanel::addSpeakerAt (float x, float y)
+bool ControlPanel::addSpeakerAt (float x, float y)
 {
+    if (! canAddSpeaker())
+        return false;
+
     Speaker s;
     s.x = x;
     s.y = y;
@@ -400,6 +403,7 @@ void ControlPanel::addSpeakerAt (float x, float y)
     refreshEditors();
     if (onSelectionChanged) onSelectionChanged (selected_);
     notifyChanged();
+    return true;
 }
 
 void ControlPanel::deleteSpeaker()
@@ -1094,10 +1098,14 @@ void ControlPanel::resized()
         // "Measurement set" sits on a wider label column than the slider rows:
         // Figma puts its dropdown at x=174 of the 313px content, ~151px wide.
         {
-            const int boxW = juce::jmin (W - UiConfig::Scale::px (40), UiConfig::Scale::px (115));
-            measSetLabel_.setBounds (pad, y, W - boxW - UiConfig::Scale::px (8), rowH);
-            measSetBox_.setBounds (pad + W - boxW, y, boxW, rowH);
-            y += rowH + gap;
+            // Hidden for now: only the Q21S (Ground Plane) set ships, so the
+            // control had exactly one choice. Everything behind it is intact --
+            // the source is still validated and loaded at startup -- so making
+            // it visible again is just this block.
+            measSetLabel_.setVisible (false);
+            measSetBox_.setVisible (false);
+            measSetLabel_.setBounds (0, 0, 0, 0);
+            measSetBox_.setBounds (0, 0, 0, 0);
         }
     });
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,

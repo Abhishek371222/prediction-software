@@ -174,6 +174,35 @@ v1401 = [
     ["Plot", C, "SPL caption back at the canvas edge",
      "Was inset to the field's left edge, left over from a letterboxed view",
      "2026-09-18"],
+    ["Speakers", A, "Q21S units capped at 8",
+     "Enforced in ControlPanel::addSpeakerAt, which + Add, click-to-place and the "
+     "terminal SPK all funnel through; each path reports the limit", "2026-09-19"],
+    ["Engine", C, "SPL solve runs on all cores",
+     "0.4s -> 0.1s for 8 units at 400 Hz / res 400. Rows split across workers; the "
+     "four running maxima merge at the end and the per-cell scratch is per-worker "
+     "(it was shared - a data race)", "2026-09-19"],
+    ["Ribbon", F, "Opacity percentage never changed",
+     "MainComponent assigned over fillAlpha_.onValueChange, discarding the bar's "
+     "readout sync. The bar owns the callback now and exposes onFillAlphaChanged",
+     "2026-09-19"],
+    ["Ribbon", C, "Opacity larger, slot widened, greyed when unusable",
+     "Caption and value sized from measured glyphs in a 60-unit wider slot; disabled "
+     "unless a filled shape is selected or a filling tool is armed", "2026-09-19"],
+    ["Autosave", F, "Slow enough to look broken",
+     "15 s tick vs a 30 s throttle meant up to 45 s unsaved; now a 2 s tick with a "
+     "2 s floor", "2026-09-19"],
+    ["Autosave", F, "Edits never showed as unsaved",
+     "applyResult reported a blanket Ready after every recompute, overwriting the "
+     "dirty state set milliseconds earlier", "2026-09-19"],
+    ["Autosave", F, "Fresh project claimed unsaved changes",
+     "Construction runs the same change hooks an edit does; the flag is cleared once "
+     "at the end of construction", "2026-09-19"],
+    ["Sidebar", C, "Grey control outlines, larger field labels",
+     "controlBorder #0C0C0C -> #AFAFAF; sidebarFieldLabel 14.3 -> 15.1; Measurement "
+     "set hidden (one choice ships)", "2026-09-19"],
+    ["Dashboard", C, "Recent Projects bigger",
+     "Full button-row width, taller, larger text in both the control and its list "
+     "(own LookAndFeel - the two read different hooks)", "2026-09-19"],
     ["Plot", C, "Grid lines lighter over the field",
      "The light theme's opaque plotGrid overpowered the near-black field: major lines "
      "100% -> 42% alpha, minor 45% -> 16%. Weights and thicknesses collected in "

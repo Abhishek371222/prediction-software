@@ -13,6 +13,7 @@ class DashboardComponent : public juce::Component
 {
 public:
     DashboardComponent();
+    ~DashboardComponent() override;
 
     std::function<void (ProjectData)> onProjectReady;
 
@@ -21,6 +22,38 @@ public:
     void lookAndFeelChanged() override;
 
 private:
+    /** Recent Projects is the one control on this screen whose dropdown list
+        the user actually reads, so it gets a larger face than the app-wide
+        popup size. Scoped to that combo -- overriding the shared LookAndFeel
+        would enlarge every menu in the app, including the ribbon's. `fontPx`
+        is refreshed from resized() so it tracks the card's own text scale. */
+    struct RecentListLookAndFeel : Brand::AtomikLookAndFeel
+    {
+        float fontPx = 14.0f;
+
+        juce::Font getComboBoxFont (juce::ComboBox&) override
+        {
+            return Brand::tech (fontPx);
+        }
+
+        juce::Font getPopupMenuFont() override
+        {
+            return Brand::tech (fontPx);
+        }
+
+        void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                        int standardHeight,
+                                        int& idealWidth, int& idealHeight) override
+        {
+            Brand::AtomikLookAndFeel::getIdealPopupMenuItemSize (text, isSeparator,
+                                                                 standardHeight,
+                                                                 idealWidth, idealHeight);
+            if (! isSeparator)
+                idealHeight = juce::jmax (idealHeight,
+                                          juce::roundToInt (fontPx * 2.0f));
+        }
+    };
+
     enum class View { Menu, NewForm };
 
     void showMenu();
@@ -54,6 +87,7 @@ private:
     juce::Label      title_, footer_;
     juce::TextButton newBtn_, openBtn_;
     juce::ComboBox   recentBox_;
+    RecentListLookAndFeel recentLnf_;
     juce::Array<juce::File> recentFiles_;
 
     juce::OwnedArray<Field> fields_;

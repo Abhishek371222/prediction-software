@@ -110,6 +110,11 @@ public:
     int  getSelectedAnnotation() const noexcept { return selectedAnnot_; }
     /** Fill alpha of the selected filled shape, or draw brush alpha if none. */
     float getActiveFillAlpha() const noexcept;
+
+    /** True when the Opacity control has something to act on: a filled shape
+        is selected, or the armed draw shape is one that will be filled. Lines,
+        polylines, arcs and rulers have no fill, so opacity does nothing there. */
+    bool hasFillTarget() const noexcept;
     void clearAnnotations();
     void cancelDrawSession();
     void clearMics();

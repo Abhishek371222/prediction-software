@@ -384,7 +384,7 @@ public:
         // Figma's ribbon puts Opacity in its own slot between Tools and Shapes:
         // "Opacity" top-left, the percentage top-right, the track underneath.
         alphaLabel_.setText ("Opacity", juce::dontSendNotification);
-        alphaLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
+        alphaLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonOpacityLabel)));
         alphaLabel_.setColour (juce::Label::textColourId, Brand::text());
         alphaLabel_.setJustificationType (juce::Justification::centredLeft);
         alphaLabel_.setBorderSize ({});
@@ -392,7 +392,7 @@ public:
         alphaLabel_.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (alphaLabel_);
 
-        alphaValueLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
+        alphaValueLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonOpacityLabel)));
         alphaValueLabel_.setColour (juce::Label::textColourId, Brand::text());
         alphaValueLabel_.setJustificationType (juce::Justification::centredRight);
         alphaValueLabel_.setBorderSize ({});
@@ -407,7 +407,15 @@ public:
         // slider itself carries no text box.
         fillAlpha_.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         fillAlpha_.setNumDecimalPlacesToDisplay (0);
-        fillAlpha_.onValueChange = [this] { syncAlphaReadout(); };
+        // Owned internally so the percentage always tracks the slider. This
+        // used to be the hook MainComponent assigned to, which replaced it and
+        // left the readout frozen at its initial value; external code sets
+        // onFillAlphaChanged instead.
+        fillAlpha_.onValueChange = [this]
+        {
+            syncAlphaReadout();
+            if (onFillAlphaChanged) onFillAlphaChanged();
+        };
         fillAlpha_.setTooltip ("Opacity of the selected shape / text-box background "
                                "(or of the next shape you draw if nothing is selected)");
         fillAlpha_.setColour (juce::Slider::trackColourId, Brand::border());
@@ -625,6 +633,27 @@ public:
     }
 
     std::function<void()> onOrthoOptionsChanged;
+    /** Fired when the Opacity slider moves. Use this rather than reaching into
+        fillAlpha_.onValueChange, which the bar needs for its own readout. */
+    std::function<void()> onFillAlphaChanged;
+
+    /** Greys the Opacity slot out when it has nothing to act on, so it never
+        looks live while dragging it would do nothing. */
+    void setFillAlphaEnabled (bool on)
+    {
+        if (fillAlphaEnabled_ == on) return;
+        fillAlphaEnabled_ = on;
+        fillAlpha_.setEnabled (on);
+        const float a = on ? 1.0f : 0.40f;
+        alphaLabel_.setAlpha (a);
+        alphaValueLabel_.setAlpha (a);
+        fillAlpha_.setAlpha (on ? 1.0f : 0.55f);
+        fillAlpha_.setTooltip (on ? "Opacity of the selected shape / text-box background "
+                                    "(or of the next shape you draw)"
+                                  : "Opacity applies to filled shapes - select one, "
+                                    "or pick Circle / Rectangle / Text box first");
+        repaint();
+    }
     /** Figma Shapes cluster: (shapeId, constructionId) as used by showShapeMenu. */
     std::function<void (int shapeId, int constructionId)> onShapeChosen;
     /** Figma Colours cluster: one of the 8 palette dots was clicked. */
@@ -642,6 +671,7 @@ public:
     juce::Label          alphaLabel_;
     juce::Label          alphaValueLabel_;   // "52%" â€” top-right of the Opacity slot
     juce::Slider         fillAlpha_;
+    bool                 fillAlphaEnabled_ = true;
     void syncAlphaReadout()
     {
         alphaValueLabel_.setText (juce::String ((int) fillAlpha_.getValue()) + "%",
@@ -813,10 +843,16 @@ private:
         static constexpr Cluster kNav     { 152, 207 };   //       200 / 272
         static constexpr Cluster kView    { 211, 280 };   //       278 / 369
         static constexpr Cluster kTools   { 287, 358 };   //       378 / 471
-        static constexpr Cluster kOpacity { 366, 428 };   // Opacity slot (Tools|Shapes)
-        static constexpr Cluster kShapes  { 434, 578 };   //       478 / 668
-        static constexpr Cluster kColours { 583, 643 };   //       675 / 754
-        static constexpr Cluster kHelp    { 646, 714 };   //       758 / 847
+        // Opacity needs more room than the Figma mock gave it: at a legible
+        // caption size "Opacity" and "100%" do not both fit in the original
+        // 56-unit slot, so the caption lost its last letter and the value lost
+        // its % sign. Widened by 60 units and everything after it shifted by
+        // the same amount -- the row had empty space to spare to the right of
+        // Help, so nothing is pushed off the end.
+        static constexpr Cluster kOpacity { 366, 488 };   // Opacity slot (Tools|Shapes)
+        static constexpr Cluster kShapes  { 494, 638 };   // Figma 478 / 668 + 60
+        static constexpr Cluster kColours { 643, 703 };   //       675 / 754 + 60
+        static constexpr Cluster kHelp    { 706, 774 };   //       758 / 847 + 60
         // Options (Snap / Ortho) continues the row past Help on the same
         // rhythm the mock uses elsewhere: 14 units of air after the preceding
         // divider, then the controls, then 14 more before the next rule.
@@ -902,9 +938,23 @@ private:
         {
             const int x0 = px2 (kOpacity.iconX);
             const int w  = px2 (kOpacity.dividerX - 6) - x0;
-            const int textH = juce::jmax (8, px2 (11));
-            alphaLabel_.setBounds      (x0, iconTop, w * 2 / 3, textH);
-            alphaValueLabel_.setBounds (x0 + w * 2 / 3, iconTop, w - w * 2 / 3, textH);
+            // Set here, not in the constructor: at construction Brand::UI::scale
+            // is still 1.0, so a font assigned there stays at its base size.
+            const auto opacityFont = Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonOpacityLabel));
+            alphaLabel_.setFont (opacityFont);
+            alphaValueLabel_.setFont (opacityFont);
+
+            // Row tall enough for the caption, so drawFittedText does not shrink it.
+            const int textH = juce::jmax (10, juce::roundToInt (opacityFont.getHeight()) + px2 (2));
+
+            // Widths measured from the glyphs rather than split by a fixed
+            // fraction, so neither label can clip. The value is sized for
+            // "100%" -- its widest reading -- so the number does not shift
+            // left and right as the slider moves.
+            const int valW = juce::roundToInt (opacityFont.getStringWidthFloat ("100%")) + px2 (4);
+            const int labW = juce::jmax (10, w - valW - px2 (4));
+            alphaLabel_.setBounds      (x0, iconTop, labW, textH);
+            alphaValueLabel_.setBounds (x0 + w - valW, iconTop, valW, textH);
             fillAlpha_.setBounds (x0, iconTop + textH + px2 (3), w, juce::jmax (10, tool - textH));
 
             const int plateRight = px2 (kOpacity.dividerX);
