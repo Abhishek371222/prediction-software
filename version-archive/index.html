@@ -79,9 +79,9 @@
       Standalone backup index (not part of the simulation app).
       Starting at <strong>v1.3.0</strong> — download source, macOS DMG, or Windows
       installer / ZIP for any saved release. Current product cut is
-      <strong>v1.4.0.1</strong> (Figma UI cut, Gradient Plot naming, square full-bleed
-      grid that never letterboxes, lighter grid lines, working pan + middle-drag, true
-      Q21S cabinet size; Q21S and UI assets embedded).
+      <strong>v1.4.0.2</strong> (Figma UI cut, Gradient Plot naming, square full-bleed
+      grid, working pan + middle-drag, true Q21S cabinet size, 8-unit cap, SPL solve on
+      all cores, autosave and Opacity fixes; Q21S and UI assets embedded).
     </p>
     <p class="status" id="status">Loading versions…</p>
     <div id="list"></div>
@@ -117,7 +117,7 @@
           <article class="card">
             <div class="row">
               <span class="ver">v${v.version}</span>
-              ${v.version === '1.4.0.1' ? '<span class="tag">latest</span>' : ''}
+              ${v.version === '1.4.0.2' ? '<span class="tag">latest</span>' : ''}
               ${v.version === '1.3.0' ? '<span class="tag">baseline</span>' : ''}
               <span class="notes">${(v.notes || '').replace(/</g, '&lt;')}</span>
               <span class="date">${created}</span>

@@ -110,7 +110,7 @@ namespace UiConfig
         // On-screen Rel. SPL legend. Figma renders these at 14px SemiBold;
         // calibrated against its ink width and put through the window scale so
         // they track window size (the export values above deliberately don't).
-        constexpr float legendTickOnScreen  = 11.0f;
+        constexpr float legendTickOnScreen  = 14.0f;   // was 11.0 - too small to read
 
         // --- Heatmap speaker markers -----------------------------------------
         // +/- polarity badge inside speaker icon

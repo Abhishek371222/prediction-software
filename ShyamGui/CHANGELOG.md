@@ -19,19 +19,19 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.3.9** | 2026-09-15 | 15W750 as a second measurement source, per-model frequency isolation |
 | **1.4.0** | 2026-09-18 | Figma UI cut: new wordmark, ribbon, dashboard, square full-bleed grid |
 | **1.4.0.1** | 2026-09-18 | Plot never letterboxes; pan fixed + middle-drag; true Q21S size |
+| **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
 
-## [1.4.0.1] - 2026-09-18
+## [1.4.0.2] - 2026-09-19
 
-**Atomik Simulation Engine v1.4.0.1** - a follow-up to 1.4.0 covering how the plot
-fits the field, how you move around it, and the cabinet's real size.
+**Atomik Simulation Engine v1.4.0.2** - a unit cap, a much faster solve, and a round
+of fixes to autosave, the Opacity control and the sidebar.
 
 ### Added
-- **Middle-drag pans from any tool** - no need to leave the tool you are drawing with.
 - **Q21S units are capped at 8.** Enforced in `ControlPanel::addSpeakerAt`, which every
   add path funnels through (+ Add, click-to-place, and the terminal's `SPK`), so there
   is no way round it. Each path reports the limit rather than silently doing nothing:
@@ -39,15 +39,6 @@ fits the field, how you move around it, and the cabinet's real size.
   and the terminal returns a failure.
 
 ### Changed
-- **The plot never letterboxes.** The fill-the-canvas fit is now the zoom floor, so
-  there are no pale margins at any zoom level. The field stays 100 x 100 m and grid
-  cells stay square; the band cropped off the shorter axis is reached by panning
-  rather than by zooming out.
-- **Q21S cabinet corrected to the real product** - 1546 x 679 x 1024 mm
-  (60.86" x 26.73" x 40.31") replaces an incorrect 750 x 784 x 917 mm set. The plan
-  footprint is drawn at the field's own px/m, so the marker is to scale against the
-  grid, and the engine's 1/r singularity floor follows the true depth.
-- **SPL caption sits at the canvas's left edge** again.
 - **The SPL solve runs on all cores** - 0.4s -> 0.1s for 8 units at 400 Hz,
   resolution 400. The grid loop was single-threaded on one core of sixteen; rows are
   now split across workers. Each cell only ever writes its own index, so the only
@@ -74,19 +65,13 @@ fits the field, how you move around it, and the cabinet's real size.
   shared one caps the size regardless of the box's height.
 - **Measurement set is hidden** - only the Q21S (Ground Plane) set ships, so it had
   exactly one choice. The loader and its validation are untouched behind it.
-- **Grid lines are lighter over the field.** The light theme's `plotGrid` token is an
-  opaque mid-grey meant for a pale canvas; at full strength over the near-black SPL
-  field it overpowered the data. Major lines drop from 100% to 42% alpha and minor
-  lines from 45% to 16%. Both weights and both thicknesses now live in one place,
-  `UiConfig::PlotGrid`, so the grid's prominence is a single edit.
+- **Sidebar section titles are sentence case** - "1. Frequency (Hz)", "3. Selected
+  Q21S", "4. Simulation" rather than shouting capitals. Q21S keeps its capitals: it
+  is the product name, not an abbreviation of style.
+- **Rel. SPL legend ticks are larger** (`legendTickOnScreen` 11.0 -> 14.0) - the dB
+  labels down the colour bar were too small to read.
 
 ### Fixed
-- **Pan did nothing.** The tool was wired correctly, but the view offset was being
-  clamped straight back to zero on every drag. Panning now moves the view across the
-  field, with no re-solve, so it stays instant and a unit still lands exactly where it
-  is clicked.
-- **Zoom anchored on the field's corner** rather than the middle of the view, so
-  zooming in walked off into empty space instead of magnifying what was on screen.
 - **The Opacity percentage never changed.** `PlotHeaderBar` set
   `fillAlpha_.onValueChange` to update its readout, then `MainComponent` assigned over
   that same hook, discarding it -- so the number sat frozen at its initial value. The
@@ -105,6 +90,44 @@ fits the field, how you move around it, and the cabinet's real size.
 - **The status pill no longer contradicts itself** - "Unsaved changes" is reserved for
   when nothing will write (autosave off); with autosave on it reads "Saving..." then
   "Autosaved: <file>". Toggling autosave refreshes it immediately.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0.2**.
+- **Windows Release** `Atomik-Windows-v1.4.0.2.exe` (Q21S + UI assets embedded).
+
+---
+
+## [1.4.0.1] - 2026-09-18
+
+**Atomik Simulation Engine v1.4.0.1** - a follow-up to 1.4.0 covering how the plot
+fits the field, how you move around it, and the cabinet's real size.
+
+### Added
+- **Middle-drag pans from any tool** - no need to leave the tool you are drawing with.
+
+### Changed
+- **The plot never letterboxes.** The fill-the-canvas fit is now the zoom floor, so
+  there are no pale margins at any zoom level. The field stays 100 x 100 m and grid
+  cells stay square; the band cropped off the shorter axis is reached by panning
+  rather than by zooming out.
+- **Q21S cabinet corrected to the real product** - 1546 x 679 x 1024 mm
+  (60.86" x 26.73" x 40.31") replaces an incorrect 750 x 784 x 917 mm set. The plan
+  footprint is drawn at the field's own px/m, so the marker is to scale against the
+  grid, and the engine's 1/r singularity floor follows the true depth.
+- **SPL caption sits at the canvas's left edge** again.
+- **Grid lines are lighter over the field.** The light theme's `plotGrid` token is an
+  opaque mid-grey meant for a pale canvas; at full strength over the near-black SPL
+  field it overpowered the data. Major lines drop from 100% to 42% alpha and minor
+  lines from 45% to 16%. Both weights and both thicknesses now live in one place,
+  `UiConfig::PlotGrid`, so the grid's prominence is a single edit.
+
+### Fixed
+- **Pan did nothing.** The tool was wired correctly, but the view offset was being
+  clamped straight back to zero on every drag. Panning now moves the view across the
+  field, with no re-solve, so it stays instant and a unit still lands exactly where it
+  is clicked.
+- **Zoom anchored on the field's corner** rather than the middle of the view, so
+  zooming in walked off into empty space instead of magnifying what was on screen.
 
 ### Notes
 - An interim build sized the simulated region from the view, making range unbounded.

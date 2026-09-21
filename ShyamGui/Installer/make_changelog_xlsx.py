@@ -109,6 +109,10 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.2", "2026-09-19", "8-unit cap + parallel solve + autosave fixes",
+     "Q21S units capped at 8; SPL solve across all cores (0.4s -> 0.1s at 8 units); "
+     "autosave timing and status corrected; Opacity readout, sizing and greying; grey "
+     "sidebar outlines, larger field labels, bigger Recent Projects list"],
     ["1.4.0.1", "2026-09-18", "No letterboxing + pan + true Q21S size",
      "Fill-the-canvas fit is the zoom floor, so the plot never letterboxes; pan fixed "
      "and middle-drag pans from any tool; Q21S cabinet corrected to 1546 x 679 x 1024 mm "
@@ -152,28 +156,15 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0.1 detailed changes
+# Sheet 2: v1.4.0.2 detailed changes
 # ===========================================================================
-ws1401 = wb.create_sheet("v1.4.0.1 Changes")
-ws1401.sheet_view.showGridLines = False
-banner(ws1401, "v1.4.0.1  -  Detailed Changes",
-       "2026-09-18  |  No letterboxing + pan + true Q21S size", 5)
+ws1402 = wb.create_sheet("v1.4.0.2 Changes")
+ws1402.sheet_view.showGridLines = False
+banner(ws1402, "v1.4.0.2  -  Detailed Changes",
+       "2026-09-19  |  8-unit cap + parallel solve + autosave fixes", 5)
 
 A, C, F = "Added", "Changed", "Fixed"
-v1401 = [
-    ["Plot", A, "Middle-drag pans from any tool",
-     "No need to leave the tool you are drawing with", "2026-09-18"],
-    ["Plot", C, "Never letterboxes",
-     "The fill-the-canvas fit is the zoom floor, so no pale margins at any zoom. Field "
-     "stays 100 x 100 m with square cells; the cropped band is reached by panning",
-     "2026-09-18"],
-    ["Speakers", C, "Q21S dimensions corrected",
-     "1546 x 679 x 1024 mm (60.86 x 26.73 x 40.31 in) replaces an incorrect "
-     "750 x 784 x 917 mm set; footprint drawn at the field's px/m and the 1/r floor "
-     "follows the true depth", "2026-09-18"],
-    ["Plot", C, "SPL caption back at the canvas edge",
-     "Was inset to the field's left edge, left over from a letterboxed view",
-     "2026-09-18"],
+v1402 = [
     ["Speakers", A, "Q21S units capped at 8",
      "Enforced in ControlPanel::addSpeakerAt, which + Add, click-to-place and the "
      "terminal SPK all funnel through; each path reports the limit", "2026-09-19"],
@@ -200,9 +191,47 @@ v1401 = [
     ["Sidebar", C, "Grey control outlines, larger field labels",
      "controlBorder #0C0C0C -> #AFAFAF; sidebarFieldLabel 14.3 -> 15.1; Measurement "
      "set hidden (one choice ships)", "2026-09-19"],
+    ["Sidebar", C, "Section titles sentence case",
+     "1. Frequency (Hz) / 3. Selected Q21S / 4. Simulation; Q21S keeps its capitals "
+     "as the product name", "2026-09-21"],
+    ["Legend", C, "Rel. SPL tick labels larger",
+     "legendTickOnScreen 11.0 -> 14.0; the dB labels were too small to read",
+     "2026-09-21"],
     ["Dashboard", C, "Recent Projects bigger",
      "Full button-row width, taller, larger text in both the control and its list "
      "(own LookAndFeel - the two read different hooks)", "2026-09-19"],
+    ["Packaging", C, "Version -> v1.4.0.2",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-19"],
+]
+write_table(ws1402, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1402, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1402.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0.1 detailed changes
+# ===========================================================================
+ws1401 = wb.create_sheet("v1.4.0.1 Changes")
+ws1401.sheet_view.showGridLines = False
+banner(ws1401, "v1.4.0.1  -  Detailed Changes",
+       "2026-09-18  |  No letterboxing + pan + true Q21S size", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1401 = [
+    ["Plot", A, "Middle-drag pans from any tool",
+     "No need to leave the tool you are drawing with", "2026-09-18"],
+    ["Plot", C, "Never letterboxes",
+     "The fill-the-canvas fit is the zoom floor, so no pale margins at any zoom. Field "
+     "stays 100 x 100 m with square cells; the cropped band is reached by panning",
+     "2026-09-18"],
+    ["Speakers", C, "Q21S dimensions corrected",
+     "1546 x 679 x 1024 mm (60.86 x 26.73 x 40.31 in) replaces an incorrect "
+     "750 x 784 x 917 mm set; footprint drawn at the field's px/m and the 1/r floor "
+     "follows the true depth", "2026-09-18"],
+    ["Plot", C, "SPL caption back at the canvas edge",
+     "Was inset to the field's left edge, left over from a letterboxed view",
+     "2026-09-18"],
     ["Plot", C, "Grid lines lighter over the field",
      "The light theme's opaque plotGrid overpowered the near-black field: major lines "
      "100% -> 42% alpha, minor 45% -> 16%. Weights and thicknesses collected in "

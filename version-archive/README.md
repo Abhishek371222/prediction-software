@@ -2,7 +2,7 @@
 
 Standalone HTML + MongoDB backup of app releases (**not** wired into the JUCE software).
 
-Starts at **v1.3.0**. Current product cut: **v1.4.0.1**. Each entry can offer:
+Starts at **v1.3.0**. Current product cut: **v1.4.0.2**. Each entry can offer:
 
 - Source code zip
 - macOS DMG

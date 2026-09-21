@@ -142,14 +142,14 @@ private:
     bool updatingUI_ = false;
 
     // Frequency
-    SectionHeader    freqHdr_     { "1. FREQUENCY (Hz)" };
+    SectionHeader    freqHdr_     { "1. Frequency (Hz)" };
     juce::ComboBox   freqBox_;
     juce::TextButton freqPrevBtn_ { "<" };
     juce::TextButton freqNextBtn_ { ">" };
     void stepFrequency (int delta);
 
     // Speaker selector
-    SectionHeader    speakersHdr_ { "2. Q21S Units" };
+    SectionHeader    speakersHdr_ { "2. Q21S units" };
     juce::ComboBox   speakerBox_;
     juce::TextButton addBtn_, deleteBtn_;
 
@@ -158,13 +158,13 @@ private:
     juce::TextButton layout1Btn_, layout2Btn_, layout3Btn_;
 
     // Per-speaker editors
-    SectionHeader editHdr_ { "3. SELECTED Q21S" };
+    SectionHeader editHdr_ { "3. Selected Q21S" };
     juce::Label  xLabel_,  yLabel_,  gainLabel_,  delayLabel_;
     juce::Slider xSlider_, ySlider_, gainSlider_, delaySlider_;
     juce::ToggleButton polarityToggle_, orientationToggle_, enabledToggle_;
 
     // Global
-    SectionHeader globalHdr_ { "4. SIMULATION" };
+    SectionHeader globalHdr_ { "4. Simulation" };
     juce::Label  resLabel_;
     juce::Slider resSlider_;
     juce::Label  floorLabel_;
@@ -184,7 +184,7 @@ private:
     std::vector<float> measDistances_;
 
     // Workspace (grid + imported layout)
-    SectionHeader      workspaceHdr_ { "5. WORKSPACE" };
+    SectionHeader      workspaceHdr_ { "5. Workspace" };
     juce::ToggleButton gridToggle_;
     juce::TextButton   importLayoutBtn_, removeLayoutBtn_;
     juce::ToggleButton layoutVisibleToggle_, layoutLockToggle_, layoutEditToggle_, layoutSnapToggle_;
@@ -192,7 +192,7 @@ private:
     juce::Slider       layoutWidthSlider_, layoutRotSlider_, layoutOpacitySlider_;
 
     // Array presets
-    SectionHeader      presetHdr_ { "6. ARRAY PRESETS" };
+    SectionHeader      presetHdr_ { "6. Array presets" };
     juce::ComboBox     presetBox_;
     juce::TextButton   applyPresetBtn_;
 
