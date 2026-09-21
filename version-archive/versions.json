@@ -1,6 +1,27 @@
 {
-    "generatedAt": "2026-09-19T17:10:00.000Z",
+    "generatedAt": "2026-09-21T17:00:00.000Z",
     "versions": [
+        {
+            "version": "1.4.0.4",
+            "notes": "New Rel. SPL gradient from the Figma colour picker: #FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> #151515, replacing the previous seven-stop ramp. The stop positions are deliberately uneven - red holds to 30% and the crossover is at 47% - giving a longer hot band. Legend tick labels 18% larger. Q21S and UI assets embedded in the EXE.",
+            "createdAt": "2026-09-21T17:00:00.000Z",
+            "updatedAt": "2026-09-21T17:00:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": true,
+                    "filename": "v1.4.0.4/Atomik-Source-v1.4.0.4.zip",
+                    "size": 6294484
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.0.4/Atomik-Windows-v1.4.0.4.exe",
+                    "size": 5626760
+                }
+            }
+        },
         {
             "version": "1.4.0.2",
             "notes": "Q21S units capped at 8. SPL solve runs on all cores (0.4s -> 0.1s for 8 units at 400 Hz). Autosave timing and status corrected - it could previously sit unsaved for up to 45 s, and edits never showed as unsaved at all. Opacity percentage now tracks the slider, is larger, and greys out when there is no fill to change. Grey sidebar outlines, larger field labels, bigger Recent Projects list. Q21S and UI assets embedded in the EXE. Sidebar section titles in sentence case and larger Rel. SPL legend tick labels.",

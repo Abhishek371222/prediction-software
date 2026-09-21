@@ -65,7 +65,7 @@ DashboardComponent::DashboardComponent()
     title_.setBorderSize ({});
     addAndMakeVisible (title_);
 
-    footer_.setText ("Atomik - Simulation Engine - v1.4.0.2", juce::dontSendNotification);
+    footer_.setText ("Atomik - Simulation Engine - v1.4.0.4", juce::dontSendNotification);
     footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
     footer_.setJustificationType (juce::Justification::centred);
     footer_.setMinimumHorizontalScale (1.0f);

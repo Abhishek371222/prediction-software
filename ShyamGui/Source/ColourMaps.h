@@ -11,23 +11,24 @@ namespace ColourMaps
 {
 
 // Atomik Rel. SPL legend gradient, straight off the Figma colour picker.
-// Legend top->bottom = 0 db -> -36 db, 7 evenly spaced stops:
-//   #E60001 -> #C43135 -> #856A9C -> #3281B9 -> #0A599C -> #003A6C -> #151515
+// Legend top->bottom = 0 db -> -36 db, six stops at the designer's positions
+// (they are NOT evenly spaced -- the red holds to 30% and the purple crossover
+// is pulled up to 47%, which is what gives the new ramp its longer hot band):
+//   #FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> #151515
 // t = 1 -> peak / 0 db (top of bar); t = 0 -> floor / -36 db (bottom).
 inline juce::Colour sevenColor (float t)
 {
     // Positions are distance from the TOP of the Rel. SPL bar (0 = 0 db).
     static const float stops[][4] = {
-        { 0.00f, 0.902f, 0.000f, 0.004f },  // #E60001  0 db
-        { 0.17f, 0.769f, 0.192f, 0.208f },  // #C43135
-        { 0.33f, 0.522f, 0.416f, 0.612f },  // #856A9C
-        { 0.50f, 0.196f, 0.506f, 0.725f },  // #3281B9
-        { 0.67f, 0.039f, 0.349f, 0.612f },  // #0A599C
+        { 0.00f, 1.000f, 0.004f, 0.012f },  // #FF0103  0 db
+        { 0.30f, 0.965f, 0.333f, 0.337f },  // #F65556
+        { 0.47f, 0.804f, 0.380f, 0.486f },  // #CD617C
+        { 0.67f, 0.196f, 0.506f, 0.725f },  // #3281B9
         { 0.83f, 0.000f, 0.227f, 0.424f },  // #003A6C
-        { 1.00f, 0.082f, 0.082f, 0.082f }  // #151515  -36 db
+        { 1.00f, 0.082f, 0.082f, 0.082f }   // #151515  -36 db
     };
     const float u = 1.0f - juce::jlimit (0.0f, 1.0f, t); // peak -> top of legend
-    constexpr int n = 6;   // segments = stops - 1
+    constexpr int n = 5;   // segments = stops - 1
     int i = 0;
     while (i < n && u > stops[i + 1][0]) ++i;
     const float span = stops[i + 1][0] - stops[i][0];

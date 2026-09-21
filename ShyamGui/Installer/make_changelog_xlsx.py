@@ -109,6 +109,10 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.4", "2026-09-21", "New Rel. SPL gradient + readable legend",
+     "Six-stop Figma gradient (#FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> "
+     "#151515) with the designer's uneven stop positions, giving a longer hot band; "
+     "legend tick labels 18% larger"],
     ["1.4.0.2", "2026-09-19", "8-unit cap + parallel solve + autosave fixes",
      "Q21S units capped at 8; SPL solve across all cores (0.4s -> 0.1s at 8 units); "
      "autosave timing and status corrected; Opacity readout, sizing and greying; grey "
@@ -156,7 +160,32 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0.2 detailed changes
+# Sheet 2: v1.4.0.4 detailed changes
+# ===========================================================================
+ws1404 = wb.create_sheet("v1.4.0.4 Changes")
+ws1404.sheet_view.showGridLines = False
+banner(ws1404, "v1.4.0.4  -  Detailed Changes",
+       "2026-09-21  |  New Rel. SPL gradient + readable legend", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1404 = [
+    ["Legend", C, "New Rel. SPL gradient",
+     "#FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> #151515, replacing the "
+     "seven-stop ramp. Stops are deliberately uneven (red to 30%, crossover at 47%), "
+     "which is what lengthens the hot band", "2026-09-21"],
+    ["Legend", C, "Tick labels 18% larger",
+     "legendTickOnScreen 14.0 -> 16.5", "2026-09-21"],
+    ["Packaging", C, "Version -> v1.4.0.4",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-21"],
+]
+write_table(ws1404, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1404, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1404.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0.2 detailed changes
 # ===========================================================================
 ws1402 = wb.create_sheet("v1.4.0.2 Changes")
 ws1402.sheet_view.showGridLines = False

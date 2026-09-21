@@ -20,9 +20,35 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0** | 2026-09-18 | Figma UI cut: new wordmark, ribbon, dashboard, square full-bleed grid |
 | **1.4.0.1** | 2026-09-18 | Plot never letterboxes; pan fixed + middle-drag; true Q21S size |
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
+| **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.4] - 2026-09-21
+
+**Atomik Simulation Engine v1.4.0.4** - a revised Rel. SPL gradient and a more
+readable legend.
+
+### Changed
+- **New Rel. SPL gradient**, straight off the Figma colour picker:
+  `#FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> #151515`, replacing the
+  previous seven-stop ramp. The stops are deliberately **not** evenly spaced - red
+  holds to 30% and the purple crossover is pulled up to 47% - which is what gives the
+  new bar its longer hot band. Verified down the rendered bar as
+  `#FA3032 -> #DD5C6D -> #4B7CAF -> #053157 -> #151515`.
+- **Rel. SPL legend tick labels 18% larger** (`legendTickOnScreen` 14.0 -> 16.5).
+
+### Notes
+- The bar's lower third sits flat at the floor colour whenever the dB Floor is set
+  below -36 dB: the gradient's design span (`kRelSplDesignSpanDB`) is 36 dB, so
+  anything past that clamps. Pre-existing, and true of the previous ramp too.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0.4**.
+- **Windows Release** `Atomik-Windows-v1.4.0.4.exe` (Q21S + UI assets embedded).
 
 ---
 
