@@ -10,7 +10,9 @@
 class SpeakerPropertiesDialog : public juce::Component
 {
 public:
-    SpeakerPropertiesDialog (const Speaker& spk, int index)
+    /** @param ordinal 1-based position among units of the SAME model
+               (see speakerModelOrdinal), not the global index. */
+    SpeakerPropertiesDialog (const Speaker& spk, int ordinal)
     {
         title_.setText ("Speaker Properties", juce::dontSendNotification);
         title_.setFont (Brand::techSemi (Brand::UI::scaledFont (15.0f)));
@@ -18,7 +20,8 @@ public:
         addAndMakeVisible (title_);
 
         const juce::String modelName = speakerModelName (spk.model);
-        const juce::String name = modelName + "-" + juce::String (index + 1);
+        const juce::String name = juce::String (speakerModelTag (spk.model))
+                                + "-" + juce::String (ordinal);
         const juce::String u = Units::lengthUnit();
 
         addRow ("Name", name);

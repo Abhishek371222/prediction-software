@@ -3015,12 +3015,14 @@ void RadiationPatternComponent::showSpeakerProperties (int speakerIndex)
     if (speakerIndex < 0 || speakerIndex >= (int) speakers_.size())
         return;
 
-    auto* body = new SpeakerPropertiesDialog (speakers_[(size_t) speakerIndex], speakerIndex);
+    auto* body = new SpeakerPropertiesDialog (speakers_[(size_t) speakerIndex],
+                                             speakerModelOrdinal (speakers_, speakerIndex));
 
     juce::DialogWindow::LaunchOptions opts;
     opts.content.setOwned (body);
-    opts.dialogTitle = juce::String (speakerModelName (speakers_[(size_t) speakerIndex].model))
-                      + "-" + juce::String (speakerIndex + 1) + " Properties";
+    opts.dialogTitle = juce::String (speakerModelTag (speakers_[(size_t) speakerIndex].model))
+                      + "-" + juce::String (speakerModelOrdinal (speakers_, speakerIndex))
+                      + " Properties";
     opts.dialogBackgroundColour = Brand::panel();
     opts.escapeKeyTriggersCloseButton = true;
     opts.useNativeTitleBar = true;
@@ -3846,7 +3848,8 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         g.setColour (Brand::white().withAlpha (alpha));
         g.setFont (Brand::tech (isSel ? Brand::Type::speakerIdSelected
                                       : Brand::Type::speakerId, true));
-        g.drawText (juce::String (speakerModelName (spk.model)) + "_" + juce::String (i + 1),
+        g.drawText (juce::String (speakerModelTag (spk.model))
+                        + "_" + juce::String (speakerModelOrdinal (speakers_, i)),
                     (int) (c.x - 40), (int) (box.getY() - 16.0f), 80, 14,
                     juce::Justification::centred);
     }

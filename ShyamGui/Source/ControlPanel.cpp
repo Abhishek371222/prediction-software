@@ -460,8 +460,8 @@ void ControlPanel::rebuildSpeakerBox()
     // Each unit is labelled by its OWN model tag — never the section-2
     // browsing selection — so a mixed scene's list never mislabels units.
     for (int i = 0; i < (int) speakers_.size(); ++i)
-        speakerBox_.addItem (juce::String (speakerModelName (speakers_[(size_t) i].model))
-                                + "-" + juce::String (i + 1), i + 1);
+        speakerBox_.addItem (juce::String (speakerModelTag (speakers_[(size_t) i].model))
+                                + "-" + juce::String (speakerModelOrdinal (speakers_, i)), i + 1);
     if (selected_ >= (int) speakers_.size()) selected_ = (int) speakers_.size() - 1;
     if (selected_ < 0 && ! speakers_.empty()) selected_ = 0;
     if (selected_ >= 0) speakerBox_.setSelectedId (selected_ + 1, juce::dontSendNotification);

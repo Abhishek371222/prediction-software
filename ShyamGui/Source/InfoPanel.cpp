@@ -95,7 +95,8 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
     if (selectedIndex >= 0 && selectedIndex < (int) p.speakers.size())
     {
         const auto& s = p.speakers[(size_t) selectedIndex];
-        setRowVal (kSelected, juce::String (speakerModelName (s.model)) + "-" + juce::String (selectedIndex + 1)
+        setRowVal (kSelected, juce::String (speakerModelTag (s.model))
+                              + "-" + juce::String (speakerModelOrdinal (p.speakers, selectedIndex))
                               + (s.enabled ? "" : " (off)"));
         juce::String posStr = "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
                               + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u;

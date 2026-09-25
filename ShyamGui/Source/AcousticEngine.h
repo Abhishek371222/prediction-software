@@ -29,6 +29,27 @@ inline const char* speakerModelName (int model) noexcept
     return (model == 2) ? "BEM 2inch" : "Q21S";
 }
 
+// Identifier form of the model name, for labelling an individual unit
+// ("BEM2inch_1"). speakerModelName() is the prose form used for headings and
+// product text and keeps its space; a unit's name is a token, so it does not.
+inline const char* speakerModelTag (int model) noexcept
+{
+    return (model == 2) ? "BEM2inch" : "Q21S";
+}
+
+// 1-based position of this unit among units of the SAME model. A mixed scene
+// numbers each device from 1 -- placing a BEM unit second overall still makes
+// it BEM2inch_1 -- rather than numbering by global placement order.
+inline int speakerModelOrdinal (const std::vector<Speaker>& all, int index) noexcept
+{
+    if (index < 0 || index >= (int) all.size()) return index + 1;
+    const int model = all[(size_t) index].model;
+    int n = 0;
+    for (int i = 0; i <= index; ++i)
+        if (all[(size_t) i].model == model) ++n;
+    return n;
+}
+
 // Q21S product cabinet dimensions (metres). Plan view uses width × depth.
 // Q21S enclosure, manufacturer figures: 1546 x 679 x 1024 mm
 // (60.86" x 26.73" x 40.31"), read in the pro-audio convention Height x

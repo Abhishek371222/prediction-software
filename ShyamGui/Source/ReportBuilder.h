@@ -212,7 +212,9 @@ namespace ReportBuilder
             for (const auto& s : in.params.speakers)
             {
                 pdf.line (M, ty + 18, W - M, ty + 18, lineCol, 0.6);
-                pdf.text (c[0] + 6, ty + 4, 10, juce::String (speakerModelName (s.model)) + "-" + juce::String (idx), ink);
+                pdf.text (c[0] + 6, ty + 4, 10,
+                          juce::String (speakerModelTag (s.model)) + "-"
+                              + juce::String (speakerModelOrdinal (in.params.speakers, idx - 1)), ink);
                 pdf.text (c[1] + 6, ty + 4, 10, juce::String (Units::metresToDisplay (s.x), 1), ink);
                 pdf.text (c[2] + 6, ty + 4, 10, juce::String (Units::metresToDisplay (s.y), 1), ink);
                 pdf.text (c[3] + 6, ty + 4, 10, juce::String (s.gainDB, 0) + " dB", ink);
