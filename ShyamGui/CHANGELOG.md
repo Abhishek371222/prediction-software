@@ -21,9 +21,64 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.1** | 2026-09-18 | Plot never letterboxes; pan fixed + middle-drag; true Q21S size |
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
+| **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.5] - 2026-09-25
+
+**Atomik Simulation Engine v1.4.0.5** - a second speaker model, the 2" BEM HF horn,
+alongside Q21S, with per-unit model tags so one scene can hold both.
+
+### Added
+- **BEM 2inch as a second speaker model.** A **Speaker model** picker in sidebar
+  section 2 chooses which device new units are created as; every unit carries its
+  own model tag, so a scene can mix Q21S and BEM 2inch freely and each unit is
+  simulated from its own model's measured data. The two are never blended.
+- **Its own frequency catalogue** - 9 native BEM bands
+  `64, 135, 243, 507, 1057, 1904, 3971, 8280, 17266 Hz` (Q21S keeps its own
+  `20 - 401 Hz` list). Switching models rebuilds the Frequency dropdown from
+  scratch, and each model remembers the band it was last on.
+- **Its own measured pack** - `BEM2inch_<Hz>Hz_<dist>m.csv` polars at 0.5/1.0/2.0 m
+  plus `BEM2inch_Field_<Hz>Hz.q21f` absolute fields, baked into the EXE as
+  `EmbeddedBEM2inchData` so the build still runs with no sidecar `Data/` folder.
+- **`docs/bem2inch_plots/export_2inch_native_hz_pack.py`** - the exporter that
+  turns the raw BEM workbooks into that pack.
+
+### Changed
+- **Unit names use a space-free model tag and number within their own model.**
+  A BEM unit placed second overall but first of its model now reads `BEM2inch_1`,
+  not `BEM 2inch_2`; Q21S units stay `Q21S_1..n`. Applied everywhere a unit is
+  named - plot label, sidebar unit list, properties dialog, Info panel, mic
+  reference picker and the PDF report table - so one unit reads the same in all
+  of them. Section headings and the Product row keep the spaced display name.
+- **The redundant "Measurement set" row is gone** from section 4. The Speaker
+  model picker is now the single control for which device is in use.
+
+### Notes
+- **This BEM run is unit-drive normalised.** On-axis at 1 m lands around 46 dB
+  against roughly 123 dB for Q21S, so absolute levels are **not yet comparable
+  across the two models in a mixed scene**. `SENSITIVITY_OFFSET_DB` at the top of
+  the exporter applies the correction in one line once a real
+  dB SPL @ 1 W / 1 m figure for the horn is supplied.
+- **The 2-inch BEM domain is a half-plane** - `z = 0..+10 m` with the source at
+  the edge, where the Q21S workbooks span `z = -5..+5 m` with the source centred.
+  There is no simulated data behind the horn, so the exporter synthesises the rear
+  hemisphere by tapering from the measured grazing level down to
+  `min(grazing, on-axis - 25 dB)` rather than letting the sampler extrapolate and
+  invent rear radiation. Above roughly 3.5 kHz the source mesh is also spatially
+  undersampled for interference detail (49.5 mm diagonal pitch), though it remains
+  sound for directivity.
+- Cabinet dimensions are still Q21S-only, so a BEM unit draws at Q21S size on the
+  plot. The horn's physical dimensions have not been supplied.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0.5**.
+- **Windows Release** `Atomik-Windows-v1.4.0.5.exe` (Q21S + BEM 2inch + UI assets
+  embedded).
 
 ---
 

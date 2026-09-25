@@ -109,6 +109,12 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.5", "2026-09-25", "BEM 2inch as a second speaker model",
+     "2\" BEM HF horn added alongside Q21S with per-unit model tags, so one scene can "
+     "mix both and each unit is simulated from its own model's measured data; own 9-band "
+     "frequency catalogue (64 - 17266 Hz), own embedded polar pack; unit names now use a "
+     "space-free model tag numbered within their own model (BEM2inch_1); redundant "
+     "Measurement set row removed"],
     ["1.4.0.4", "2026-09-21", "New Rel. SPL gradient + readable legend",
      "Six-stop Figma gradient (#FF0103 -> #F65556 -> #CD617C -> #3281B9 -> #003A6C -> "
      "#151515) with the designer's uneven stop positions, giving a longer hot band; "
@@ -160,7 +166,52 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0.4 detailed changes
+# Sheet 2: v1.4.0.5 detailed changes
+# ===========================================================================
+ws1405 = wb.create_sheet("v1.4.0.5 Changes")
+ws1405.sheet_view.showGridLines = False
+banner(ws1405, "v1.4.0.5  -  Detailed Changes",
+       "2026-09-25  |  BEM 2inch as a second speaker model", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1405 = [
+    ["Models", A, "BEM 2inch as a second speaker model",
+     "Speaker model picker in sidebar section 2 chooses what new units are created "
+     "as; every unit carries its own model tag, so a scene can mix Q21S and "
+     "BEM 2inch and each is simulated from its own measured data - never blended",
+     "2026-09-25"],
+    ["Models", A, "Own frequency catalogue",
+     "9 native BEM bands 64, 135, 243, 507, 1057, 1904, 3971, 8280, 17266 Hz; Q21S "
+     "keeps its own 20 - 401 Hz list. Switching models rebuilds the Frequency "
+     "dropdown from scratch and each model remembers its last band", "2026-09-25"],
+    ["Data", A, "Own embedded measured pack",
+     "BEM2inch_<Hz>Hz_<dist>m.csv polars at 0.5/1.0/2.0 m plus BEM2inch_Field_<Hz>Hz"
+     ".q21f absolute fields, baked in as EmbeddedBEM2inchData so the EXE still runs "
+     "with no sidecar Data/ folder", "2026-09-25"],
+    ["Data", A, "2-inch BEM exporter",
+     "docs/bem2inch_plots/export_2inch_native_hz_pack.py. Handles this set's "
+     "6-column layout and its half-plane domain (z = 0..+10 m, source at the edge): "
+     "the rear hemisphere is synthesised by tapering from the measured grazing level "
+     "to min(grazing, on-axis - 25 dB) instead of extrapolating", "2026-09-25"],
+    ["Naming", C, "Unit names use a model tag, numbered per model",
+     "A BEM unit placed second overall but first of its model reads BEM2inch_1, not "
+     "BEM 2inch_2. Applied to plot label, sidebar list, properties dialog, Info "
+     "panel, mic reference picker and PDF report so one unit reads the same "
+     "everywhere; headings keep the spaced display name", "2026-09-25"],
+    ["Sidebar", C, "Measurement set row removed",
+     "Redundant with the Speaker model picker, which is now the single control for "
+     "which device is in use", "2026-09-25"],
+    ["Packaging", C, "Version -> v1.4.0.5",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-25"],
+]
+write_table(ws1405, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1405, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1405.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0.4 detailed changes
 # ===========================================================================
 ws1404 = wb.create_sheet("v1.4.0.4 Changes")
 ws1404.sheet_view.showGridLines = False
@@ -185,7 +236,7 @@ write_table(ws1404, 4,
 ws1404.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 3: v1.4.0.2 detailed changes
+# Sheet 4: v1.4.0.2 detailed changes
 # ===========================================================================
 ws1402 = wb.create_sheet("v1.4.0.2 Changes")
 ws1402.sheet_view.showGridLines = False
