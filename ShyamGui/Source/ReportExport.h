@@ -144,12 +144,12 @@ namespace ReportExport
                                logoW, logoH });
         }
 
-        int nQ21S = 0, n15W750 = 0;
+        int nQ21S = 0, nBEM2inch = 0;
         for (const auto& s : p.speakers)
-            if (s.enabled) { if (s.model == 2) ++n15W750; else ++nQ21S; }
+            if (s.enabled) { if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
         juce::String fleet;
         if (nQ21S > 0)   fleet << nQ21S   << " Q21S";
-        if (n15W750 > 0) fleet << (fleet.isEmpty() ? "" : " + ") << n15W750 << " 15W750";
+        if (nBEM2inch > 0) fleet << (fleet.isEmpty() ? "" : " + ") << nBEM2inch << " BEM2inch";
         if (fleet.isEmpty()) fleet = "0 Q21S";
         const juce::String u = Units::lengthUnit();
         juce::String facts = juce::String ((int) p.frequency) + " Hz"

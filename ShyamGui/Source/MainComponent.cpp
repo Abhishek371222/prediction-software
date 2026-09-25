@@ -569,7 +569,7 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.refreshLayoutControls();
 
     // Measured polar data: initial load + ~1 s live refresh ----------------
-    // Both Q21S and 15W750 are loaded unconditionally (reloadAllMeasurements)
+    // Both Q21S and BEM2inch are loaded unconditionally (reloadAllMeasurements)
     // so mixed-model scenes work from the start; measSource_ only selects
     // which one the Measured Polar reference view shows.
     measSource_ = AppSettings::get().measurementSource();
@@ -580,7 +580,7 @@ MainComponent::MainComponent (ProjectData project)
     // silently degrades every prediction to omnidirectional instead of the
     // measured pattern. Fall back unless that data is genuinely present.
     if (measSource_ != MeasurementData::OpenField
-        && measSource_ != MeasurementData::W750
+        && measSource_ != MeasurementData::BEM2in
         && ! MeasurementData::folderForSource (measSource_).isDirectory())
     {
         measSource_ = MeasurementData::OpenField;
@@ -2145,7 +2145,7 @@ void MainComponent::run()
     {
         juce::ScopedLock sl (measLock_);
         p.directivity       = directivityQ21STables_;
-        p.directivity15W750 = directivity15W750Tables_;
+        p.directivityBEM2inch = directivityBEM2inchTables_;
         p.bemFields         = bemFieldTablesQ21S_;
     }
 
@@ -2650,7 +2650,7 @@ void MainComponent::refreshFrequencyResponse()
         juce::ScopedLock sl (measLock_);
         base = controlPanel_.getParams();
         base.directivity       = directivityQ21STables_;
-        base.directivity15W750 = directivity15W750Tables_;
+        base.directivityBEM2inch = directivityBEM2inchTables_;
         base.bemFields         = bemFieldTablesQ21S_;
     }
 
@@ -2668,7 +2668,7 @@ void MainComponent::refreshFrequencyResponse()
         {
             SimParams p = base;
             p.frequency = kSupportedFrequencies[hi];
-            if (browsedModel == MeasurementData::W750) p.frequency15W750 = p.frequency;
+            if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
             else                                         p.frequencyQ21S   = p.frequency;
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
@@ -2901,7 +2901,7 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
     // Live scene + last result.
     SimParams base = controlPanel_.getParams();
     { juce::ScopedLock sl (measLock_);
-      base.directivity = directivityQ21STables_; base.directivity15W750 = directivity15W750Tables_;
+      base.directivity = directivityQ21STables_; base.directivityBEM2inch = directivityBEM2inchTables_;
       base.bemFields = bemFieldTablesQ21S_; }
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
@@ -3029,7 +3029,7 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
     // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue —
     // update only that model's resolved frequency so the other model's
     // speakers keep rendering at their own unrelated frequency.
-    if (measSource_ == MeasurementData::W750) p.frequency15W750 = freq;
+    if (measSource_ == MeasurementData::BEM2in) p.frequencyBEM2inch = freq;
     else                                        p.frequencyQ21S   = freq;
     p.viewMode  = ViewMode::SPL;
 
@@ -3073,9 +3073,9 @@ void MainComponent::exportCSV()
 
             const auto now = juce::Time::getCurrentTime();
             int nDev = 0;
-            int nQ21S = 0, n15W750 = 0;
+            int nQ21S = 0, nBEM2inch = 0;
             for (const auto& s : pr.speakers)
-                if (s.enabled) { ++nDev; if (s.model == 2) ++n15W750; else ++nQ21S; }
+                if (s.enabled) { ++nDev; if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
 
             const bool absOk = r.hasAbsoluteSpl
                 && r.splAbsDB.size() == (size_t) W * (size_t) H;
@@ -3088,7 +3088,7 @@ void MainComponent::exportCSV()
 
             juce::String product;
             if (nQ21S > 0)   product << "Q21S(" << nQ21S << ")";
-            if (n15W750 > 0) product << (product.isEmpty() ? "" : "+") << "15W750(" << n15W750 << ")";
+            if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
             line ("# Atomik Simulation Engine v1.4.0.4");
@@ -3146,41 +3146,41 @@ void MainComponent::exportCSV()
 // ---------------------------------------------------------------------------
 MeasuredSet MainComponent::referenceSetFor (int source) const
 {
-    if (source == MeasurementData::W750)      return measured15W750_;
+    if (source == MeasurementData::BEM2in)      return measuredBEM2inch_;
     if (source == MeasurementData::OpenField) return measuredQ21S_;
     // Legacy Room — not part of the always-loaded pair (no Speaker::model
     // ever selects it); load on demand only if explicitly chosen.
     return MeasurementData::loadMeasurements (MeasurementData::folderForSource (source), source);
 }
 
-// Q21S and 15W750 are always both (re)loaded together — a scene can mix
+// Q21S and BEM2inch are always both (re)loaded together — a scene can mix
 // units of either, so neither model's data may depend on which one the
 // "Measurement set" reference view (section 4) currently shows.
 void MainComponent::reloadAllMeasurements()
 {
     MeasuredSet mQ21S = MeasurementData::loadMeasurements (
         MeasurementData::folderForSource (MeasurementData::OpenField), MeasurementData::OpenField);
-    MeasuredSet m15W750 = MeasurementData::loadMeasurements (
-        MeasurementData::folderForSource (MeasurementData::W750), MeasurementData::W750);
+    MeasuredSet mBEM2inch = MeasurementData::loadMeasurements (
+        MeasurementData::folderForSource (MeasurementData::BEM2in), MeasurementData::BEM2in);
 
     // Heatmap / array sim: far-field BEM arc (not 0.5 m near-field lobes),
     // computed independently per model.
     const float distQ21S   = MeasurementData::farFieldDirectivityDistance (mQ21S,   1.0f);
-    const float dist15W750 = MeasurementData::farFieldDirectivityDistance (m15W750, 1.0f);
+    const float distBEM2inch = MeasurementData::farFieldDirectivityDistance (mBEM2inch, 1.0f);
 
     auto dirQ21S   = MeasurementData::buildDirectivityTables (mQ21S,   distQ21S);
-    auto dir15W750 = MeasurementData::buildDirectivityTables (m15W750, dist15W750);
+    auto dirBEM2inch = MeasurementData::buildDirectivityTables (mBEM2inch, distBEM2inch);
     auto bemQ21S   = MeasurementData::loadBemFieldTables (mQ21S);
-    auto bem15W750 = MeasurementData::loadBemFieldTables (m15W750);
+    auto bemBEM2inch = MeasurementData::loadBemFieldTables (mBEM2inch);
 
     {
         juce::ScopedLock sl (measLock_);
         measuredQ21S_            = std::move (mQ21S);
-        measured15W750_          = std::move (m15W750);
+        measuredBEM2inch_          = std::move (mBEM2inch);
         directivityQ21STables_   = std::move (dirQ21S);
-        directivity15W750Tables_ = std::move (dir15W750);
+        directivityBEM2inchTables_ = std::move (dirBEM2inch);
         bemFieldTablesQ21S_      = std::move (bemQ21S);
-        bemFieldTables15W750_    = std::move (bem15W750);
+        bemFieldTablesBEM2inch_    = std::move (bemBEM2inch);
 
         measured_ = referenceSetFor (measSource_);
     }
@@ -3287,7 +3287,7 @@ juce::int64 MainComponent::measurementsSignature() const
     };
 
     addModel (MeasurementData::OpenField);
-    addModel (MeasurementData::W750);
+    addModel (MeasurementData::BEM2in);
     if (measSource_ == MeasurementData::Gylt) addModel (MeasurementData::Gylt);
     return sig;
 }

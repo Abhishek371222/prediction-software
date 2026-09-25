@@ -116,7 +116,7 @@ struct ProjectData
             o->setProperty ("polarityInverted", s.polarityInverted);
             o->setProperty ("reverseOrientation", s.reverseOrientation);
             o->setProperty ("enabled", s.enabled);
-            o->setProperty ("model", s.model);   // 0 = Q21S, 2 = 15W750
+            o->setProperty ("model", s.model);   // 0 = Q21S, 2 = BEM2inch
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
@@ -166,7 +166,7 @@ struct ProjectData
                         s.polarityInverted   = (bool) o->getProperty ("polarityInverted");
                         s.reverseOrientation = (bool) o->getProperty ("reverseOrientation");
                         s.enabled            = o->hasProperty ("enabled") ? (bool) o->getProperty ("enabled") : true;
-                        // Old project files predate the 15W750 device — default to Q21S.
+                        // Old project files predate the BEM2inch device — default to Q21S.
                         s.model              = o->hasProperty ("model") ? (int) o->getProperty ("model") : 0;
                         p.speakers.push_back (s);
                     }

@@ -15,7 +15,7 @@ struct Speaker
     bool  polarityInverted   = false;   // Normal / Reverse
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
     bool  enabled            = true;
-    // Which device this unit is: 0 = Q21S, 2 = 15W750 (matches
+    // Which device this unit is: 0 = Q21S, 2 = BEM2inch (matches
     // MeasurementData::Source / AcousticEngine::MeasurementSourceId). Each
     // unit is simulated with its OWN model's directivity — a scene can freely
     // mix both; they are never blended into one shared pattern.
@@ -26,7 +26,7 @@ struct Speaker
 // canonical spot so UI labels, dialogs, and reports never disagree.
 inline const char* speakerModelName (int model) noexcept
 {
-    return (model == 2) ? "15W750" : "Q21S";
+    return (model == 2) ? "BEM 2inch" : "Q21S";
 }
 
 // Q21S product cabinet dimensions (metres). Plan view uses width × depth.
@@ -75,7 +75,7 @@ struct BemFieldPattern
 };
 
 // Per-model frequency catalogues — native BEM xlsx bands only (no interpolated
-// extras). Q21S and 15W750 are two completely separate devices: each keeps
+// extras). Q21S and BEM2inch are two completely separate devices: each keeps
 // its own array below and the two are never merged or shared.
 static constexpr double kQ21SFrequencies[] = {
     20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401
@@ -83,23 +83,23 @@ static constexpr double kQ21SFrequencies[] = {
 static constexpr int kNumQ21SFrequencies =
     (int) (sizeof (kQ21SFrequencies) / sizeof (kQ21SFrequencies[0]));
 
-static constexpr double k15W750Frequencies[] = {
-    64, 135, 243, 507, 1057, 1904, 3971, 8280, 17200
+static constexpr double kBEM2inchFrequencies[] = {
+    64, 135, 243, 507, 1057, 1904, 3971, 8280, 17266
 };
-static constexpr int kNum15W750Frequencies =
-    (int) (sizeof (k15W750Frequencies) / sizeof (k15W750Frequencies[0]));
+static constexpr int kNumBEM2inchFrequencies =
+    (int) (sizeof (kBEM2inchFrequencies) / sizeof (kBEM2inchFrequencies[0]));
 
 // Measurement source ids (mirror MeasurementData::Source; duplicated here so
 // this header doesn't need to include MeasurementData.h).
-enum class MeasurementSourceId { Q21S = 0, Room = 1, W750 = 2 };
+enum class MeasurementSourceId { Q21S = 0, Room = 1, BEM2in = 2 };
 
 // Isolated per-model catalogue lookup — never returns a blended list.
 inline void frequencyCatalogue (int source, const double*& freqs, int& count) noexcept
 {
-    if (source == (int) MeasurementSourceId::W750)
+    if (source == (int) MeasurementSourceId::BEM2in)
     {
-        freqs = k15W750Frequencies;
-        count = kNum15W750Frequencies;
+        freqs = kBEM2inchFrequencies;
+        count = kNumBEM2inchFrequencies;
     }
     else
     {
@@ -143,7 +143,7 @@ struct SimParams
     // construction: changing one can never change the other's value or its
     // speakers' rendered pattern. Populated by ControlPanel::getParams().
     double frequencyQ21S   = 20.0;
-    double frequency15W750 = 64.0;
+    double frequencyBEM2inch = 64.0;
     // Region solved for: [worldX0, worldX0+worldW] x [worldY0, worldY0+worldH].
     // The origin exists so the view can pan the solved region around rather
     // than sliding a fixed box that always started at (0, 0).
@@ -163,9 +163,9 @@ struct SimParams
     // Measured BEM directivity tables, one array per device — always applied
     // (useMeasuredDirectivity is forced on — no UI toggle). Each Speaker picks
     // its table by its own `model` field (directivity = Q21S/source 0,
-    // directivity15W750 = source 2); the engine never blends the two.
+    // directivityBEM2inch = source 2); the engine never blends the two.
     std::vector<DirectivityPattern> directivity;
-    std::vector<DirectivityPattern> directivity15W750;
+    std::vector<DirectivityPattern> directivityBEM2inch;
     // Absolute BEM mid-plane fields (Heatmap.m / Q21F). Loaded for tooling;
     // the live SPL heatmap uses measured polar directivity across the full world
     // (not a stamped ±5 m island).
@@ -216,7 +216,7 @@ struct SimResult
 // AcousticEngine — BEM polar × 1/r over the full world, coherent array sum.
 //
 // Each enabled speaker uses ITS OWN model's measured BEM directivity D(θ) and
-// on-axis dB SPL at R_ref (Q21S and 15W750 units may coexist in one scene).
+// on-axis dB SPL at R_ref (Q21S and BEM2inch units may coexist in one scene).
 // Pressure spreads as 1/r (inverse-square intensity). Pressures add as complex
 // numbers (superposition). The ±5 m BEM field is never stamped.
 // ---------------------------------------------------------------------------

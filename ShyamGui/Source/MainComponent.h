@@ -200,17 +200,17 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Measured polar data + live auto-refresh -------------------------------
-    // Q21S and 15W750 are two fully separate devices: both are ALWAYS loaded
-    // (measuredQ21S_/measured15W750_ + their own directivity tables below) so
+    // Q21S and BEM2inch are two fully separate devices: both are ALWAYS loaded
+    // (measuredQ21S_/measuredBEM2inch_ + their own directivity tables below) so
     // a scene can mix units of either model, each simulated with its own
     // data. measured_/measSource_/measDir_ track only which one is shown by
     // the "Measurement set" Measured Polar reference view — they no longer
     // gate what the engine uses (see AcousticEngine::Speaker::model).
     MeasuredSet  measured_;
-    MeasuredSet  measuredQ21S_, measured15W750_;
+    MeasuredSet  measuredQ21S_, measuredBEM2inch_;
     juce::File   measDir_;
     juce::int64  measSignature_ = 0;
-    int          measSource_ = 1;    // reference-view selector: 0 = Q21S, 1 = Room, 2 = 15W750
+    int          measSource_ = 1;    // reference-view selector: 0 = Q21S, 1 = Room, 2 = BEM2inch
     float        measDistanceM_ = 0.5f;
     void         setMeasurementSource (int src);
     void         setMeasurementDistance (float distanceM);
@@ -220,8 +220,8 @@ private:
     // Per-frequency directivity tables, one array per device, always current —
     // fed into SimParams together every recompute (see run()) so each speaker
     // can pick its own model's table; never merged into one shared table.
-    std::vector<DirectivityPattern> directivityQ21STables_, directivity15W750Tables_;
-    std::vector<BemFieldPattern>    bemFieldTablesQ21S_, bemFieldTables15W750_;
+    std::vector<DirectivityPattern> directivityQ21STables_, directivityBEM2inchTables_;
+    std::vector<BemFieldPattern>    bemFieldTablesQ21S_, bemFieldTablesBEM2inch_;
     juce::CriticalSection           measLock_;
 
     // Lightweight second timer for polling the measurement files (the class's

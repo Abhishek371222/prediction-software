@@ -126,7 +126,7 @@ namespace ReportBuilder
         pdf.drawImage (logoTile (430, 70, Brand::white(), Brand::charcoal()),
                        M, 40, 215, 52);
         pdf.textRight (W - M, 64, 13, softwareName.toUpperCase(), juce::Colour (0xffd7d9de), false);
-        pdf.textRight (W - M, 84, 10, "v1.4.0.4  -  Q21S / 15W750 Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
+        pdf.textRight (W - M, 84, 10, "v1.4.0.4  -  Q21S / BEM2inch Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
 
         pdf.text (M, 300, 14, "ACOUSTIC SIMULATION REPORT", Brand::accent(), true);
         pdf.text (M, 322, 36, S (meta.projectName), ink, true);
@@ -307,12 +307,12 @@ namespace ReportBuilder
             const double cov6 = AcousticAnalysis::coverageWithin (in.result, 6.0);
             int weakHz = 0; double weakCov = 1e9;
             for (const auto& h : in.heatmaps) if (h.coveragePct < weakCov) { weakCov = h.coveragePct; weakHz = h.hz; }
-            int nQ21S = 0, n15W750 = 0;
+            int nQ21S = 0, nBEM2inch = 0;
             for (auto& s : in.params.speakers)
-                if (s.enabled) { if (s.model == 2) ++n15W750; else ++nQ21S; }
+                if (s.enabled) { if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
             juce::String fleet;
             if (nQ21S > 0)   fleet << nQ21S   << " Q21S";
-            if (n15W750 > 0) fleet << (fleet.isEmpty() ? "" : " + ") << n15W750 << " 15W750";
+            if (nBEM2inch > 0) fleet << (fleet.isEmpty() ? "" : " + ") << nBEM2inch << " BEM2inch";
             if (fleet.isEmpty()) fleet = "0";
 
             pdf.text (M, y, 14, "Key Findings", ink, true); y += 22;

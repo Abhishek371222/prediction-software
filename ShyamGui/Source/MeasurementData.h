@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "AcousticEngine.h"
 #include "EmbeddedQ21SData.h"
-#include "Embedded15W750Data.h"
+#include "EmbeddedBEM2inchData.h"
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -376,14 +376,17 @@ namespace MeasurementData
 
     // Measurement environments. Product default is Q21S BEM polars (OpenField).
     // Legacy Room (Gylt) maps to ShyamGuild CSVs — kept for pack compatibility.
-    // W750 = 15W750 (15" sealed) BEM polars — a fully separate device: its own
+    // BEM2in = BEM2inch (15" sealed) BEM polars — a fully separate device: its own
     // CSV file prefix, frequency catalogue and embedded pack, never merged
     // with Q21S. Values match AcousticEngine::MeasurementSourceId.
-    enum Source { OpenField = 0, Gylt = 1, W750 = 2 };   // Q21S / Room (legacy) / 15W750
+    enum Source { OpenField = 0, Gylt = 1, BEM2in = 2 };   // Q21S / Room (legacy) / BEM2inch
 
+    /** Filename prefix for this set's pack CSVs -- NOT a display name. Must
+        match what the exporter writes (docs/bem2inch_plots/...), so it carries
+        no space even though the UI label does. */
     inline const char* packSetName (int source)
     {
-        if (source == W750) return "15W750";
+        if (source == BEM2in) return "BEM2inch";
         return source == Gylt ? "ShyamGuild" : "Q21S";
     }
 
@@ -400,7 +403,7 @@ namespace MeasurementData
             return hz == 80 || hz == 200 || hz == 500;
         }
         const double* freqs; int nFreqs;
-        frequencyCatalogue (source, freqs, nFreqs);   // Q21S or 15W750 — isolated
+        frequencyCatalogue (source, freqs, nFreqs);   // Q21S or BEM2inch — isolated
         for (int i = 0; i < nFreqs; ++i)
             if ((int) std::lround (freqs[i]) == hz)
                 return true;
@@ -440,13 +443,13 @@ namespace MeasurementData
         return loadCsvSweepText (file.loadFileAsString());
     }
 
-    // Each model bakes into its own namespace (EmbeddedQ21S / Embedded15W750) —
+    // Each model bakes into its own namespace (EmbeddedQ21S / EmbeddedBEM2inch) —
     // looked up by source so the two embedded packs never cross-match.
     inline RawSweep loadCsvSweepEmbedded (int source, const char* fileName)
     {
-        if (source == W750)
+        if (source == BEM2in)
         {
-            if (auto* e = Embedded15W750::find (fileName))
+            if (auto* e = EmbeddedBEM2inch::find (fileName))
                 return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
             return {};
         }
@@ -461,7 +464,7 @@ namespace MeasurementData
     {
         if (packDir.isDirectory() && packDir.getChildFile (csvName).existsAsFile())
             return true;
-        if (source == W750) return Embedded15W750::hasFile (csvName.toRawUTF8());
+        if (source == BEM2in) return EmbeddedBEM2inch::hasFile (csvName.toRawUTF8());
         return EmbeddedQ21S::hasFile (csvName.toRawUTF8());
     }
 
@@ -555,7 +558,7 @@ namespace MeasurementData
             return out;
         }
 
-        // Q21S or 15W750 — each model's own catalogue only (never blended).
+        // Q21S or BEM2inch — each model's own catalogue only (never blended).
         const double* freqs; int nFreqs;
         frequencyCatalogue (source, freqs, nFreqs);
         for (int i = 0; i < nFreqs; ++i)
@@ -635,7 +638,7 @@ namespace MeasurementData
 
     inline const char* sourceName (int source)
     {
-        if (source == W750) return "15W750";
+        if (source == BEM2in) return "BEM 2inch";
         // Product UI: Ground Plane measured set (Room removed from UI).
         return "Ground Plane";
     }
@@ -751,11 +754,11 @@ namespace MeasurementData
                 juce::File ("D:\\shayam gui\\shyamGuildMeasurements"),
                 { "shyamGuildMeasurements" });
 
-        if (source == W750)
-            // 15W750: separate raw-BEM folder — never falls back to Q21S's.
+        if (source == BEM2in)
+            // BEM2inch: separate raw-BEM folder — never falls back to Q21S's.
             return resolveSourceFolder (
-                juce::File ("D:\\shayam gui\\BEM_Data_15W750_10m"),
-                { "BEM_Data_15W750_10m", "../BEM_Data_15W750_10m", "ShyamGui/../BEM_Data_15W750_10m" },
+                juce::File ("D:\\shayam gui\\BEM_Data_2inch_10m"),
+                { "BEM_Data_2inch_10m", "../BEM_Data_2inch_10m", "ShyamGui/../BEM_Data_2inch_10m" },
                 "64Hz.xlsx");
 
         // Q21S: canonical BEM 10 m workbook folder (per-Hz xlsx pack).
@@ -1176,7 +1179,7 @@ namespace MeasurementData
         if (! packDir.isDirectory()) return out;
 
         // Field-file prefix + catalogue both come from set.source, so a
-        // 15W750 set only ever loads "15W750_Field_*" files, never Q21S's.
+        // BEM2inch set only ever loads "BEM2inch_Field_*" files, never Q21S's.
         const juce::String setName = packSetName (set.source);
         const double* freqs; int nFreqs;
         frequencyCatalogue (set.source, freqs, nFreqs);

@@ -112,9 +112,9 @@ ControlPanel::ControlPanel()
     addSection (speakersHdr_, secSpeakersOpen_);
 
     // Model picker — drives measurement source + frequency catalogue.
-    configTxt (speakerModelLabel_, "Speaker Model");
+    configTxt (speakerModelLabel_, "Speaker model");
     speakerModelBox_.addItem ("Q21S",   1);   // source 0
-    speakerModelBox_.addItem ("15W750", 3);   // source 2
+    speakerModelBox_.addItem ("BEM 2inch", 3);   // source 2
     speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     speakerModelBox_.setComponentID ("ctrlCombo");
     speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
@@ -122,7 +122,7 @@ ControlPanel::ControlPanel()
     speakerModelBox_.onChange = [this]
     {
         if (updatingUI_) return;
-        const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = 15W750
+        const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = BEM2inch
         // Switching here repoints the Frequency dropdown to this model's own
         // catalogue — since frequency is a single global scene parameter,
         // that changes what's actually simulated, so recompute. Also drives
@@ -372,7 +372,7 @@ void ControlPanel::refreshUnits()
 }
 
 // ---------------------------------------------------------------------------
-// Q21S and 15W750 are two fully separate devices: switching the browsed model
+// Q21S and BEM2inch are two fully separate devices: switching the browsed model
 // repoints the active frequency catalogue (AcousticEngine::setActiveFrequencyCatalogue)
 // and rebuilds freqBox_ from that catalogue only, so the dropdown can never
 // show a blend of both models' frequencies.
@@ -435,17 +435,19 @@ void ControlPanel::setMeasurementSource (int idx)
 // ---------------------------------------------------------------------------
 juce::String ControlPanel::activeModelName() const
 {
-    return (speakerModelBox_.getSelectedId() == 3) ? "15W750" : "Q21S";
+    return (speakerModelBox_.getSelectedId() == 3) ? "BEM 2inch" : "Q21S";
 }
 
 void ControlPanel::updateModelDependentLabels()
 {
     // "Add" tooltip and section 2's header describe what the NEXT unit will
     // be (section 2's own browsing model) — the list underneath may show a
-    // mix of Q21S/15W750 units since rebuildSpeakerBox() labels each by its
+    // mix of Q21S/BEM2inch units since rebuildSpeakerBox() labels each by its
     // own tag, not this one.
     const juce::String name = activeModelName();
-    speakersHdr_.setTitle ("2. " + name + " Units");
+    // Sentence case like every other sidebar heading; the model name keeps
+    // its own casing because it is a product name.
+    speakersHdr_.setTitle ("2. " + name + " units");
     addBtn_.setTooltip ("Add " + name + ": click the plot where you want the unit");
     rebuildSpeakerBox();
     refreshEditors();   // section 3's header reflects the SELECTED unit's own model
@@ -482,11 +484,11 @@ void ControlPanel::refreshEditors()
         enabledToggle_.setToggleState     (s.enabled,            juce::dontSendNotification);
         // Section 3's header always names the SELECTED unit's own model —
         // never the section-2 browsing selection, which may differ.
-        editHdr_.setTitle ("3. SELECTED " + juce::String (speakerModelName (s.model)));
+        editHdr_.setTitle ("3. Selected " + juce::String (speakerModelName (s.model)));
     }
     else
     {
-        editHdr_.setTitle ("3. SELECTED " + activeModelName());
+        editHdr_.setTitle ("3. Selected " + activeModelName());
     }
     xSlider_.setEnabled (has); ySlider_.setEnabled (has);
     gainSlider_.setEnabled (has); delaySlider_.setEnabled (has);
@@ -875,7 +877,7 @@ void ControlPanel::resetToDefaults()
     savedFreqHz_[2] = -1.0;
 
     // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz —
-    // fixes a stale-catalogue bug if the user was browsing 15W750 (section 2)
+    // fixes a stale-catalogue bug if the user was browsing BEM2inch (section 2)
     // when Reset was clicked.
     setMeasurementSource (0);
 
@@ -956,7 +958,7 @@ SimParams ControlPanel::getParams() const
     SimParams p;
     // p.frequency: the active/displayed simulation frequency (whichever model
     // is currently browsed) -- drives wavelength/phase/reports, as before.
-    // p.frequencyQ21S / p.frequency15W750: each device's OWN frequency,
+    // p.frequencyQ21S / p.frequencyBEM2inch: each device's OWN frequency,
     // resolved independently below -- this is what the engine actually uses to
     // pick each speaker's directivity pattern, so changing one model's
     // frequency can never alter the other's rendered units.
@@ -964,7 +966,7 @@ SimParams ControlPanel::getParams() const
                                  freqBox_.getSelectedId() - 1);
     p.frequency         = kSupportedFrequencies[fi];
     p.frequencyQ21S     = resolvedFrequencyFor (0);
-    p.frequency15W750   = resolvedFrequencyFor (2);
+    p.frequencyBEM2inch   = resolvedFrequencyFor (2);
     // Fixed domain. Tying it to the visible region instead made every zoom and
     // pan a re-solve, which was slow and moved the goalposts for placement and
     // for the Rel. SPL normalisation. The view's job is to show this field
@@ -1217,7 +1219,7 @@ void ControlPanel::resized()
     setSectionVisible ({ &freqBox_ }, secFreqOpen_);
     sectionBreak();
 
-    // 2. <model> units -- a Model row (Q21S / 15W750) sits above the device
+    // 2. <model> units -- a Model row (Q21S / BEM2inch) sits above the device
     // row (dropdown | + Add | Delete), and the header title tracks the model.
     // The "Quick Layout" helper + 1/2/3 Devices buttons have no slot in the
     // Figma mock, so they stay hidden here (handlers/logic untouched).

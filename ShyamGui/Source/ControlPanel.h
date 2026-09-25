@@ -29,7 +29,7 @@ public:
     /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
     std::function<void()>    onAddSpeakerRequest;
 
-    // 0=Q21S, 1=GYLT, 2=15W750. Fires when section 2's Speaker Model picker
+    // 0=Q21S, 1=GYLT, 2=BEM2inch. Fires when section 2's Speaker Model picker
     // changes, to update the Measured Polar reference view — it no longer
     // gates the engine, since every placed speaker simulates with its own
     // model regardless (there's no separate "Measurement set" selector).
@@ -89,7 +89,7 @@ public:
     int  getContentHeight() const { return contentHeight_; }
 
     SimParams getParams() const;
-    /** Model whose catalogue the Frequency dropdown currently shows (0=Q21S, 2=15W750). */
+    /** Model whose catalogue the Frequency dropdown currently shows (0=Q21S, 2=BEM2inch). */
     int  getBrowsedModel() const { return currentMeasSource_; }
     const std::vector<Speaker>& getSpeakers() const { return speakers_; }
     int  getSelectedIndex() const { return selected_; }
@@ -121,7 +121,7 @@ public:
     void lookAndFeelChanged() override;   // re-apply theme colours
 
 private:
-    /** The frequency to use for a given model's speakers (0=Q21S, 2=15W750),
+    /** The frequency to use for a given model's speakers (0=Q21S, 2=BEM2inch),
         completely independent of which model the Frequency dropdown is
         currently showing: live value when it IS the browsed model, else that
         model's own remembered value, else its own lowest prescribed
@@ -168,7 +168,7 @@ private:
     // Speaker selector
     SectionHeader    speakersHdr_ { "2. Q21S units" };
     juce::Label      speakerModelLabel_;
-    juce::ComboBox   speakerModelBox_;   // Q21S / 15W750 model selector
+    juce::ComboBox   speakerModelBox_;   // Q21S / BEM2inch model selector
     juce::ComboBox   speakerBox_;
     juce::TextButton addBtn_, deleteBtn_;
 

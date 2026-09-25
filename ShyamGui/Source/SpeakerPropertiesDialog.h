@@ -23,7 +23,7 @@ public:
 
         addRow ("Name", name);
         addRow ("Product", "Atomik " + modelName);
-        // Cabinet dimensions are only specified for Q21S; 15W750's physical
+        // Cabinet dimensions are only specified for Q21S; BEM2inch's physical
         // enclosure isn't modelled yet, so don't show Q21S's numbers under
         // its name.
         if (spk.model != 2)
