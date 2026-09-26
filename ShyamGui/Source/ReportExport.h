@@ -161,21 +161,13 @@ namespace ReportExport
 
         const juce::String u = Units::lengthUnit();
 
-        // Peak is only a real dB SPL figure when every active unit's model is
-        // absolutely calibrated; otherwise the map is relative and saying
-        // "dB SPL" would be a fabricated number. Say which one it is.
-        juce::String peakVal, scaleVal;
-        if (r.hasAbsoluteSpl && r.peakAbsDb > 1.0)
-        {
-            peakVal  = juce::String (r.peakAbsDb, 1) + " dB SPL";
-            scaleVal = juce::String (r.peakAbsDb, 1) + " to "
-                     + juce::String (r.peakAbsDb + p.dBfloor, 1) + " dB SPL";
-        }
-        else
-        {
-            peakVal  = "0 dB (relative)";
-            scaleVal = "0 to " + juce::String ((int) p.dBfloor) + " dB";
-        }
+        // Peak SPL is deliberately not reported. It is only a real level when
+        // every active unit's model is absolutely calibrated, and the 2" horn's
+        // BEM run is unit-drive normalised, so the figure was not comparable
+        // between models -- see MeasurementData::calibrationFor(). Scale is
+        // therefore given as the relative range the gradient legend actually
+        // shows, which is correct for every model and every mix of them.
+        const juce::String scaleVal = "0 to " + juce::String ((int) p.dBfloor) + " dB";
 
         const int mCols = 4;
         const int mColW = (contentW - 40 - (mCols - 1) * 14) / mCols;
@@ -188,11 +180,11 @@ namespace ReportExport
         drawPair (mcol (2), mr0, mColW, "Devices",    fleet);
         drawPair (mcol (3), mr0, mColW, "Directivity", r.usedMeasuredDirectivity ? "Measured" : "Model");
 
-        drawPair (mcol (0), mr0 + mrGap, mColW, "Peak (map 0 dB)", peakVal);
-        drawPair (mcol (1), mr0 + mrGap, mColW, "Scale",           scaleVal);
-        drawPair (mcol (2), mr0 + mrGap, mColW, "Grid",            juce::String (p.resolution) + " x " + juce::String (p.resolution));
-        drawPair (mcol (3), mr0 + mrGap, mColW, "Dynamic range",
+        drawPair (mcol (0), mr0 + mrGap, mColW, "Scale (Rel. SPL)", scaleVal);
+        drawPair (mcol (1), mr0 + mrGap, mColW, "Dynamic range",
                   juce::String ((int) -p.dBfloor) + " dB");
+        drawPair (mcol (2), mr0 + mrGap, mColW, "Grid",
+                  juce::String (p.resolution) + " x " + juce::String (p.resolution));
 
         y += metricsH + 14;
 

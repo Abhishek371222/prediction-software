@@ -247,11 +247,12 @@ namespace ReportBuilder
 
             yy = y;
             kv (x1, yy, colW, "Coverage within 6 dB", juce::String (cov6, 1) + " %"); yy += rh;
-            if (in.result.hasAbsoluteSpl)
-                kv (x1, yy, colW, "Peak SPL (gradient plot 0 dB)", juce::String (in.result.peakAbsDb, 1) + " dB SPL");
-            else
-                kv (x1, yy, colW, "Peak SPL (gradient plot 0 dB)", "0 dB (relative)");
-            yy += rh;
+            // Peak SPL omitted: only meaningful when every active unit's model
+            // is absolutely calibrated, which the 2" horn's unit-drive BEM run
+            // is not. Reported as a relative scale instead, matching the image
+            // export and the gradient legend.
+            kv (x1, yy, colW, "Scale (Rel. SPL)",
+                "0 to " + juce::String ((int) in.params.dBfloor) + " dB"); yy += rh;
             kv (x1, yy, colW, "Directivity model",    in.result.usedMeasuredDirectivity ? "Measured" : "Model"); yy += rh;
             kv (x1, yy, colW, "Display dynamic range", juce::String ((int) -in.params.dBfloor) + " dB"); yy += rh;
             kv (x1, yy, colW, "Directivity Plot frequencies",  juce::String ((int) in.heatmaps.size())); yy += rh;
@@ -260,9 +261,9 @@ namespace ReportBuilder
             ny = sectionTitle (ny, "3.1  Overview");
             pdf.textWrapped (M, ny, cw, 12.0,
                 "The table above summarises predicted SPL coverage for the current array. "
-                "Peak SPL is the absolute level at the gradient plot's Rel. SPL = 0 dB cell "
-                "(loudest point on the map). Coverage is the share of the field within "
-                "3 dB / 6 dB of that peak, using the selected measurement distance and "
+                "Levels are relative to the gradient plot's Rel. SPL = 0 dB cell (the "
+                "loudest point on the map). Coverage is the share of the field within "
+                "3 dB / 6 dB of that point, using the selected measurement distance and "
                 "frequency-dependent directivity.", sub, false);
         }
         chrome ("Simulation Results");
