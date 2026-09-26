@@ -1,11 +1,11 @@
 {
-    "generatedAt": "2026-09-26T17:52:00.000Z",
+    "generatedAt": "2026-09-26T18:55:00.000Z",
     "versions": [
         {
             "version": "1.4.0.6",
-            "notes": "Export sheet metrics redesigned: the charcoal strip carrying a second wordmark and a run-on line of facts is replaced by a labelled key/value panel in the same language as the project block - Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid - with a plain sign-off line beneath. Peak SPL is withdrawn from both the PNG sheet and the PDF report: absolute calibration was being inferred from a bare magnitude test, so the 2\" horn's unit-drive BEM data was printed as real SPL beside Q21S as if the two were comparable. It is now declared per source and can be switched back on once the horn's sensitivity is known. Also adds /utf-8 to both build configurations, fixing the mis-encoded separators in exported text. Also fixes exports silently not overwriting: the PNG sheet and SPL CSV were appended to an existing file rather than replacing it, so the previous image kept showing while the timestamp updated.",
+            "notes": "Export sheet metrics redesigned: the charcoal strip carrying a second wordmark and a run-on line of facts is replaced by a labelled key/value panel in the same language as the project block - Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid - with a plain sign-off line beneath. Peak SPL is withdrawn from the PNG sheet and the PDF report: absolute calibration was being inferred from a bare magnitude test, so the 2\" horn's unit-drive BEM data was printed as real SPL beside Q21S as if the two were comparable; it is now declared per source and can be switched back on once the horn's sensitivity is known. Selecting a speaker model or a placed unit no longer re-solves the scene - the scene carries its own frequency, seeded from the first unit placed and changed only by an explicit pick in the Frequency dropdown; selecting a unit repoints that dropdown to the unit's own model for reference. Adding a unit still re-solves. Each model now carries its own cabinet: the 2\" horn is 459 x 276.5 x 150 mm against the Q21S's 679 x 1546 x 1024 mm, so its plan marker is drawn to scale and the engine's near-field floor is per-speaker rather than one Q21S-derived constant. Fixes exports silently not overwriting (the PNG sheet and SPL CSV were appended to an existing file, so the previous content kept showing while the timestamp updated), the unit dropdown wrapping onto two lines for longer model names, and mis-encoded separators in exported text (/utf-8 added to both build configs).",
             "createdAt": "2026-09-26T17:52:00.000Z",
-            "updatedAt": "2026-09-26T17:52:00.000Z",
+            "updatedAt": "2026-09-26T18:55:00.000Z",
             "downloads": {
                 "source": {
                     "available": true,
