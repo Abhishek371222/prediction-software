@@ -199,6 +199,13 @@ v1406 = [
      "2\" horn's unit-drive BEM data to absolute because 36-46 dB clears it; the "
      "export then printed 43.5 dB SPL beside Q21S's 116.1 dB. Now declared per "
      "source in MeasurementData::calibrationFor()", "2026-09-26"],
+    ["Speakers", F, "Selecting a model or unit no longer re-solves",
+     "The model picker called notifyChanged() and getParams() read the sim "
+     "frequency from the Frequency dropdown, so switching model moved the whole "
+     "scene onto the other model's band and redrew SPL for untouched speakers. "
+     "The scene now owns its frequency, seeded from the first unit placed and "
+     "changed only by an explicit dropdown pick; selecting a unit repoints the "
+     "Frequency list to that unit's model for reference only", "2026-09-26"],
     ["Export", F, "Saving over an existing file now replaces it",
      "FileOutputStream opens an existing file at its END, so the PNG sheet and "
      "SPL CSV were appended rather than replacing what was there; viewers decode "

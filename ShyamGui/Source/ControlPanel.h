@@ -158,6 +158,19 @@ private:
     int    currentMeasSource_ = 0;
     double savedFreqHz_[3]    = { -1.0, -1.0, -1.0 };
 
+    // The frequency the SIMULATION runs at, as distinct from the one the
+    // Frequency dropdown happens to be showing. Browsing another model's
+    // catalogue -- by switching the Speaker model picker or by selecting a
+    // unit of the other model -- repoints that dropdown for reference, and
+    // must NOT move the scene underneath the user. Only an explicit pick in
+    // the dropdown changes this, and only that triggers a re-solve.
+    // -1 = not yet chosen; seeded from the first speaker placed.
+    double simFrequencyHz_    = -1.0;
+
+    /** Adopt a model's frequency as the scene's, for the first unit placed
+        into an empty scene. Later additions leave the scene frequency alone. */
+    void seedSimFrequency (int model);
+
     // Frequency
     SectionHeader    freqHdr_     { "1. Frequency (Hz)" };
     juce::ComboBox   freqBox_;

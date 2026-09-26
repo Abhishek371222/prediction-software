@@ -91,13 +91,14 @@ ControlPanel::ControlPanel()
     freqBox_.onChange = [this]
     {
         if (updatingUI_) return;
-        // Persist the new frequency for the currently-browsed model, then
-        // always recompute: frequency is a single global scene parameter
-        // (every placed speaker, of either model, is simulated at it).
+        // An explicit pick here is the ONLY thing that moves the scene's
+        // frequency, so it is also the only frequency-related action that
+        // re-solves. Merely browsing another model's catalogue does not.
         const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                      freqBox_.getSelectedId() - 1);
         if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
             savedFreqHz_[currentMeasSource_] = kSupportedFrequencies[fi];
+        simFrequencyHz_ = kSupportedFrequencies[fi];
 
         willEdit();
         notifyChanged();
@@ -123,15 +124,16 @@ ControlPanel::ControlPanel()
     {
         if (updatingUI_) return;
         const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = BEM2inch
-        // Switching here repoints the Frequency dropdown to this model's own
-        // catalogue — since frequency is a single global scene parameter,
-        // that changes what's actually simulated, so recompute. Also drives
-        // the Measured Polar reference view (there's no separate "Measurement
-        // set" selector anymore — this picker is the single source of truth).
-        willEdit();
+        // This picker says what the NEXT unit placed will be, and repoints the
+        // Frequency dropdown to that model's own bands for reference. It does
+        // NOT re-solve: the units already in the scene have not changed, so
+        // neither should their heatmap. Switching model used to call
+        // notifyChanged() here, which moved the scene's frequency to the other
+        // model's band and visibly redrew the SPL for speakers the user had
+        // not touched. It still drives the Measured Polar reference view --
+        // there is no separate "Measurement set" selector.
         setMeasurementSource (src);
         if (onMeasurementSourceChanged) onMeasurementSourceChanged (src);
-        notifyChanged();
     };
     addAndMakeVisible (speakerModelBox_);
 
@@ -145,6 +147,22 @@ ControlPanel::ControlPanel()
         selectedSpeakers_.clear();
         if (selected_ >= 0)
             selectedSpeakers_.push_back (selected_);
+
+        // Selecting a unit shows ITS model's frequency data: the Frequency
+        // dropdown and the Measured Polar reference follow the selection, so
+        // picking the sub lists the sub's bands and picking the mid lists the
+        // mid's. This is presentation only -- the scene keeps the frequency it
+        // is being solved at, and nothing is recomputed.
+        if (selected_ >= 0 && selected_ < (int) speakers_.size())
+        {
+            const int m = speakers_[(size_t) selected_].model;
+            if (m != currentMeasSource_)
+            {
+                setMeasurementSource (m);
+                if (onMeasurementSourceChanged) onMeasurementSourceChanged (m);
+            }
+        }
+
         refreshEditors();
         if (onSelectionChanged) onSelectionChanged (selected_);
     };
@@ -513,6 +531,7 @@ bool ControlPanel::addSpeakerAt (float x, float y)
     s.x = x;
     s.y = y;
     s.model = currentMeasSource_;   // tag with section 2's currently-browsed model
+    seedSimFrequency (s.model);
     speakers_.push_back (s);
     selected_ = (int) speakers_.size() - 1;
     selectedSpeakers_ = { selected_ };
@@ -556,6 +575,7 @@ void ControlPanel::applyDeviceLayout (int count)
         s.reverseOrientation = false;
         s.enabled            = true;
         s.model              = currentMeasSource_;
+        seedSimFrequency (s.model);
         speakers_.push_back (s);
     }
     selected_ = 0;
@@ -603,6 +623,7 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
             sp.y = centreY;
             sp.enabled = true;
             sp.model   = currentMeasSource_;
+            seedSimFrequency (sp.model);
 
             if (i == 0)
             {
@@ -650,6 +671,7 @@ void ControlPanel::applyArrayPreset (PresetKind kind, int count)
             sp.delayMs = (float) ((double) i * (double) s / c * 1000.0);
             sp.enabled = true;
             sp.model   = currentMeasSource_;
+            seedSimFrequency (sp.model);
             speakers_.push_back (sp);
         }
     }
@@ -875,6 +897,7 @@ void ControlPanel::resetToDefaults()
     savedFreqHz_[0] = -1.0;
     savedFreqHz_[1] = -1.0;
     savedFreqHz_[2] = -1.0;
+    simFrequencyHz_ = -1.0;   // next speaker placed reseeds the scene frequency
 
     // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz —
     // fixes a stale-catalogue bug if the user was browsing BEM2inch (section 2)
@@ -937,6 +960,17 @@ void ControlPanel::applyProject (const ProjectData& p)
 //  2. model was visited before -> its own remembered savedFreqHz_ entry.
 //  3. never visited -> that model's own lowest prescribed frequency (a real
 //     catalogue entry, never an invented value, never the other model's).
+void ControlPanel::seedSimFrequency (int model)
+{
+    // Requirement: placing the first speaker should produce a heatmap at that
+    // speaker's own frequency. Once the scene has a frequency, adding further
+    // units must not move it -- the new unit simply contributes at the band
+    // already being solved.
+    if (simFrequencyHz_ > 0.0) return;
+    const double hz = resolvedFrequencyFor (model);
+    if (hz > 0.0) simFrequencyHz_ = hz;
+}
+
 double ControlPanel::resolvedFrequencyFor (int model) const
 {
     if (model == currentMeasSource_)
@@ -956,15 +990,19 @@ double ControlPanel::resolvedFrequencyFor (int model) const
 SimParams ControlPanel::getParams() const
 {
     SimParams p;
-    // p.frequency: the active/displayed simulation frequency (whichever model
-    // is currently browsed) -- drives wavelength/phase/reports, as before.
+    // p.frequency: the frequency the SCENE is solved at -- wavelength, phase
+    // and reports. Deliberately NOT read from freqBox_, which may be showing
+    // another model's catalogue because the user is browsing it or has a unit
+    // of that model selected; reading it there is what used to make the
+    // heatmap jump on a mere selection change.
     // p.frequencyQ21S / p.frequencyBEM2inch: each device's OWN frequency,
     // resolved independently below -- this is what the engine actually uses to
     // pick each speaker's directivity pattern, so changing one model's
     // frequency can never alter the other's rendered units.
     const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                  freqBox_.getSelectedId() - 1);
-    p.frequency         = kSupportedFrequencies[fi];
+    p.frequency         = (simFrequencyHz_ > 0.0) ? simFrequencyHz_
+                                                  : kSupportedFrequencies[fi];
     p.frequencyQ21S     = resolvedFrequencyFor (0);
     p.frequencyBEM2inch   = resolvedFrequencyFor (2);
     // Fixed domain. Tying it to the visible region instead made every zoom and

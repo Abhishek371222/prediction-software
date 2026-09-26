@@ -22,7 +22,7 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
-| **1.4.0.6** | 2026-09-26 | Redesigned export metrics strip; Peak SPL withdrawn; exports now truly overwrite |
+| **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
@@ -62,6 +62,18 @@ sheet, an SPL figure withdrawn rather than shown wrong, and a build-level text f
   without a BOM, so MSVC was reading them as CP1252 and baking the mis-decoded
   bytes into the binary. `/utf-8` is now passed in both build configurations,
   correcting all 19 non-ASCII literals in the tree.
+- **Selecting a speaker model, or a placed unit, no longer re-solves the scene.**
+  The Speaker model picker called `notifyChanged()`, and `getParams()` read the
+  simulation frequency straight from the Frequency dropdown. Switching model
+  therefore repointed that dropdown to the other model's catalogue and moved the
+  whole scene onto a different band, visibly redrawing the SPL for speakers the
+  user had not touched. The scene now carries its own frequency, seeded from the
+  first unit placed and changed only by an explicit pick in the dropdown.
+  Selecting a unit additionally repoints the Frequency list and the Measured
+  Polar reference to **that unit's own model**, so picking the sub lists the
+  sub's bands and picking the mid lists the mid's - presentation only, with no
+  re-solve. Adding a unit still re-solves, because the scene really has changed.
+
 - **Saving an export over an existing file did nothing visible.** `FileOutputStream`
   opens an existing file positioned at its *end*, so both the PNG sheet and the
   SPL CSV were **appended** to whatever was already there rather than replacing
