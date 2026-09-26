@@ -199,6 +199,16 @@ v1406 = [
      "2\" horn's unit-drive BEM data to absolute because 36-46 dB clears it; the "
      "export then printed 43.5 dB SPL beside Q21S's 116.1 dB. Now declared per "
      "source in MeasurementData::calibrationFor()", "2026-09-26"],
+    ["Speakers", A, "Per-model cabinet dimensions",
+     "Cabinet size was one hardcoded Q21S set used for every model. Each model "
+     "now carries its own enclosure via cabinetFor(): the 2\" horn is "
+     "459 x 276.5 x 150 mm against the Q21S's 679 x 1546 x 1024 mm. Plan marker, "
+     "Properties dialog, Info panel and the engine's per-speaker near-field "
+     "floor all read from it", "2026-09-26"],
+    ["Sidebar", F, "Unit row no longer wraps",
+     "The unit dropdown took whatever the two fixed-width buttons left, too "
+     "narrow for a name like BEM2inch-1; the combo now gets a guaranteed share "
+     "of the row", "2026-09-26"],
     ["Speakers", F, "Selecting a model or unit no longer re-solves",
      "The model picker called notifyChanged() and getParams() read the sim "
      "frequency from the Frequency dropdown, so switching model moved the whole "

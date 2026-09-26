@@ -3719,10 +3719,13 @@ juce::Rectangle<int> RadiationPatternComponent::fieldScreenBounds() const
 
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const Speaker& spk) const
 {
-    // Plan view: depth along X (firing), width along Y.
-    const float hw = Q21SCabinet::widthM * 0.5f;
-    const float hd = Q21SCabinet::depthM * 0.5f;
-    return { spk.x - hd, spk.y - hw, Q21SCabinet::depthM, Q21SCabinet::widthM };
+    // Plan view: depth along X (firing), width along Y. Each model has its
+    // own enclosure, so a 2" horn draws at its true 459 x 150 mm footprint
+    // rather than borrowing the Q21S's 679 x 1024 mm.
+    const auto cab = cabinetFor (spk.model);
+    const float hw = cab.widthM * 0.5f;
+    const float hd = cab.depthM * 0.5f;
+    return { spk.x - hd, spk.y - hw, cab.depthM, cab.widthM };
 }
 
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const

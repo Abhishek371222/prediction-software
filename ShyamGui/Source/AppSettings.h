@@ -222,6 +222,17 @@ namespace Units
         return juce::String (mmToDisplay (millimetres), decimals) + " " + smallLengthUnit();
     }
 
+    /** Cabinet dimension label. Keeps a half-millimetre where there is one
+        (the 2" horn is 276.5 mm tall) without printing "679.0" for a round
+        number. Decimals follow the DISPLAYED value, so it reads correctly in
+        inches too. */
+    inline juce::String dim (double millimetres)
+    {
+        const double v = mmToDisplay (millimetres);
+        const int dp = (std::abs (v - std::round (v)) < 0.05) ? 0 : 1;
+        return juce::String (v, dp) + " " + smallLengthUnit();
+    }
+
     // Grid / ruler / dim labels: picks mm·cm·m (SI) or in·ft (Imperial).
     inline juce::String formatLengthSmart (double metresVal)
     {

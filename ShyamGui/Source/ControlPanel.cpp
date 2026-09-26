@@ -1240,10 +1240,17 @@ void ControlPanel::resized()
     };
     auto speakerUnitRow = [&]
     {
-        const int actW = Brand::UI::sidebarActionButtonW;
-        speakerBox_.setBounds (pad, y, W - 2 * actW - 2 * btnGap, rowH);
-        addBtn_.setBounds     (pad + W - 2 * actW - btnGap, y, actW, rowH);
-        deleteBtn_.setBounds  (pad + W - actW, y, actW, rowH);
+        // The combo used to take whatever the two fixed-width buttons left,
+        // which was not enough for a name like "BEM2inch-1" -- it wrapped onto
+        // two lines inside a single-line-high box. Give the combo a guaranteed
+        // share of the row and split the remainder between the buttons.
+        const int comboW = juce::jmax (UiConfig::Scale::px (86),
+                                       (W - 2 * btnGap) * 42 / 100);
+        const int actW   = juce::jmax (UiConfig::Scale::px (52),
+                                       (W - comboW - 2 * btnGap) / 2);
+        speakerBox_.setBounds (pad, y, comboW, rowH);
+        addBtn_.setBounds     (pad + comboW + btnGap, y, actW, rowH);
+        deleteBtn_.setBounds  (pad + comboW + 2 * btnGap + actW, y, actW, rowH);
         y += rowH + gap;
     };
     // Every row helper already advances by its own trailing `gap`, so a section

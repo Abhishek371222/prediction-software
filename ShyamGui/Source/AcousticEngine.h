@@ -70,6 +70,35 @@ namespace Q21SCabinet
     constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
 }
 
+// 2" HF horn enclosure (metres). Much smaller than the Q21S in every axis,
+// which matters twice over: the plan marker is drawn to scale against the
+// field, and halfExtentM sets how close the 1/r law is allowed to get before
+// it is clamped. Using the Q21S's 512 mm floor for a 150 mm-deep horn would
+// have flattened its near field over half a metre of empty air.
+namespace BEM2inchCabinet
+{
+    constexpr float widthM  = 0.459f;    // 459 mm — left/right, across the mouth
+    constexpr float heightM = 0.2765f;   // 276.5 mm — vertical
+    constexpr float depthM  = 0.150f;    // 150 mm — front/back (firing axis)
+    constexpr float halfExtentM = depthM * 0.5f;
+}
+
+// Physical enclosure of one model, so plan markers, reported dimensions and
+// the engine's near-field floor all read from one place.
+struct CabinetDims
+{
+    float widthM = 0.0f, heightM = 0.0f, depthM = 0.0f, halfExtentM = 0.0f;
+};
+
+inline CabinetDims cabinetFor (int model) noexcept
+{
+    if (model == 2)
+        return { BEM2inchCabinet::widthM, BEM2inchCabinet::heightM,
+                 BEM2inchCabinet::depthM, BEM2inchCabinet::halfExtentM };
+    return { Q21SCabinet::widthM, Q21SCabinet::heightM,
+             Q21SCabinet::depthM, Q21SCabinet::halfExtentM };
+}
+
 // Measured horizontal directivity for one frequency: linear gain vs angle
 // (degree-indexed, 360 entries), normalized so the on-axis (0 deg) gain = 1.
 struct DirectivityPattern

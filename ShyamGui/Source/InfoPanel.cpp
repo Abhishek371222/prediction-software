@@ -100,11 +100,13 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
                               + (s.enabled ? "" : " (off)"));
         juce::String posStr = "(" + juce::String (Units::metresToDisplay (s.x), 1) + ", "
                               + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u;
-        if (s.model != 2)   // cabinet dims only specified for Q21S
+        {   // this unit's own enclosure, not Q21S's under every model
+            const auto cab = cabinetFor (s.model);
             posStr += "  ·  "
-                    + Units::mm (Q21SCabinet::widthM * 1000.0, 0) + "×"
-                    + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + "×"
-                    + Units::mm (Q21SCabinet::depthM * 1000.0, 0);
+                    + Units::dim (cab.widthM * 1000.0) + "×"
+                    + Units::dim (cab.heightM * 1000.0) + "×"
+                    + Units::dim (cab.depthM * 1000.0);
+        }
         setRowVal (kPos, posStr);
         setRowVal (kGain,     juce::String (s.gainDB, 0) + " dB");
         setRowVal (kDelay,    juce::String (s.delayMs, 1) + " ms");

@@ -26,19 +26,16 @@ public:
 
         addRow ("Name", name);
         addRow ("Product", "Atomik " + modelName);
-        // Cabinet dimensions are only specified for Q21S; BEM2inch's physical
-        // enclosure isn't modelled yet, so don't show Q21S's numbers under
-        // its name.
-        if (spk.model != 2)
-        {
-            addRow ("Dimensions (W × H × D)",
-                   Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
-                   + Units::mm (Q21SCabinet::heightM * 1000.0, 0) + " × "
-                   + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
-            addRow ("Plan footprint (W × D)",
-                   Units::mm (Q21SCabinet::widthM * 1000.0, 0) + " × "
-                   + Units::mm (Q21SCabinet::depthM * 1000.0, 0));
-        }
+        // Each model carries its own enclosure now, so these are the selected
+        // unit's real dimensions rather than Q21S's shown under every name.
+        const auto cab = cabinetFor (spk.model);
+        addRow ("Dimensions (W × H × D)",
+               Units::dim (cab.widthM * 1000.0) + " × "
+               + Units::dim (cab.heightM * 1000.0) + " × "
+               + Units::dim (cab.depthM * 1000.0));
+        addRow ("Plan footprint (W × D)",
+               Units::dim (cab.widthM * 1000.0) + " × "
+               + Units::dim (cab.depthM * 1000.0));
         addRow ("Position",
                "(" + juce::String (Units::metresToDisplay (spk.x), 2) + ", "
                + juce::String (Units::metresToDisplay (spk.y), 2) + ") " + u);

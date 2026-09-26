@@ -13,7 +13,6 @@ const double* kSupportedFrequencies    = kQ21SFrequencies;
 int           kNumSupportedFrequencies = kNumQ21SFrequencies;
 
 static constexpr double kSpeedOfSound = 343.0;
-static constexpr double kCabHalfW     = (double) Q21SCabinet::halfExtentM;
 static constexpr double kPistonRadius = 0.13;
 static constexpr double kOrientationBias = 0.25;
 
@@ -120,6 +119,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
         const DirectivityPattern* pat = nullptr;   // this speaker's own model, at f
         bool   hasAbs   = false;
         double calAbs   = 0.0;    // 10^(onAxisSplDb/20), this speaker's own calibration
@@ -137,6 +137,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.facing   = s.reverseOrientation ? M_PI : 0.0;
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
+        src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
 
         const auto& table = tableFor (p, s.model);
         if (! table.empty())
@@ -256,7 +257,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const auto& s = srcs[i];
                 const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y));
                 rGeom[i]   = rg;
-                rSpread[i] = std::max (rg, kCabHalfW);
+                rSpread[i] = std::max (rg, s.halfExtent);
                 theta[i]   = std::atan2 (Y - s.y, X - s.x);
             }
 
@@ -424,7 +425,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
             for (const auto& s : srcs)
             {
                 const double rg = std::sqrt ((Xf - s.x) * (Xf - s.x) + (Yf - s.y) * (Yf - s.y));
-                const double rs = std::max (rg, kCabHalfW);
+                const double rs = std::max (rg, s.halfExtent);
                 const double th = std::atan2 (Yf - s.y, Xf - s.x);
                 const double D  = dirFactor (s.pat, k, s.facing, th);
                 const double ampBase = D / rs;
@@ -455,6 +456,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     {
         double x, y, gainLin, facing, delaySec, polPhase;
         int    model;
+        double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
         bool   hasAbs   = false;
         double calAbs   = 0.0;
         double refDistM = 2.0;
@@ -470,6 +472,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.model = s.model;
+        src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
         srcs.push_back (src);
     }
     if (srcs.empty()) return false;
@@ -505,7 +508,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         const auto& s = srcs[i];
         const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y));
         rGeom[i] = rg;
-        rSpread[i] = std::max (rg, kCabHalfW);
+        rSpread[i] = std::max (rg, srcs[i].halfExtent);
         theta[i] = std::atan2 (Y - s.y, X - s.x);
     }
 

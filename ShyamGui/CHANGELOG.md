@@ -22,7 +22,7 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
-| **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves |
+| **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves; per-model cabinet size |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
@@ -62,6 +62,19 @@ sheet, an SPL figure withdrawn rather than shown wrong, and a build-level text f
   without a BOM, so MSVC was reading them as CP1252 and baking the mis-decoded
   bytes into the binary. `/utf-8` is now passed in both build configurations,
   correcting all 19 non-ASCII literals in the tree.
+- **The 2" horn is drawn to its own scale.** Cabinet dimensions were a single
+  hardcoded Q21S set used for every model, so a horn marker was drawn at the
+  Q21S's 679 x 1024 mm plan footprint. Each model now carries its own enclosure
+  (`cabinetFor()`): the horn is **459 x 276.5 x 150 mm** (W x H x D) against the
+  Q21S's 679 x 1546 x 1024 mm, and the plan marker, the Properties dialog and the
+  Info panel all read from it. The engine's near-field floor is per-speaker too -
+  clamping a 150 mm-deep horn at the Q21S's 512 mm would have flattened its
+  near field over half a metre of empty air.
+- **Unit row no longer wraps.** The unit dropdown took whatever the two
+  fixed-width buttons left, which was not enough for a name like "BEM2inch-1" -
+  it wrapped onto two lines inside a single-line box. The combo now gets a
+  guaranteed share of the row and the buttons split the remainder.
+
 - **Selecting a speaker model, or a placed unit, no longer re-solves the scene.**
   The Speaker model picker called `notifyChanged()`, and `getParams()` read the
   simulation frequency straight from the Frequency dropdown. Switching model
