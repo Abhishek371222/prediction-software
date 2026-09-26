@@ -1319,6 +1319,12 @@ namespace MeasurementData
         juce::FileOutputStream fos (file);
         if (! fos.openedOk()) return false;
 
+        // Rewind + truncate: a FileOutputStream over an existing file starts
+        // at its end, so re-exporting would append a second copy rather than
+        // replace the first.
+        fos.setPosition (0);
+        fos.truncate();
+
         auto line = [&] (const juce::String& s)
         {
             fos.writeText (s + "\n", false, false, nullptr);

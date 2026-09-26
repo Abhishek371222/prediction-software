@@ -22,7 +22,7 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
-| **1.4.0.6** | 2026-09-26 | Redesigned export metrics strip; Peak SPL withdrawn; UTF-8 literals |
+| **1.4.0.6** | 2026-09-26 | Redesigned export metrics strip; Peak SPL withdrawn; exports now truly overwrite |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
@@ -62,6 +62,15 @@ sheet, an SPL figure withdrawn rather than shown wrong, and a build-level text f
   without a BOM, so MSVC was reading them as CP1252 and baking the mis-decoded
   bytes into the binary. `/utf-8` is now passed in both build configurations,
   correcting all 19 non-ASCII literals in the tree.
+- **Saving an export over an existing file did nothing visible.** `FileOutputStream`
+  opens an existing file positioned at its *end*, so both the PNG sheet and the
+  SPL CSV were **appended** to whatever was already there rather than replacing
+  it. Image viewers decode the first PNG they find, so the old picture kept
+  showing while the file grew and its timestamp updated - which looked exactly
+  like the export having silently failed. Re-exporting a CSV over itself likewise
+  produced a file with two complete copies of the data in it. All three writers
+  (PNG sheet, SPL CSV, and the polar-CSV tooling path) now rewind and truncate
+  before writing.
 
 ### Notes
 - Absolute SPL is not gone, only withheld. Setting `kBEM2inchSensitivityDb` to the

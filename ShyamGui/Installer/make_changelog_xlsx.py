@@ -114,8 +114,9 @@ rows = [
      "key/value metrics panel (Frequency, Wavelength, Devices, Directivity, Scale, "
      "Dynamic range, Grid); Peak SPL removed from PNG and PDF because the 2\" horn's "
      "unit-drive BEM data was being treated as absolutely calibrated and printed "
-     "beside Q21S as if comparable; /utf-8 added to both build configs, fixing the "
-     "mojibake separators in exported text"],
+     "beside Q21S as if comparable; exports now truly overwrite (PNG and CSV were "
+     "being appended to an existing file, so the old content kept showing); "
+     "/utf-8 added to both build configs, fixing the mojibake separators"],
     ["1.4.0.5", "2026-09-25", "BEM 2inch as a second speaker model",
      "2\" BEM HF horn added alongside Q21S with per-unit model tags, so one scene can "
      "mix both and each unit is simulated from its own model's measured data; own 9-band "
@@ -198,6 +199,12 @@ v1406 = [
      "2\" horn's unit-drive BEM data to absolute because 36-46 dB clears it; the "
      "export then printed 43.5 dB SPL beside Q21S's 116.1 dB. Now declared per "
      "source in MeasurementData::calibrationFor()", "2026-09-26"],
+    ["Export", F, "Saving over an existing file now replaces it",
+     "FileOutputStream opens an existing file at its END, so the PNG sheet and "
+     "SPL CSV were appended rather than replacing what was there; viewers decode "
+     "the first image in the file, so the old one kept showing while the "
+     "timestamp updated. All three writers rewind and truncate first",
+     "2026-09-26"],
     ["Build", F, "/utf-8 added to both configurations",
      "Sources are UTF-8 without a BOM, so MSVC read them as CP1252 and baked "
      "mojibake into the binary (the mis-rendered separators in exported text). "

@@ -3,14 +3,14 @@
     "versions": [
         {
             "version": "1.4.0.6",
-            "notes": "Export sheet metrics redesigned: the charcoal strip carrying a second wordmark and a run-on line of facts is replaced by a labelled key/value panel in the same language as the project block - Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid - with a plain sign-off line beneath. Peak SPL is withdrawn from both the PNG sheet and the PDF report: absolute calibration was being inferred from a bare magnitude test, so the 2\" horn's unit-drive BEM data was printed as real SPL beside Q21S as if the two were comparable. It is now declared per source and can be switched back on once the horn's sensitivity is known. Also adds /utf-8 to both build configurations, fixing the mis-encoded separators in exported text.",
+            "notes": "Export sheet metrics redesigned: the charcoal strip carrying a second wordmark and a run-on line of facts is replaced by a labelled key/value panel in the same language as the project block - Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid - with a plain sign-off line beneath. Peak SPL is withdrawn from both the PNG sheet and the PDF report: absolute calibration was being inferred from a bare magnitude test, so the 2\" horn's unit-drive BEM data was printed as real SPL beside Q21S as if the two were comparable. It is now declared per source and can be switched back on once the horn's sensitivity is known. Also adds /utf-8 to both build configurations, fixing the mis-encoded separators in exported text. Also fixes exports silently not overwriting: the PNG sheet and SPL CSV were appended to an existing file rather than replacing it, so the previous image kept showing while the timestamp updated.",
             "createdAt": "2026-09-26T17:52:00.000Z",
             "updatedAt": "2026-09-26T17:52:00.000Z",
             "downloads": {
                 "source": {
                     "available": true,
                     "filename": "v1.4.0.6/Atomik-Source-v1.4.0.6.zip",
-                    "size": 8481497
+                    "size": 8484335
                 },
                 "mac": {
                     "available": false
@@ -18,7 +18,7 @@
                 "windows": {
                     "available": true,
                     "filename": "v1.4.0.6/Atomik-Windows-v1.4.0.6.exe",
-                    "size": 5812104
+                    "size": 5812616
                 }
             }
         },

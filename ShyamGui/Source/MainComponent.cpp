@@ -2845,6 +2845,15 @@ void MainComponent::exportPNG()
             juce::FileOutputStream fos (f);
             if (fos.openedOk())
             {
+            // FileOutputStream opens an existing file positioned at its END, so
+            // writing straight to it APPENDS. Saving over a previous export
+            // left the old image/data first in the file and the new one after
+            // it -- viewers decode the first one they find, so the export
+            // looked like it had silently done nothing while the timestamp
+            // updated. Rewind and truncate so the file really is replaced.
+                fos.setPosition (0);
+                fos.truncate();
+
                 // 2x supersampled plot for client-ready image quality.
                 const int pw = juce::jmax (1, patternComp_.getWidth());
                 const int ph = juce::jmax (1, patternComp_.getHeight());
@@ -3064,6 +3073,15 @@ void MainComponent::exportCSV()
             if (f == juce::File{}) return;
             juce::FileOutputStream fos (f);
             if (! fos.openedOk()) return;
+
+            // FileOutputStream opens an existing file positioned at its END, so
+            // writing straight to it APPENDS. Saving over a previous export
+            // left the old image/data first in the file and the new one after
+            // it -- viewers decode the first one they find, so the export
+            // looked like it had silently done nothing while the timestamp
+            // updated. Rewind and truncate so the file really is replaced.
+            fos.setPosition (0);
+            fos.truncate();
 
             juce::ScopedLock sl (resultLock_);
             const auto& r = lastResult_;
