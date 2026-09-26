@@ -64,8 +64,12 @@ inline int speakerModelOrdinal (const std::vector<Speaker>& all, int index) noex
 // and the near-field level follow from these numbers.
 namespace Q21SCabinet
 {
-    constexpr float widthM  = 0.679f;   // 679 mm — left/right, across the baffle
-    constexpr float heightM = 1.546f;   // 1546 mm — vertical
+    // Manufacturer figures are quoted W x H x D: 1546 x 679 x 1024 mm, i.e.
+    // 60.86 x 26.73 x 40.31 in. These were previously mapped as H x W x D,
+    // which swapped width and height and drew the plan footprint less than
+    // half its true width.
+    constexpr float widthM  = 1.546f;   // 1546 mm — left/right, across the baffle
+    constexpr float heightM = 0.679f;   // 679 mm — vertical
     constexpr float depthM  = 1.024f;   // 1024 mm — front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
 }

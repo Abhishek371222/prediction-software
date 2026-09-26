@@ -3721,7 +3721,7 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const S
 {
     // Plan view: depth along X (firing), width along Y. Each model has its
     // own enclosure, so a 2" horn draws at its true 459 x 150 mm footprint
-    // rather than borrowing the Q21S's 679 x 1024 mm.
+    // rather than borrowing the Q21S's 1546 x 1024 mm.
     const auto cab = cabinetFor (spk.model);
     const float hw = cab.widthM * 0.5f;
     const float hd = cab.depthM * 0.5f;
@@ -3731,7 +3731,7 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const S
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
 {
     // Straight through the view transform: with an isotropic view (see
-    // fitView) that renders the cabinet's true 679 x 1024 mm plan footprint at
+    // fitView) that renders the cabinet's true 1546 x 1024 mm plan footprint at
     // the same px/m as the field around it, so the marker is to scale rather
     // than a fixed-size icon. Hit-testing shares this rectangle, so clicks
     // match what is drawn.

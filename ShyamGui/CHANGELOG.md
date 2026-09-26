@@ -62,11 +62,18 @@ sheet, an SPL figure withdrawn rather than shown wrong, and a build-level text f
   without a BOM, so MSVC was reading them as CP1252 and baking the mis-decoded
   bytes into the binary. `/utf-8` is now passed in both build configurations,
   correcting all 19 non-ASCII literals in the tree.
+- **Q21S width and height were swapped.** The manufacturer quotes
+  **W x H x D = 1546 x 679 x 1024 mm** (60.86 x 26.73 x 40.31 in), but the code
+  mapped those figures as H x W x D - so the cabinet was modelled 679 mm wide
+  and 1546 mm tall instead of the other way round, and its plan footprint was
+  drawn at less than half its true width. Corrected, and the marker's aspect now
+  measures 1.60 against the axis where the spec is 1.51 (it read 0.66 before).
+  Depth is unchanged, so the engine's near-field floor is unaffected.
 - **The 2" horn is drawn to its own scale.** Cabinet dimensions were a single
   hardcoded Q21S set used for every model, so a horn marker was drawn at the
-  Q21S's 679 x 1024 mm plan footprint. Each model now carries its own enclosure
+  Q21S's 1546 x 1024 mm plan footprint. Each model now carries its own enclosure
   (`cabinetFor()`): the horn is **459 x 276.5 x 150 mm** (W x H x D) against the
-  Q21S's 679 x 1546 x 1024 mm, and the plan marker, the Properties dialog and the
+  Q21S's 1546 x 679 x 1024 mm, and the plan marker, the Properties dialog and the
   Info panel all read from it. The engine's near-field floor is per-speaker too -
   clamping a 150 mm-deep horn at the Q21S's 512 mm would have flattened its
   near field over half a metre of empty air.
