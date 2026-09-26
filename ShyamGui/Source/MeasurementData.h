@@ -390,6 +390,55 @@ namespace MeasurementData
         return source == Gylt ? "ShyamGuild" : "Q21S";
     }
 
+    // -----------------------------------------------------------------------
+    // Absolute-SPL calibration, per source.
+    //
+    // A BEM solve returns pressure for whatever drive the model was run at, so
+    // its dB values are only real sound pressure levels if that drive matched a
+    // real one. The Q21S run did; its on-axis levels land at 85-116 dB @ 1 m,
+    // which is what that cabinet actually produces.
+    //
+    // The 2" horn run did NOT: it is unit-drive normalised and lands at
+    // 36-46 dB @ 1 m, about 62 dB low. Those numbers are a valid *relative*
+    // pattern but meaningless as absolute SPL, and reporting them as "dB SPL"
+    // next to Q21S invites a direct comparison that is simply wrong.
+    //
+    // `offsetDb` is added to this set's on-axis levels to bring them to real
+    // dB SPL. `absolute` says whether the result may be presented as an
+    // absolute level at all -- when false the app falls back to relative dB,
+    // which is honest, rather than printing a fabricated SPL figure.
+    //
+    // To calibrate the 2" horn: set kBEM2inchSensitivityDb to its published
+    // sensitivity (dB SPL @ 1 W / 1 m) and flip kBEM2inchCalibrated to true.
+    // The offset is then that figure minus the set's own mid-band on-axis
+    // level, computed below -- no re-export needed.
+    // -----------------------------------------------------------------------
+
+    // Mean on-axis level of the BEM2inch pack at 1 m across its 9 bands, i.e.
+    // what the raw unit-drive solve produces. Measured from the exported CSVs.
+    constexpr double kBEM2inchRawOnAxisDb = 40.4;
+
+    // Published sensitivity of the 2" horn, dB SPL @ 1 W / 1 m. Unknown.
+    constexpr double kBEM2inchSensitivityDb = 0.0;
+
+    // Flip to true once kBEM2inchSensitivityDb holds a real figure.
+    constexpr bool   kBEM2inchCalibrated = false;
+
+    struct Calibration
+    {
+        double offsetDb = 0.0;   // added to on-axis dB to reach real dB SPL
+        bool   absolute = true;  // may this set be shown as absolute SPL?
+    };
+
+    inline Calibration calibrationFor (int source)
+    {
+        if (source == BEM2in)
+            return { kBEM2inchCalibrated
+                       ? (kBEM2inchSensitivityDb - kBEM2inchRawOnAxisDb) : 0.0,
+                     kBEM2inchCalibrated };
+        return { 0.0, true };     // Q21S / legacy room sets are real levels
+    }
+
     // Quality flags: Q21S BEM arcs @ 0.5/1.0/2.0 m for 1/3-oct catalogue (20–200).
     // >200 Hz / 500 Hz: display OK; weaker for model (BEM ceiling / extrapolation).
     // Uses each model's own catalogue explicitly (not the mutable "active"
@@ -1127,9 +1176,17 @@ namespace MeasurementData
                 dp.gain[(size_t) deg] = juce::jlimit (0.0f, 2.0f, g);
             }
             sanitizeDirectivityGain (dp.gain);
-            dp.onAxisSplDb = syn.curve.onAxisSpl;
+
+            // hasAbsolute used to be a bare magnitude test (> 20 dB), which
+            // silently promoted the unit-drive 2" BEM data to "absolute"
+            // because 36-46 dB clears the threshold -- so the export printed
+            // 43.5 dB SPL beside Q21S's 116 dB as if the two were comparable.
+            // Whether a set is absolutely calibrated is a property of how its
+            // BEM run was driven, so it is declared, not inferred.
+            const auto cal = calibrationFor (set.source);
+            dp.onAxisSplDb = syn.curve.onAxisSpl + (float) cal.offsetDb;
             dp.refDistanceM = distanceM > 0.05f ? distanceM : 2.0f;
-            dp.hasAbsolute = syn.curve.onAxisSpl > 20.0f;
+            dp.hasAbsolute = cal.absolute && dp.onAxisSplDb > 20.0f;
             dp.ok = true;
             out.push_back (std::move (dp));
         }

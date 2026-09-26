@@ -41,7 +41,8 @@ namespace ReportExport
         const int margin   = 44;
         const int headerH  = 104;
         const int metaH    = 116;
-        const int footerH  = 104;   // same visual weight as header
+        const int metricsH = 112;   // labelled key/value panel, two rows
+        const int signOffH = 16;    // plain sign-off line under it
         const int gap      = 18;
 
         const int canvasW  = 1300;
@@ -52,7 +53,8 @@ namespace ReportExport
         const int plotW = contentW;
         const int plotH = (int) std::round ((double) plotW * ph / pw);
 
-        const int canvasH = margin + headerH + gap + metaH + gap + plotH + gap + footerH + margin;
+        const int canvasH = margin + headerH + gap + metaH + gap + plotH + gap
+                          + metricsH + 14 + signOffH + margin;
 
         juce::Image img (juce::Image::RGB, canvasW, canvasH, true);
         juce::Graphics g (img);
@@ -93,6 +95,8 @@ namespace ReportExport
         g.setColour (line);
         g.drawRoundedRectangle (meta.toFloat(), 6.0f, 1.0f);
 
+        // Shared by the project block and the metrics panel below, so a label
+        // and its value are styled identically wherever they appear.
         auto drawPair = [&] (int cx, int cy, int cw, const juce::String& k, const juce::String& v)
         {
             g.setColour (subInk);
@@ -129,58 +133,77 @@ namespace ReportExport
 
         y += plotH + gap;
 
-        // ---- Footer (same weight as header) ------------------------------
-        juce::Rectangle<int> footer (margin, y, contentW, footerH);
-        g.setColour (headerBg);
-        g.fillRoundedRectangle (footer.toFloat(), 6.0f);
+        // ---- Metrics panel ------------------------------------------------
+        // Was a charcoal strip carrying a second logo and a run-on line of
+        // facts. The logo is already in the header, and a dark band at the
+        // foot fought the plot for attention while making the numbers hard to
+        // pick out. The metrics now use the same labelled key/value language
+        // as the project block above, so every figure has a heading and the
+        // eye can find one without reading the whole line.
+        juce::Rectangle<int> metrics (margin, y, contentW, metricsH);
+        g.setColour (panelBg);
+        g.fillRoundedRectangle (metrics.toFloat(), 6.0f);
+        g.setColour (line);
+        g.drawRoundedRectangle (metrics.toFloat(), 6.0f, 1.0f);
 
-        if (auto logo = Brand::createLogo (Brand::white()))
-        {
-            const float logoH = 36.0f;
-            const float logoW = logoH * Brand::logoAspect;
-            Brand::drawLogo (g, logo.get(),
-                             { (float) margin + 22.0f,
-                               (float) y + 0.5f * ((float) footerH - logoH),
-                               logoW, logoH });
-        }
+        // Accent rule along the top edge ties the panel to the header band.
+        g.setColour (Brand::accent());
+        g.fillRoundedRectangle ((float) metrics.getX(), (float) metrics.getY(),
+                                (float) metrics.getWidth(), 3.0f, 1.5f);
 
         int nQ21S = 0, nBEM2inch = 0;
         for (const auto& s : p.speakers)
             if (s.enabled) { if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
         juce::String fleet;
-        if (nQ21S > 0)   fleet << nQ21S   << " Q21S";
+        if (nQ21S > 0)     fleet << nQ21S << " Q21S";
         if (nBEM2inch > 0) fleet << (fleet.isEmpty() ? "" : " + ") << nBEM2inch << " BEM2inch";
-        if (fleet.isEmpty()) fleet = "0 Q21S";
+        if (fleet.isEmpty()) fleet = "None";
+
         const juce::String u = Units::lengthUnit();
-        juce::String facts = juce::String ((int) p.frequency) + " Hz"
-            + "   ·   " + fleet
-            + "   ·   λ " + juce::String (Units::metresToDisplay (r.lambda), 2) + " " + u;
+
+        // Peak is only a real dB SPL figure when every active unit's model is
+        // absolutely calibrated; otherwise the map is relative and saying
+        // "dB SPL" would be a fabricated number. Say which one it is.
+        juce::String peakVal, scaleVal;
         if (r.hasAbsoluteSpl && r.peakAbsDb > 1.0)
         {
-            // Peak = absolute SPL at the heatmap's Rel. SPL = 0 dB cell.
-            facts += "   ·   Peak " + juce::String (r.peakAbsDb, 1) + " dB SPL"
-                  + " (map 0 dB)"
-                  + "   ·   Scale " + juce::String (r.peakAbsDb, 1)
-                  + " to " + juce::String (r.peakAbsDb + p.dBfloor, 1) + " dB";
+            peakVal  = juce::String (r.peakAbsDb, 1) + " dB SPL";
+            scaleVal = juce::String (r.peakAbsDb, 1) + " to "
+                     + juce::String (r.peakAbsDb + p.dBfloor, 1) + " dB SPL";
         }
         else
-            facts += "   ·   Rel. SPL  0 to " + juce::String ((int) p.dBfloor) + " dB";
-        facts += juce::String (r.usedMeasuredDirectivity ? "   ·   Measured" : "   ·   Model");
+        {
+            peakVal  = "0 dB (relative)";
+            scaleVal = "0 to " + juce::String ((int) p.dBfloor) + " dB";
+        }
 
-        g.setColour (juce::Colours::white);
-        g.setFont (Brand::tech (22.0f, true));
+        const int mCols = 4;
+        const int mColW = (contentW - 40 - (mCols - 1) * 14) / mCols;
+        const int mx0   = margin + 20;
+        auto mcol = [&] (int i) { return mx0 + i * (mColW + 14); };
+        const int mr0 = y + 18, mrGap = 46;
+
+        drawPair (mcol (0), mr0, mColW, "Frequency",  juce::String ((int) p.frequency) + " Hz");
+        drawPair (mcol (1), mr0, mColW, "Wavelength", juce::String (Units::metresToDisplay (r.lambda), 2) + " " + u);
+        drawPair (mcol (2), mr0, mColW, "Devices",    fleet);
+        drawPair (mcol (3), mr0, mColW, "Directivity", r.usedMeasuredDirectivity ? "Measured" : "Model");
+
+        drawPair (mcol (0), mr0 + mrGap, mColW, "Peak (map 0 dB)", peakVal);
+        drawPair (mcol (1), mr0 + mrGap, mColW, "Scale",           scaleVal);
+        drawPair (mcol (2), mr0 + mrGap, mColW, "Grid",            juce::String (p.resolution) + " x " + juce::String (p.resolution));
+        drawPair (mcol (3), mr0 + mrGap, mColW, "Dynamic range",
+                  juce::String ((int) -p.dBfloor) + " dB");
+
+        y += metricsH + 14;
+
+        // ---- Sign-off line (no band: plain type on the sheet) -------------
+        g.setColour (subInk);
+        g.setFont (Brand::tech (12.0f, true));
         g.drawText ("www.atomikaudio.com",
-                    footer.getRight() - 620, y + 18, 600, 28, juce::Justification::centredRight);
-
-        g.setColour (Brand::accent());
-        g.setFont (Brand::tech (14.0f, true));
-        g.drawText (facts,
-                    footer.getRight() - 720, y + 50, 700, 20, juce::Justification::centredRight);
-
-        g.setColour (juce::Colours::white.withAlpha (0.80f));
+                    margin, y, contentW / 2, 16, juce::Justification::centredLeft);
         g.setFont (Brand::tech (12.0f));
         g.drawText ("Generated  " + liveStamp() + "    v1.4.0.5",
-                    footer.getRight() - 620, y + 72, 600, 18, juce::Justification::centredRight);
+                    margin + contentW / 2, y, contentW / 2, 16, juce::Justification::centredRight);
 
         return img;
     }

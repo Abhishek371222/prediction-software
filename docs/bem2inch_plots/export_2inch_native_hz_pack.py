@@ -48,7 +48,7 @@ DEFAULT_HZ = [64, 135, 243, 507, 1057, 1904, 3971, 8280, 17266]
 # figure (dB SPL @ 1 W / 1 m) is supplied for this horn, absolute levels from
 # this set are NOT comparable with Q21S in a mixed scene. Set this once that
 # number is known and re-run; every exported SPL shifts by it.
-SENSITIVITY_OFFSET_DB = 0.0
+SENSITIVITY_OFFSET_DB = 0.0  # keep 0: calibration now lives in MeasurementData.h
 
 # --- REAR POLICY ----------------------------------------------------------
 # There is no measured data for |theta| > 90 deg. Rather than let the circle
