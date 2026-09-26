@@ -1,16 +1,37 @@
 {
-    "generatedAt": "2026-09-26T17:50:00.000Z",
+    "generatedAt": "2026-09-26T17:52:00.000Z",
     "versions": [
+        {
+            "version": "1.4.0.6",
+            "notes": "Export sheet metrics redesigned: the charcoal strip carrying a second wordmark and a run-on line of facts is replaced by a labelled key/value panel in the same language as the project block - Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid - with a plain sign-off line beneath. Peak SPL is withdrawn from both the PNG sheet and the PDF report: absolute calibration was being inferred from a bare magnitude test, so the 2\" horn's unit-drive BEM data was printed as real SPL beside Q21S as if the two were comparable. It is now declared per source and can be switched back on once the horn's sensitivity is known. Also adds /utf-8 to both build configurations, fixing the mis-encoded separators in exported text.",
+            "createdAt": "2026-09-26T17:52:00.000Z",
+            "updatedAt": "2026-09-26T17:52:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": true,
+                    "filename": "v1.4.0.6/Atomik-Source-v1.4.0.6.zip",
+                    "size": 8481497
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.0.6/Atomik-Windows-v1.4.0.6.exe",
+                    "size": 5812104
+                }
+            }
+        },
         {
             "version": "1.4.0.5",
             "notes": "BEM 2inch added as a second speaker model alongside Q21S. A Speaker model picker chooses what new units are created as, and every unit carries its own model tag, so one scene can mix both and each unit is simulated from its own model's measured data - the two are never blended. The horn brings its own 9-band frequency catalogue (64 - 17266 Hz) and its own embedded polar pack. Unit names now use a space-free model tag numbered within their own model, so a BEM unit placed second overall reads BEM2inch_1. The redundant Measurement set row is gone. Note: this BEM run is unit-drive normalised, so absolute levels are not yet comparable with Q21S in a mixed scene. Q21S, BEM 2inch and UI assets embedded in the EXE.",
             "createdAt": "2026-09-25T19:35:00.000Z",
-            "updatedAt": "2026-09-26T17:50:00.000Z",
+            "updatedAt": "2026-09-25T19:35:00.000Z",
             "downloads": {
                 "source": {
                     "available": true,
                     "filename": "v1.4.0.5/Atomik-Source-v1.4.0.5.zip",
-                    "size": 8481578
+                    "size": 8477365
                 },
                 "mac": {
                     "available": false
@@ -18,7 +39,7 @@
                 "windows": {
                     "available": true,
                     "filename": "v1.4.0.5/Atomik-Windows-v1.4.0.5.exe",
-                    "size": 5812104
+                    "size": 5813640
                 }
             }
         },

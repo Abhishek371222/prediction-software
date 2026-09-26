@@ -22,9 +22,59 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.2** | 2026-09-19 | 8-unit cap; solve on all cores; autosave + Opacity fixes |
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
+| **1.4.0.6** | 2026-09-26 | Redesigned export metrics strip; Peak SPL withdrawn; UTF-8 literals |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.6] - 2026-09-26
+
+**Atomik Simulation Engine v1.4.0.6** - a redesigned metrics strip on the exported
+sheet, an SPL figure withdrawn rather than shown wrong, and a build-level text fix.
+
+### Changed
+- **Export sheet metrics redesigned.** The charcoal strip at the foot of the PNG
+  carried a second copy of the wordmark and a run-on line of facts. The band
+  competed with the plot and the figures were hard to pick out of the sentence.
+  It is replaced by a light panel in the same labelled key/value language as the
+  project block above it - a red rule ties it to the header, and the sign-off line
+  sits plain beneath with no band. Every metric is kept, now headed and laid out in
+  four columns: **Frequency, Wavelength, Devices, Directivity, Scale (Rel. SPL),
+  Dynamic range, Grid**.
+- **Scale is reported as the relative range** the gradient legend actually shows
+  (`0 to -N dB`) rather than an absolute span.
+
+### Removed
+- **Peak SPL is no longer reported** in either the PNG sheet or the PDF report.
+
+### Fixed
+- **Peak SPL was not comparable between models.** `hasAbsolute` was decided by a
+  bare magnitude test (on-axis `> 20 dB`), which silently promoted the 2" horn's
+  unit-drive BEM data to "absolutely calibrated" because its 36-46 dB clears that
+  threshold. The exports then printed `43.5 dB SPL` for the horn beside `116.1 dB`
+  for Q21S as though the two could be read against each other. Whether a set is
+  calibrated is a property of how its BEM run was driven, not of how large its
+  numbers are, so it is now declared per source in
+  `MeasurementData::calibrationFor()`.
+- **Mojibake in exported text** - the `Â·` between facts. The sources are UTF-8
+  without a BOM, so MSVC was reading them as CP1252 and baking the mis-decoded
+  bytes into the binary. `/utf-8` is now passed in both build configurations,
+  correcting all 19 non-ASCII literals in the tree.
+
+### Notes
+- Absolute SPL is not gone, only withheld. Setting `kBEM2inchSensitivityDb` to the
+  horn's published sensitivity (dB SPL @ 1 W / 1 m) and flipping
+  `kBEM2inchCalibrated` in `MeasurementData.h` restores it for both exports, with
+  no re-export of the measurement pack.
+- The v1.4.0.5 archive artifacts predate this work and are left as cut; this is the
+  release that carries the export changes.
+
+### Packaging
+- Version strings, file version resource and installer -> **v1.4.0.6**.
+- **Windows Release** `Atomik-Windows-v1.4.0.6.exe` (Q21S + BEM 2inch + UI assets
+  embedded).
 
 ---
 

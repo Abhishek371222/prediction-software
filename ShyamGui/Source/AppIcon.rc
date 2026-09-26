@@ -20,11 +20,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Atomik"
             VALUE "FileDescription",  "Atomik Simulation Engine"
-            VALUE "FileVersion",      "1.4.0.5"
+            VALUE "FileVersion",      "1.4.0.6"
             VALUE "InternalName",     "AtomikSimulationEngine"
             VALUE "OriginalFilename", "Atomik Simulation Engine.exe"
             VALUE "ProductName",      "Atomik Simulation Engine"
-            VALUE "ProductVersion",   "1.4.0.5"
+            VALUE "ProductVersion",   "1.4.0.6"
             VALUE "LegalCopyright",   "Atomik"
         END
     END

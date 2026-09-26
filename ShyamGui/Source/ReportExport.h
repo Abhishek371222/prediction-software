@@ -194,7 +194,7 @@ namespace ReportExport
         g.drawText ("www.atomikaudio.com",
                     margin, y, contentW / 2, 16, juce::Justification::centredLeft);
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.4.0.5",
+        g.drawText ("Generated  " + liveStamp() + "    v1.4.0.6",
                     margin + contentW / 2, y, contentW / 2, 16, juce::Justification::centredRight);
 
         return img;

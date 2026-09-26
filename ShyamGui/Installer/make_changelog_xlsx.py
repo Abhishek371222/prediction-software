@@ -109,6 +109,13 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.6", "2026-09-26", "Export metrics strip redesigned; Peak SPL withdrawn",
+     "Charcoal footer strip and its duplicate wordmark replaced by a labelled "
+     "key/value metrics panel (Frequency, Wavelength, Devices, Directivity, Scale, "
+     "Dynamic range, Grid); Peak SPL removed from PNG and PDF because the 2\" horn's "
+     "unit-drive BEM data was being treated as absolutely calibrated and printed "
+     "beside Q21S as if comparable; /utf-8 added to both build configs, fixing the "
+     "mojibake separators in exported text"],
     ["1.4.0.5", "2026-09-25", "BEM 2inch as a second speaker model",
      "2\" BEM HF horn added alongside Q21S with per-unit model tags, so one scene can "
      "mix both and each unit is simulated from its own model's measured data; own 9-band "
@@ -166,7 +173,49 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0.5 detailed changes
+# Sheet 2: v1.4.0.6 detailed changes
+# ===========================================================================
+ws1406 = wb.create_sheet("v1.4.0.6 Changes")
+ws1406.sheet_view.showGridLines = False
+banner(ws1406, "v1.4.0.6  -  Detailed Changes",
+       "2026-09-26  |  Export metrics strip redesigned; Peak SPL withdrawn", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1406 = [
+    ["Export (PNG)", C, "Metrics strip redesigned",
+     "Charcoal band and its duplicate wordmark replaced by a light labelled "
+     "key/value panel matching the project block, with a red rule tying it to the "
+     "header and a plain sign-off line beneath. All metrics kept and headed: "
+     "Frequency, Wavelength, Devices, Directivity, Scale, Dynamic range, Grid",
+     "2026-09-26"],
+    ["Export (PNG)", C, "Scale shown as relative range",
+     "0 to -N dB, matching what the gradient legend displays, rather than an "
+     "absolute span", "2026-09-26"],
+    ["Export", F, "Peak SPL removed from PNG and PDF",
+     "Withdrawn rather than shown wrong - see the calibration fix below", "2026-09-26"],
+    ["Engine", F, "Absolute calibration declared, not inferred",
+     "hasAbsolute was a bare magnitude test (on-axis > 20 dB), which promoted the "
+     "2\" horn's unit-drive BEM data to absolute because 36-46 dB clears it; the "
+     "export then printed 43.5 dB SPL beside Q21S's 116.1 dB. Now declared per "
+     "source in MeasurementData::calibrationFor()", "2026-09-26"],
+    ["Build", F, "/utf-8 added to both configurations",
+     "Sources are UTF-8 without a BOM, so MSVC read them as CP1252 and baked "
+     "mojibake into the binary (the mis-rendered separators in exported text). "
+     "Fixes all 19 non-ASCII literals", "2026-09-26"],
+    ["PDF", C, "Overview prose no longer describes peak as absolute",
+     "Section 3.1 now refers to levels relative to the Rel. SPL = 0 dB cell",
+     "2026-09-26"],
+    ["Packaging", C, "Version -> v1.4.0.6",
+     "App, resource, installer, archive HTML/json, Windows Release EXE", "2026-09-26"],
+]
+write_table(ws1406, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1406, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1406.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0.5 detailed changes
 # ===========================================================================
 ws1405 = wb.create_sheet("v1.4.0.5 Changes")
 ws1405.sheet_view.showGridLines = False
@@ -211,7 +260,7 @@ write_table(ws1405, 4,
 ws1405.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 3: v1.4.0.4 detailed changes
+# Sheet 4: v1.4.0.4 detailed changes
 # ===========================================================================
 ws1404 = wb.create_sheet("v1.4.0.4 Changes")
 ws1404.sheet_view.showGridLines = False
@@ -236,7 +285,7 @@ write_table(ws1404, 4,
 ws1404.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 4: v1.4.0.2 detailed changes
+# Sheet 5: v1.4.0.2 detailed changes
 # ===========================================================================
 ws1402 = wb.create_sheet("v1.4.0.2 Changes")
 ws1402.sheet_view.showGridLines = False
