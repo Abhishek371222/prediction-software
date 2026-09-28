@@ -220,6 +220,11 @@ public:
 
 private:
     void buildImage();
+    /** CAD-style dimensioning on one plan marker: extension lines, arrowed
+        dimension lines and their values, so it is obvious WHICH edge is the
+        width and which is the depth. */
+    void drawSpeakerDimensions (juce::Graphics&, juce::Rectangle<float> box,
+                                const Speaker&, float alpha);
     /** Front / side elevation of the rig, to scale. Its own camera: the plan
         view's transform is a top-down map and means nothing here. */
     void drawElevation (juce::Graphics&, juce::Rectangle<int>);

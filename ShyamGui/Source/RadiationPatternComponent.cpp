@@ -3952,6 +3952,106 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintWorld (const S
     return { spk.x - hd, spk.y - hw, cab.depthM, cab.widthM };
 }
 
+// ---------------------------------------------------------------------------
+// Dimension one plan marker the way a drawing would: extension lines off the
+// cabinet's corners, a dimension line between them with arrowheads, and the
+// value on it. A single "1546 x 679 x 1024 mm" string said nothing about
+// WHICH edge was which; this puts each number against the edge it measures.
+//
+// Height has no edge to sit against -- the plan looks straight down, so the
+// cabinet's height is into the page. It is called out separately rather than
+// implied against an edge it does not belong to.
+// ---------------------------------------------------------------------------
+void RadiationPatternComponent::drawSpeakerDimensions (juce::Graphics& g,
+                                                       juce::Rectangle<float> box,
+                                                       const Speaker& spk,
+                                                       float alpha)
+{
+    // Below roughly 26 px the arrowheads and text collide into a smudge, so
+    // the marker gets the compact one-line label instead of unreadable
+    // decoration. Zooming in swaps it for the full dimensioning.
+    const bool roomy = (box.getWidth() >= 26.0f && box.getHeight() >= 26.0f);
+    const auto cab = cabinetFor (spk.model);
+
+    const juce::Colour ink  = Brand::white().withAlpha (0.92f * alpha);
+    const juce::Colour thin = Brand::white().withAlpha (0.55f * alpha);
+
+    if (! roomy)
+    {
+        g.setFont (Brand::tech (juce::jmax (8.0f, 9.5f * Brand::UI::scale)));
+        g.setColour (Brand::white().withAlpha (0.78f * alpha));
+        g.drawText (Units::dims3 (cab.widthM * 1000.0, cab.heightM * 1000.0,
+                                  cab.depthM * 1000.0),
+                    (int) (box.getCentreX() - 80.0f), (int) (box.getBottom() + 3.0f),
+                    160, 13, juce::Justification::centred);
+        return;
+    }
+
+    const float off  = 13.0f;   // gap from the cabinet to its dimension line
+    const float over = 4.0f;    // extension line overshoot past it
+    const float ah   = 6.0f;    // arrowhead length
+    const float aw   = 2.8f;    // arrowhead half-width
+
+    auto arrow = [&] (juce::Point<float> tip, juce::Point<float> from)
+    {
+        const auto d = (tip - from);
+        const float len = juce::jmax (0.001f, d.getDistanceFromOrigin());
+        const auto u = juce::Point<float> (d.x / len, d.y / len);
+        const auto n = juce::Point<float> (-u.y, u.x);
+        juce::Path t;
+        t.addTriangle (tip.x, tip.y,
+                       tip.x - u.x * ah + n.x * aw, tip.y - u.y * ah + n.y * aw,
+                       tip.x - u.x * ah - n.x * aw, tip.y - u.y * ah - n.y * aw);
+        g.fillPath (t);
+    };
+
+    g.setFont (Brand::tech (juce::jmax (8.5f, 10.0f * Brand::UI::scale), true));
+
+    // --- DEPTH: the firing axis, horizontal on screen. Dimension below. ----
+    {
+        const float yLine = box.getBottom() + off;
+        g.setColour (thin);
+        g.drawLine (box.getX(), box.getBottom() + 2.0f, box.getX(), yLine + over, 1.0f);
+        g.drawLine (box.getRight(), box.getBottom() + 2.0f, box.getRight(), yLine + over, 1.0f);
+        g.setColour (ink);
+        g.drawLine (box.getX(), yLine, box.getRight(), yLine, 1.2f);
+        arrow ({ box.getX(),     yLine }, { box.getX() + ah,     yLine });
+        arrow ({ box.getRight(), yLine }, { box.getRight() - ah, yLine });
+        g.drawText ("D " + Units::dim (cab.depthM * 1000.0),
+                    (int) (box.getCentreX() - 60.0f), (int) (yLine + 2.0f), 120, 13,
+                    juce::Justification::centred);
+    }
+
+    // --- WIDTH: across the baffle, vertical on screen. Dimension to the right.
+    {
+        const float xLine = box.getRight() + off;
+        g.setColour (thin);
+        g.drawLine (box.getRight() + 2.0f, box.getY(), xLine + over, box.getY(), 1.0f);
+        g.drawLine (box.getRight() + 2.0f, box.getBottom(), xLine + over, box.getBottom(), 1.0f);
+        g.setColour (ink);
+        g.drawLine (xLine, box.getY(), xLine, box.getBottom(), 1.2f);
+        arrow ({ xLine, box.getY() },      { xLine, box.getY() + ah });
+        arrow ({ xLine, box.getBottom() }, { xLine, box.getBottom() - ah });
+
+        // Rotated so it runs along the edge it measures, like a drawing.
+        juce::Graphics::ScopedSaveState ss (g);
+        g.addTransform (juce::AffineTransform::rotation (
+            -juce::MathConstants<float>::halfPi, xLine + 9.0f, box.getCentreY()));
+        g.drawText ("W " + Units::dim (cab.widthM * 1000.0),
+                    (int) (xLine + 9.0f - 60.0f), (int) (box.getCentreY() - 7.0f), 120, 14,
+                    juce::Justification::centred);
+    }
+
+    // --- HEIGHT: into the page here, so it is stated, not drawn. -----------
+    // Below the depth callout, not above the cabinet: the unit's name already
+    // sits there and the two ran into each other.
+    g.setColour (thin);
+    g.setFont (Brand::tech (juce::jmax (8.0f, 9.5f * Brand::UI::scale)));
+    g.drawText ("H " + Units::dim (cab.heightM * 1000.0) + "  (vertical)",
+                (int) (box.getCentreX() - 70.0f), (int) (box.getBottom() + off + 16.0f), 140, 13,
+                juce::Justification::centred);
+}
+
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
 {
     // Straight through the view transform: with an isotropic view (see
@@ -4081,20 +4181,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                     juce::Justification::centred);
 
         if (showSpeakerDims_)
-        {
-            // Under the marker, so it never collides with the unit name above
-            // it. A size label is reference text, not a heading, so it is set
-            // smaller and slightly muted -- at a wide zoom several of these
-            // sit close together and full-weight white would read as clutter.
-            const auto cab = cabinetFor (spk.model);
-            g.setFont (Brand::tech (juce::jmax (8.0f, 9.5f * Brand::UI::scale)));
-            g.setColour (Brand::white().withAlpha (0.78f * alpha));
-            g.drawText (Units::dims3 (cab.widthM * 1000.0,
-                                      cab.heightM * 1000.0,
-                                      cab.depthM * 1000.0),
-                        (int) (c.x - 80), (int) (box.getBottom() + 3.0f), 160, 13,
-                        juce::Justification::centred);
-        }
+            drawSpeakerDimensions (g, box, spk, alpha);
     }
 
     drawOrthoSpacingOverlay (g);
