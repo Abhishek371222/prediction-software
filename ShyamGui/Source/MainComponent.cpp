@@ -408,6 +408,12 @@ MainComponent::MainComponent (ProjectData project)
     };
     // Height and tilt describe the rig, not the field. Push them to the plot
     // and redraw; do not re-solve.
+    // Cabinet size is not a solver input, so this only repaints.
+    controlPanel_.onShowSpeakerDims = [this] (bool on)
+    {
+        patternComp_.setShowSpeakerDims (on);
+    };
+
     controlPanel_.onRigChanged  = [this]
     {
         commitEdit();

@@ -4079,6 +4079,22 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                         + "_" + juce::String (speakerModelOrdinal (speakers_, i)),
                     (int) (c.x - 40), (int) (box.getY() - 16.0f), 80, 14,
                     juce::Justification::centred);
+
+        if (showSpeakerDims_)
+        {
+            // Under the marker, so it never collides with the unit name above
+            // it. A size label is reference text, not a heading, so it is set
+            // smaller and slightly muted -- at a wide zoom several of these
+            // sit close together and full-weight white would read as clutter.
+            const auto cab = cabinetFor (spk.model);
+            g.setFont (Brand::tech (juce::jmax (8.0f, 9.5f * Brand::UI::scale)));
+            g.setColour (Brand::white().withAlpha (0.78f * alpha));
+            g.drawText (Units::dims3 (cab.widthM * 1000.0,
+                                      cab.heightM * 1000.0,
+                                      cab.depthM * 1000.0),
+                        (int) (c.x - 80), (int) (box.getBottom() + 3.0f), 160, 13,
+                        juce::Justification::centred);
+        }
     }
 
     drawOrthoSpacingOverlay (g);

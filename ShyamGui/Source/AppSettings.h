@@ -226,6 +226,20 @@ namespace Units
         (the 2" horn is 276.5 mm tall) without printing "679.0" for a round
         number. Decimals follow the DISPLAYED value, so it reads correctly in
         inches too. */
+    /** Cabinet size on one line: the three numbers, then the unit once.
+        Spelling it out three times ("1546 mm x 679 mm x 1024 mm") is too long
+        to sit under a speaker marker. */
+    inline juce::String dims3 (double wMm, double hMm, double dMm)
+    {
+        auto n = [] (double mm)
+        {
+            const double v = mmToDisplay (mm);
+            const int dp = (std::abs (v - std::round (v)) < 0.05) ? 0 : 1;
+            return juce::String (v, dp);
+        };
+        return n (wMm) + " x " + n (hMm) + " x " + n (dMm) + " " + smallLengthUnit();
+    }
+
     inline juce::String dim (double millimetres)
     {
         const double v = mmToDisplay (millimetres);

@@ -36,6 +36,11 @@ public:
     void setShowMicDegrees (bool b) { showMicDegrees_ = b; repaint(); }
     bool showMicDegrees() const noexcept { return showMicDegrees_; }
 
+    /** Print each placed unit's W x H x D under its marker. Display only:
+        nothing is re-solved, since cabinet size is not a solver input. */
+    void setShowSpeakerDims (bool b) { showSpeakerDims_ = b; repaint(); }
+    bool showSpeakerDims() const noexcept { return showSpeakerDims_; }
+
     void setLayoutLayer (LayoutLayer* layer) { layout_ = layer; repaint(); }
     void setLayoutEditMode (bool b) { layoutEditMode_ = b; repaint(); }
     void setLayoutSnap (bool b) { layoutSnap_ = b; }
@@ -378,6 +383,7 @@ private:
     bool                showGrid_ = true;
     bool                showDistanceRings_ = false;
     bool                showMicDegrees_ = false;
+    bool                showSpeakerDims_ = false;
     LayoutLayer*        layout_ = nullptr;
     bool                layoutEditMode_ = false;
     bool                layoutSnap_ = false;

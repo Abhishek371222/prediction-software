@@ -24,6 +24,8 @@ public:
     std::function<void()>    onChanged;            // any parameter changed
     /** Rig geometry (height / tilt) changed: redraw, do NOT recompute. */
     std::function<void()>    onRigChanged;
+    /** "Show sizes" toggled: print W x H x D under each unit. Display only. */
+    std::function<void(bool)> onShowSpeakerDims;
     std::function<void()>    onRunClicked;         // explicit recompute
     std::function<void()>    onClearAll;           // clear SPL heatmap drawings / lines
     std::function<void(int)> onSelectionChanged;   // selected speaker index
@@ -185,6 +187,7 @@ private:
 
     // Speaker selector
     SectionHeader    speakersHdr_ { "2. Q21S units" };
+    juce::ToggleButton dimsToggle_;
     juce::Label      speakerModelLabel_;
     juce::ComboBox   speakerModelBox_;   // Q21S / BEM2inch model selector
     juce::ComboBox   speakerBox_;

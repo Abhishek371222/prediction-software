@@ -223,6 +223,14 @@ ControlPanel::ControlPanel()
     heightSlider_.onDragStart  = [this] { willEdit(); };
     tiltSlider_.onDragStart    = [this] { willEdit(); };
 
+    styleToggle (dimsToggle_, "Show sizes (W x H x D)");
+    dimsToggle_.setTooltip ("Print each placed unit's cabinet size under it");
+    dimsToggle_.onClick = [this]
+    {
+        if (updatingUI_) return;
+        if (onShowSpeakerDims) onShowSpeakerDims (dimsToggle_.getToggleState());
+    };
+
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
     styleToggle (enabledToggle_,     "Enabled");
@@ -1312,9 +1320,14 @@ void ControlPanel::resized()
     {
         editRow (speakerModelLabel_, speakerModelBox_);
         speakerUnitRow();
+        const int chkH2   = UiConfig::Scale::px (22);
+        const int chkGap2 = UiConfig::Scale::px (7);
+        dimsToggle_.setBounds (pad, y, W, chkH2);
+        y += chkH2 + chkGap2;
     });
     setSectionVisible ({ &speakerModelLabel_, &speakerModelBox_,
-                         &speakerBox_, &addBtn_, &deleteBtn_ }, secSpeakersOpen_);
+                         &speakerBox_, &addBtn_, &deleteBtn_,
+                         &dimsToggle_ }, secSpeakersOpen_);
     for (auto* c : { (juce::Component*) &layoutLabel_, (juce::Component*) &layout1Btn_,
                      (juce::Component*) &layout2Btn_,  (juce::Component*) &layout3Btn_ })
     {
