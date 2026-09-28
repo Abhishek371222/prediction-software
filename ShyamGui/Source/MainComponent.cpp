@@ -109,7 +109,8 @@ MainComponent::MainComponent (ProjectData project)
     {
         b->setTooltip ("Plan is the predicted coverage; Front and Side are "
                        "scale drawings of the rig, with no prediction");
-        addAndMakeVisible (*b);
+        addChildComponent (*b);                       // hidden unless shown below
+        b->setVisible (UiConfig::showViewSwitcher);
     }
     btnProjPlan_.onClick  = [this] { setViewMode (ViewMode::SPL); };
     btnProjFront_.onClick = [this] { setViewMode (ViewMode::ElevationFront); };
@@ -2072,6 +2073,7 @@ void MainComponent::resized()
     patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
 
     // Top-right of the field, inset clear of the colour bar on the far right.
+    if (UiConfig::showViewSwitcher)
     {
         const int pw  = UiConfig::Scale::px (52);
         const int ph  = UiConfig::Scale::px (20);

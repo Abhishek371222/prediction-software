@@ -5863,7 +5863,7 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
 
     // F fits the whole field, Z frames what is selected. Plain letters, so
     // they are dead while a text box is being edited or a draw session is up.
-    if (! isEditingTextBox() && ! sessionActive_)
+    if (UiConfig::showViewSwitcher && ! isEditingTextBox() && ! sessionActive_)
     {
         const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
         if (! mods.isCommandDown() && ! mods.isCtrlDown() && ! mods.isAltDown())

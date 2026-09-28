@@ -11,6 +11,20 @@
 namespace UiConfig
 {
     // -------------------------------------------------------------------------
+    // VIEW FEATURE (off)
+    // -------------------------------------------------------------------------
+    // The PLAN / FRONT / SIDE switcher, the per-speaker Height and Tilt rows,
+    // and the F / Z view shortcuts are built, working and switched OFF. Flip
+    // this to true and all of it returns in place -- the elevation painter,
+    // the speaker fields and their project persistence are all still here, so
+    // nothing needs rebuilding to bring it back.
+    //
+    // Height and tilt keep being saved and loaded either way. They default to
+    // ground level and no tilt, so a project written while the feature was
+    // visible still opens correctly with it hidden.
+    constexpr bool showViewSwitcher = false;
+
+    // -------------------------------------------------------------------------
     // RESPONSIVE SCALE — baseline = default window (1340 x 820, scale 1.0)
     // Smaller MacBook / laptop windows may shrink to minFactor; larger scale up.
     // -------------------------------------------------------------------------

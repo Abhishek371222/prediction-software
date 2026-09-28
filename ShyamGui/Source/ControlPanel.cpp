@@ -1331,8 +1331,11 @@ void ControlPanel::resized()
         editRow (yLabel_,     ySlider_);
         editRow (gainLabel_,  gainSlider_);
         editRow (delayLabel_, delaySlider_);
-        editRow (heightLabel_, heightSlider_);
-        editRow (tiltLabel_,   tiltSlider_);
+        if (UiConfig::showViewSwitcher)
+        {
+            editRow (heightLabel_, heightSlider_);
+            editRow (tiltLabel_,   tiltSlider_);
+        }
         // Figma: 28.8px checkbox rows on a 38.4px pitch.
         const int chkH   = UiConfig::Scale::px (22);   // -> 29px
         const int chkGap = UiConfig::Scale::px (7);    // -> 9px
@@ -1341,8 +1344,6 @@ void ControlPanel::resized()
         enabledToggle_.setBounds (pad, y, W, chkH); y += chkH + gap;
     });
     setSectionVisible ({ &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
-                         &heightLabel_, &tiltLabel_,
-                         &heightSlider_, &tiltSlider_,
                          &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
                          &polarityToggle_, &orientationToggle_, &enabledToggle_ },
                        secEditOpen_);
@@ -1359,6 +1360,14 @@ void ControlPanel::resized()
     setSectionVisible ({ &resLabel_, &floorLabel_, &resSlider_, &floorSlider_,
                          &bandsToggle_ },
                        secSimOpen_);
+    if (! UiConfig::showViewSwitcher)
+        for (auto* c : { (juce::Component*) &heightLabel_, (juce::Component*) &tiltLabel_,
+                         (juce::Component*) &heightSlider_, (juce::Component*) &tiltSlider_ })
+        {
+            c->setVisible (false);
+            c->setBounds (0, 0, 0, 0);
+        }
+
     measDistLabel_.setVisible (false);
     measDistBox_.setVisible (false);
     sectionBreak();
