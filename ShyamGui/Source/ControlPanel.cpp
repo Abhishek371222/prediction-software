@@ -198,20 +198,30 @@ ControlPanel::ControlPanel()
     configTxt (yLabel_,     "Y Position (m)");
     configTxt (gainLabel_,  "Gain (db)");
     configTxt (delayLabel_, "Delay (ms)");
+    configTxt (heightLabel_, "Height (m)");
+    configTxt (tiltLabel_,   "Tilt (deg)");
     // Spans are re-set by syncPositionRanges() whenever the world extent
     // changes; these are just the initial values.
     styleSlider (xSlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
     styleSlider (delaySlider_, 0.0, 10.0, 0.1,  0.0);
+    // Ground level to a flown position; tilt is positive downwards, with a
+    // little up-tilt allowed for front-fills aimed at a balcony.
+    styleSlider (heightSlider_, 0.0, 20.0, 0.05, 0.0);
+    styleSlider (tiltSlider_, -15.0, 45.0, 0.5,  0.0);
     xSlider_.onValueChange     = [this] { pushPositionEdit(); };
     ySlider_.onValueChange     = [this] { pushPositionEdit(); };
     gainSlider_.onValueChange  = [this] { pushSharedEdit(); };
     delaySlider_.onValueChange = [this] { pushSharedEdit(); };
+    heightSlider_.onValueChange = [this] { pushRigEdit(); };
+    tiltSlider_.onValueChange   = [this] { pushRigEdit(); };
     xSlider_.onDragStart       = [this] { willEdit(); };
     ySlider_.onDragStart       = [this] { willEdit(); };
     gainSlider_.onDragStart    = [this] { willEdit(); };
     delaySlider_.onDragStart   = [this] { willEdit(); };
+    heightSlider_.onDragStart  = [this] { willEdit(); };
+    tiltSlider_.onDragStart    = [this] { willEdit(); };
 
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
@@ -362,6 +372,7 @@ void ControlPanel::refreshUnits()
     const juce::String u = Units::lengthUnit();
     xLabel_.setText ("X Position (" + u + ")", juce::dontSendNotification);
     yLabel_.setText ("Y Position (" + u + ")", juce::dontSendNotification);
+    heightLabel_.setText ("Height (" + u + ")", juce::dontSendNotification);
     layoutWidthLabel_.setText ("Width (" + u + ")", juce::dontSendNotification);
 
     std::function<juce::String (double)> toText =
@@ -369,7 +380,7 @@ void ControlPanel::refreshUnits()
     std::function<double (const juce::String&)> fromText =
         [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
 
-    for (auto* s : { &xSlider_, &ySlider_, &layoutWidthSlider_ })
+    for (auto* s : { &xSlider_, &ySlider_, &heightSlider_, &layoutWidthSlider_ })
     {
         s->textFromValueFunction = toText;
         s->valueFromTextFunction = fromText;
@@ -497,6 +508,8 @@ void ControlPanel::refreshEditors()
         ySlider_.setValue     (s.y,       juce::dontSendNotification);
         gainSlider_.setValue  (s.gainDB,  juce::dontSendNotification);
         delaySlider_.setValue (s.delayMs, juce::dontSendNotification);
+        heightSlider_.setValue (s.baseHeightM, juce::dontSendNotification);
+        tiltSlider_.setValue   (s.tiltDeg,     juce::dontSendNotification);
         polarityToggle_.setToggleState    (s.polarityInverted,   juce::dontSendNotification);
         orientationToggle_.setToggleState (s.reverseOrientation, juce::dontSendNotification);
         enabledToggle_.setToggleState     (s.enabled,            juce::dontSendNotification);
@@ -510,6 +523,7 @@ void ControlPanel::refreshEditors()
     }
     xSlider_.setEnabled (has); ySlider_.setEnabled (has);
     gainSlider_.setEnabled (has); delaySlider_.setEnabled (has);
+    heightSlider_.setEnabled (has); tiltSlider_.setEnabled (has);
     polarityToggle_.setEnabled (has); orientationToggle_.setEnabled (has);
     enabledToggle_.setEnabled (has);
     deleteBtn_.setEnabled (has || ! selectedSpeakers_.empty());
@@ -780,6 +794,31 @@ void ControlPanel::pushSharedEdit()
     }
 
     notifyChanged();
+}
+
+void ControlPanel::pushRigEdit()
+{
+    if (updatingUI_) return;
+    if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
+
+    const float h = (float) heightSlider_.getValue();
+    const float t = (float) tiltSlider_.getValue();
+
+    std::vector<int> targets = selectedSpeakers_;
+    if (targets.empty())
+        targets.push_back (selected_);
+
+    for (int idx : targets)
+    {
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        speakers_[(size_t) idx].baseHeightM = h;
+        speakers_[(size_t) idx].tiltDeg     = t;
+    }
+
+    // Deliberately not notifyChanged(): the SPL field is a horizontal plane
+    // and does not read either value, so re-solving would burn a second of
+    // CPU to redraw exactly the same heatmap.
+    if (onRigChanged) onRigChanged();
 }
 
 void ControlPanel::willEdit()
@@ -1292,6 +1331,8 @@ void ControlPanel::resized()
         editRow (yLabel_,     ySlider_);
         editRow (gainLabel_,  gainSlider_);
         editRow (delayLabel_, delaySlider_);
+        editRow (heightLabel_, heightSlider_);
+        editRow (tiltLabel_,   tiltSlider_);
         // Figma: 28.8px checkbox rows on a 38.4px pitch.
         const int chkH   = UiConfig::Scale::px (22);   // -> 29px
         const int chkGap = UiConfig::Scale::px (7);    // -> 9px
@@ -1300,6 +1341,8 @@ void ControlPanel::resized()
         enabledToggle_.setBounds (pad, y, W, chkH); y += chkH + gap;
     });
     setSectionVisible ({ &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
+                         &heightLabel_, &tiltLabel_,
+                         &heightSlider_, &tiltSlider_,
                          &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
                          &polarityToggle_, &orientationToggle_, &enabledToggle_ },
                        secEditOpen_);

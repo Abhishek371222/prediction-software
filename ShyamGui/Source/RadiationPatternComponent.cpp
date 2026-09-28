@@ -3409,6 +3409,14 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         return;
     }
 
+    if (params_.viewMode == ViewMode::ElevationFront
+        || params_.viewMode == ViewMode::ElevationSide)
+    {
+        drawElevation (g, getLocalBounds());
+        drawMarqueeOverlay (g);
+        return;
+    }
+
     ensureWorldExtents();
     if (! viewInit_)
         fitView();
@@ -3439,6 +3447,175 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
 
     if (hasData_)
         drawColourbar (g, getLocalBounds().withTrimmedLeft (pb.getWidth() + 8));
+}
+
+// ---------------------------------------------------------------------------
+// Elevation: the rig seen from the front or the side, drawn to scale.
+//
+// This is a DRAWING, not a prediction. Every device's measured data is a
+// single horizontal plane, so there is no vertical directivity to solve with;
+// showing a heatmap here would be inventing coverage. What it does show is the
+// thing a plan view structurally cannot: how high each cabinet sits and how
+// far it is tilted.
+// ---------------------------------------------------------------------------
+void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    const bool front = (params_.viewMode == ViewMode::ElevationFront);
+    const auto pb = area.reduced (juce::roundToInt (area.getWidth() * 0.06f),
+                                  juce::roundToInt (area.getHeight() * 0.09f));
+    if (pb.getWidth() < 40 || pb.getHeight() < 40) return;
+
+    // --- what to frame -----------------------------------------------------
+    // Horizontal axis is the world axis we are NOT looking along: the front
+    // view looks down the firing axis (+x), so it spreads the rig across y.
+    float lo = 0.0f, hi = 0.0f, topM = 0.0f;
+    bool any = false;
+    for (const auto& s : speakers_)
+    {
+        const auto cab = cabinetFor (s.model);
+        const float c    = front ? s.y : s.x;
+        const float half = 0.5f * (front ? cab.widthM : cab.depthM);
+        const float t    = s.baseHeightM + cab.heightM;
+        lo   = any ? juce::jmin (lo, c - half) : c - half;
+        hi   = any ? juce::jmax (hi, c + half) : c + half;
+        topM = any ? juce::jmax (topM, t) : t;
+        any  = true;
+    }
+    if (! any) { lo = 0.0f; hi = 10.0f; topM = 3.0f; }
+
+    const float spanH = juce::jmax (4.0f, (hi - lo) * 1.35f);
+    const float spanV = juce::jmax (3.0f, topM * 1.45f);
+    const float cH    = 0.5f * (lo + hi);
+
+    // One scale for both axes, or the cabinets stop being to scale.
+    const float sc = juce::jmin ((float) pb.getWidth()  / spanH,
+                                 (float) pb.getHeight() / spanV);
+    const float groundY = (float) pb.getBottom();
+    const float midX    = (float) pb.getCentreX();
+    auto hx = [&] (float world) { return midX + (world - cH) * sc; };
+    auto vy = [&] (float metres) { return groundY - metres * sc; };
+
+    // --- grid + height scale ----------------------------------------------
+    const juce::String u = Units::lengthUnit();
+    g.setColour (Brand::plotGrid().withAlpha (0.35f));
+    const float stepM = spanV > 12.0f ? 5.0f : (spanV > 6.0f ? 2.0f : 1.0f);
+    for (float m = stepM; m <= spanV; m += stepM)
+    {
+        const float yy = vy (m);
+        if (yy < pb.getY()) break;
+        g.drawHorizontalLine (juce::roundToInt (yy), (float) pb.getX(), (float) pb.getRight());
+    }
+    g.setColour (Brand::ash());
+    g.setFont (Brand::tech (juce::jmax (9.0f, 11.0f * Brand::UI::scale)));
+    for (float m = stepM; m <= spanV; m += stepM)
+    {
+        const float yy = vy (m);
+        if (yy < pb.getY()) break;
+        g.drawText (juce::String (Units::metresToDisplay (m), 1) + " " + u,
+                    pb.getX() - 4, juce::roundToInt (yy) - 8, 60, 16,
+                    juce::Justification::centredRight);
+    }
+
+    // --- ground ------------------------------------------------------------
+    g.setColour (Brand::text().withAlpha (0.85f));
+    g.drawLine ((float) pb.getX() - 8.0f, groundY, (float) pb.getRight() + 8.0f, groundY, 2.0f);
+    g.setFont (Brand::tech (juce::jmax (9.0f, 11.0f * Brand::UI::scale)));
+    g.setColour (Brand::ash());
+    g.drawText (front ? "FRONT ELEVATION  -  looking along the firing axis"
+                      : "SIDE ELEVATION  -  cabinets fire to the right",
+                pb.getX(), pb.getY() - 22, pb.getWidth(), 18,
+                juce::Justification::centredLeft);
+
+    // Horizontal scale: which way along the rig you are looking, and where.
+    {
+        const float halfSpan = 0.5f * spanH;
+        const float stepH = halfSpan > 25.0f ? 10.0f : (halfSpan > 10.0f ? 5.0f : 2.0f);
+        const float first = std::ceil ((cH - halfSpan) / stepH) * stepH;
+        g.setFont (Brand::tech (juce::jmax (8.0f, 10.0f * Brand::UI::scale)));
+        for (float m = first; m <= cH + halfSpan; m += stepH)
+        {
+            const float xx = hx (m);
+            if (xx < pb.getX() || xx > pb.getRight()) continue;
+            g.setColour (Brand::plotGrid().withAlpha (0.25f));
+            g.drawVerticalLine (juce::roundToInt (xx), (float) pb.getY(), groundY);
+            g.setColour (Brand::ash());
+            g.drawText (juce::String (Units::metresToDisplay (m), 0) + " " + u,
+                        juce::roundToInt (xx) - 30, juce::roundToInt (groundY) + 4, 60, 14,
+                        juce::Justification::centred);
+        }
+        g.setColour (Brand::ash());
+        g.drawText (front ? "position across the rig (world Y)"
+                          : "position along the firing axis (world X)",
+                    pb.getX(), juce::roundToInt (groundY) + 20, pb.getWidth(), 14,
+                    juce::Justification::centredLeft);
+    }
+
+    // --- cabinets ----------------------------------------------------------
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& s = speakers_[(size_t) i];
+        const auto cab = cabinetFor (s.model);
+        const float c    = front ? s.y : s.x;
+        const float wM   = front ? cab.widthM : cab.depthM;
+        const float halfW = 0.5f * wM * sc;
+        const float hPx   = cab.heightM * sc;
+        const float cy    = vy (s.baseHeightM + 0.5f * cab.heightM);
+
+        juce::Rectangle<float> box (hx (c) - halfW, cy - 0.5f * hPx, 2.0f * halfW, hPx);
+
+        const bool sel = (std::find (selectedSpeakers_.begin(), selectedSpeakers_.end(), i)
+                          != selectedSpeakers_.end());
+        juce::Graphics::ScopedSaveState ss (g);
+
+        // Tilt is a rotation about the cabinet's own centre. Edge-on in the
+        // front view, so it is only applied from the side -- drawing it
+        // rotated head-on would show a tilt that is not really visible there.
+        if (! front && std::abs (s.tiltDeg) > 0.01f)
+            g.addTransform (juce::AffineTransform::rotation (
+                juce::degreesToRadians (s.tiltDeg), box.getCentreX(), box.getCentreY()));
+
+        g.setColour (s.enabled ? Brand::white() : Brand::white().withAlpha (0.35f));
+        g.fillRect (box);
+        g.setColour (sel ? Brand::accent() : Brand::charcoal());
+        g.drawRect (box, sel ? 2.5f : 1.2f);
+
+        // Which way it fires, so a tilted box reads unambiguously.
+        if (! front)
+        {
+            const float arrow = juce::jmin (box.getHeight() * 0.45f, box.getWidth() * 0.8f);
+            juce::Path tri;
+            tri.addTriangle (box.getCentreX() - arrow * 0.3f, box.getCentreY() - arrow * 0.5f,
+                             box.getCentreX() - arrow * 0.3f, box.getCentreY() + arrow * 0.5f,
+                             box.getCentreX() + arrow * 0.5f, box.getCentreY());
+            g.setColour (Brand::charcoal().withAlpha (0.75f));
+            g.fillPath (tri);
+        }
+    }
+
+    // Labels go on last, unrotated, so they stay readable whatever the tilt.
+    g.setFont (Brand::tech (juce::jmax (8.0f, 10.0f * Brand::UI::scale), true));
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& s = speakers_[(size_t) i];
+        const auto cab = cabinetFor (s.model);
+        const float c  = front ? s.y : s.x;
+        const float ty = vy (s.baseHeightM + cab.heightM) - 15.0f;
+        juce::String tag = juce::String (speakerModelTag (s.model))
+                         + "_" + juce::String (speakerModelOrdinal (speakers_, i));
+        if (! front && std::abs (s.tiltDeg) > 0.01f)
+            tag += "  " + juce::String (s.tiltDeg, 1) + " deg";
+        g.setColour (Brand::text());
+        g.drawText (tag, juce::roundToInt (hx (c)) - 60, juce::roundToInt (ty), 120, 14,
+                    juce::Justification::centred);
+    }
+
+    if (! any)
+    {
+        g.setColour (Brand::ash());
+        g.setFont (Brand::tech (juce::jmax (11.0f, 13.0f * Brand::UI::scale)));
+        g.drawText ("Add a speaker to see it in elevation",
+                    pb, juce::Justification::centred);
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -187,6 +187,9 @@ private:
 
     juce::TextButton btnExportPNG_, btnExportCSV_;
     juce::TextButton btnViewSPL_, btnViewDirectivity_, btnViewMeasured_;
+    // Projection switcher over the plot: the plan is the prediction, the two
+    // elevations are scale drawings of the rig.
+    juce::TextButton btnProjPlan_, btnProjFront_, btnProjSide_;
     CommandTerminal  commandTerminal_;
     void updateViewButtonHighlights();
 

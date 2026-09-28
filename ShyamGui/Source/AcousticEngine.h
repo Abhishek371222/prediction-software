@@ -15,6 +15,13 @@ struct Speaker
     bool  polarityInverted   = false;   // Normal / Reverse
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
     bool  enabled            = true;
+    // Where the cabinet sits vertically, and how far it is aimed down.
+    // These describe the rig for the elevation view and for reports; the SPL
+    // prediction is a horizontal plane and does not read them. Saying so
+    // plainly matters: the measured data is one horizontal plane per device,
+    // so there is no vertical pattern to predict with. Tilt is positive down.
+    float baseHeightM = 0.0f;   // underside of the cabinet above the ground
+    float tiltDeg     = 0.0f;   // down-tilt, degrees
     // Which device this unit is: 0 = Q21S, 2 = BEM2inch (matches
     // MeasurementData::Source / AcousticEngine::MeasurementSourceId). Each
     // unit is simulated with its OWN model's directivity — a scene can freely
@@ -181,7 +188,13 @@ enum class ViewMode
     Pressure     = 1,   // instantaneous real pressure (interference fringes)
     Interference = 2,   // coherent vs incoherent summation ratio
     Directivity  = 3,   // far-field polar pattern of the array
-    MeasuredPolar = 4   // measured horizontal polar readings (.xlsx)
+    MeasuredPolar = 4,  // measured horizontal polar readings (.xlsx)
+    // Elevation views are DRAWINGS of the rig, not predictions. The measured
+    // data is one horizontal plane per device, so there is no vertical
+    // directivity to solve with; these show cabinet heights and tilt to
+    // scale and deliberately carry no heatmap.
+    ElevationFront = 5, // looking along the firing axis: width x height
+    ElevationSide  = 6  // looking from the side: depth x height
 };
 
 struct SimParams

@@ -22,6 +22,8 @@ public:
 
     std::function<void()> onWillEdit;          // before a user-visible mutation
     std::function<void()>    onChanged;            // any parameter changed
+    /** Rig geometry (height / tilt) changed: redraw, do NOT recompute. */
+    std::function<void()>    onRigChanged;
     std::function<void()>    onRunClicked;         // explicit recompute
     std::function<void()>    onClearAll;           // clear SPL heatmap drawings / lines
     std::function<void(int)> onSelectionChanged;   // selected speaker index
@@ -139,6 +141,9 @@ private:
     void syncPositionRanges();   // X/Y slider spans follow the world extent
     void pushSharedEdit();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
+    /** Height / tilt only. These describe the rig, not the sound field, so
+        they take a light path: the plot redraws, nothing is re-solved. */
+    void pushRigEdit();
     void willEdit();
 
     enum class PresetKind { Cardioid, EndFired };
@@ -193,6 +198,8 @@ private:
     SectionHeader editHdr_ { "3. Selected Q21S" };
     juce::Label  xLabel_,  yLabel_,  gainLabel_,  delayLabel_;
     juce::Slider xSlider_, ySlider_, gainSlider_, delaySlider_;
+    juce::Label  heightLabel_, tiltLabel_;
+    juce::Slider heightSlider_, tiltSlider_;
     juce::ToggleButton polarityToggle_, orientationToggle_, enabledToggle_;
 
     // Global

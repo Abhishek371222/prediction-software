@@ -117,6 +117,8 @@ struct ProjectData
             o->setProperty ("reverseOrientation", s.reverseOrientation);
             o->setProperty ("enabled", s.enabled);
             o->setProperty ("model", s.model);   // 0 = Q21S, 2 = BEM2inch
+            o->setProperty ("baseHeightM", s.baseHeightM);
+            o->setProperty ("tiltDeg", s.tiltDeg);
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
@@ -168,6 +170,13 @@ struct ProjectData
                         s.enabled            = o->hasProperty ("enabled") ? (bool) o->getProperty ("enabled") : true;
                         // Old project files predate the BEM2inch device — default to Q21S.
                         s.model              = o->hasProperty ("model") ? (int) o->getProperty ("model") : 0;
+                        // Projects saved before the elevation view have no
+                        // height or tilt; ground level and no tilt is the
+                        // honest default for them.
+                        s.baseHeightM = o->hasProperty ("baseHeightM")
+                                      ? (float) (double) o->getProperty ("baseHeightM") : 0.0f;
+                        s.tiltDeg     = o->hasProperty ("tiltDeg")
+                                      ? (float) (double) o->getProperty ("tiltDeg") : 0.0f;
                         p.speakers.push_back (s);
                     }
                 }

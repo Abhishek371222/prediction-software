@@ -215,6 +215,9 @@ public:
 
 private:
     void buildImage();
+    /** Front / side elevation of the rig, to scale. Its own camera: the plan
+        view's transform is a top-down map and means nothing here. */
+    void drawElevation (juce::Graphics&, juce::Rectangle<int>);
     void fitView();
     void clampViewToField();
     float minZoomForFit() const;        // zoom floor: whole field on screen

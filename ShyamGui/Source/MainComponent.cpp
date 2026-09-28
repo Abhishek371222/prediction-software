@@ -102,6 +102,19 @@ MainComponent::MainComponent (ProjectData project)
     styleActionBtn (btnViewMeasured_,    "MEASURED POLAR", Brand::idleViewPill());
     for (auto* b : { &btnViewSPL_, &btnViewDirectivity_, &btnViewMeasured_ })
         addAndMakeVisible (*b);
+    styleActionBtn (btnProjPlan_,  "PLAN",  Brand::idleViewPill(), true);
+    styleActionBtn (btnProjFront_, "FRONT", Brand::idleViewPill());
+    styleActionBtn (btnProjSide_,  "SIDE",  Brand::idleViewPill());
+    for (auto* b : { &btnProjPlan_, &btnProjFront_, &btnProjSide_ })
+    {
+        b->setTooltip ("Plan is the predicted coverage; Front and Side are "
+                       "scale drawings of the rig, with no prediction");
+        addAndMakeVisible (*b);
+    }
+    btnProjPlan_.onClick  = [this] { setViewMode (ViewMode::SPL); };
+    btnProjFront_.onClick = [this] { setViewMode (ViewMode::ElevationFront); };
+    btnProjSide_.onClick  = [this] { setViewMode (ViewMode::ElevationSide); };
+
     btnViewSPL_.onClick         = [this] { setViewMode (ViewMode::SPL); };
     btnViewDirectivity_.onClick = [this] { setViewMode (ViewMode::Directivity); };
     btnViewMeasured_.onClick    = [this] { setViewMode (ViewMode::MeasuredPolar); };
@@ -392,6 +405,16 @@ MainComponent::MainComponent (ProjectData project)
         commitEdit();
         refreshFrequencyResponse();
     };
+    // Height and tilt describe the rig, not the field. Push them to the plot
+    // and redraw; do not re-solve.
+    controlPanel_.onRigChanged  = [this]
+    {
+        commitEdit();
+        syncRenderer();
+        patternComp_.repaint();
+        markProjectDirty();
+    };
+
     controlPanel_.onChanged     = [this]
     {
         commitEdit();
@@ -2048,6 +2071,21 @@ void MainComponent::resized()
 
     patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
 
+    // Top-right of the field, inset clear of the colour bar on the far right.
+    {
+        const int pw  = UiConfig::Scale::px (52);
+        const int ph  = UiConfig::Scale::px (20);
+        const int gapP = UiConfig::Scale::px (4);
+        const int barW = UiConfig::Scale::px (86) + UiConfig::Scale::px (8);
+        int px = plotX + centreW - barW - (3 * pw + 2 * gapP) - UiConfig::Scale::px (10);
+        const int py = bodyTop2 + UiConfig::Scale::px (8);
+        for (auto* b : { &btnProjPlan_, &btnProjFront_, &btnProjSide_ })
+        {
+            b->setBounds (px, py, pw, ph);
+            px += pw + gapP;
+        }
+    }
+
     // Red "SPL Heatmap | ..." caption: canvas top-left, as in the Figma mock
     // (it used to sit inside the ribbon and push every cluster to the right).
     {
@@ -2198,6 +2236,26 @@ void MainComponent::syncRenderer()
 void MainComponent::updatePlotChrome()
 {
     const auto& p = lastParams_;
+    // The elevations are scale drawings of the rig, so the frequency and the
+    // measurement distance mean nothing there - saying "no prediction" is the
+    // honest caption, and stops the view being mistaken for coverage.
+    if (currentView_ == ViewMode::ElevationFront
+        || currentView_ == ViewMode::ElevationSide)
+    {
+        int n = 0;
+        for (const auto& sp : p.speakers) if (sp.enabled) ++n;
+        juce::String el = (currentView_ == ViewMode::ElevationFront)
+                        ? "Front Elevation" : "Side Elevation";
+        el += "  |  " + juce::String (n) + " devices";
+        el += "  |  scale drawing, no prediction";
+        plotHeader_.setTitle (el);
+        // The elevation sits on the pale canvas, never over the dark field,
+        // so the caption must not use the over-field white.
+        plotHeader_.getTitleLabel().setColour (juce::Label::textColourId,
+                                               Brand::plotTitle());
+        return;
+    }
+
     const char* vmName = (currentView_ == ViewMode::SPL)         ? "SPL Gradient Plot"
                        : (currentView_ == ViewMode::Directivity) ? "Directivity"
                                                                : "Measured Polar";
@@ -2404,6 +2462,18 @@ void MainComponent::setViewMode (ViewMode mode)
         patternComp_.updateData (r, lastParams_);
         updateSettingsBar();
         scheduleRecompute();
+        return;
+    }
+
+    // Elevation is a drawing of the rig, not a view of the field, so it has
+    // to switch whether or not anything has been solved yet.
+    if (mode == ViewMode::ElevationFront || mode == ViewMode::ElevationSide)
+    {
+        lastParams_.viewMode = mode;
+        SimResult er; { juce::ScopedLock sl (resultLock_); er = lastResult_; }
+        patternComp_.updateData (er, lastParams_);
+        syncRenderer();
+        updateSettingsBar();
         return;
     }
 
@@ -2818,6 +2888,11 @@ void MainComponent::updateViewButtonHighlights()
     };
     styleExport (btnExportPNG_);
     styleExport (btnExportCSV_);
+
+    styleView (btnProjPlan_,  currentView_ != ViewMode::ElevationFront
+                           && currentView_ != ViewMode::ElevationSide);
+    styleView (btnProjFront_, currentView_ == ViewMode::ElevationFront);
+    styleView (btnProjSide_,  currentView_ == ViewMode::ElevationSide);
 
     styleView (btnViewSPL_,         currentView_ == ViewMode::SPL);
     styleView (btnViewDirectivity_, currentView_ == ViewMode::Directivity);
