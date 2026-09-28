@@ -3209,6 +3209,53 @@ void RadiationPatternComponent::zoomAboutCentre (float factor)
     repaint();
 }
 
+void RadiationPatternComponent::zoomToSelection()
+{
+    const auto pb = plotArea();
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || speakers_.empty()) return;
+    if (params_.viewMode == ViewMode::Directivity) return;
+
+    // Nothing selected reads as "show me everything", which is more useful
+    // than doing nothing at all.
+    std::vector<int> idx = selectedSpeakers_;
+    if (idx.empty())
+        for (int i = 0; i < (int) speakers_.size(); ++i)
+            idx.push_back (i);
+
+    juce::Rectangle<float> box;
+    bool any = false;
+    for (int i : idx)
+    {
+        if (i < 0 || i >= (int) speakers_.size()) continue;
+        const auto fp = speakerFootprintWorld (speakers_[(size_t) i]);
+        box = any ? box.getUnion (fp) : fp;
+        any = true;
+    }
+    if (! any) return;
+
+    // A single cabinet is barely a metre across; framed tight it would fill
+    // the screen at useless magnification and show none of its surroundings.
+    const float pad = juce::jmax (2.0f, 0.35f * juce::jmax (box.getWidth(), box.getHeight()));
+    box = box.expanded (pad);
+
+    // Contain, not cover: the whole selection has to be on screen.
+    const float wantX = (float) pb.getWidth()  / juce::jmax (0.01f, box.getWidth());
+    const float wantY = (float) pb.getHeight() / juce::jmax (0.01f, box.getHeight());
+    const float want  = juce::jmin (wantX, wantY);
+    if (baseScaleX_ > 1.0e-6f)
+        zoom_ = juce::jlimit (minZoomForFit(), kMaxZoom, want / baseScaleX_);
+
+    const auto c = box.getCentre();
+    origin_.x = 0.5f * (float) pb.getWidth()
+              - (c.x - (float) result_.worldX0) * worldScaleX();
+    origin_.y = 0.5f * (float) pb.getHeight()
+              - ((float) (result_.worldY0 + result_.worldH) - c.y) * worldScaleY();
+
+    clampViewToField();
+    layoutTextBoxEditor();
+    repaint();
+}
+
 float RadiationPatternComponent::minZoomForFit() const
 {
     // zoom 1.0 IS the floor: it is the fill-the-canvas fit, so the plot is
@@ -5634,6 +5681,19 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
                 pasteClipboard();
                 return true;
             }
+        }
+    }
+
+    // F fits the whole field, Z frames what is selected. Plain letters, so
+    // they are dead while a text box is being edited or a draw session is up.
+    if (! isEditingTextBox() && ! sessionActive_)
+    {
+        const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+        if (! mods.isCommandDown() && ! mods.isCtrlDown() && ! mods.isAltDown())
+        {
+            const auto ch = key.getTextCharacter();
+            if (ch == 'f' || ch == 'F') { resetView();       return true; }
+            if (ch == 'z' || ch == 'Z') { zoomToSelection(); return true; }
         }
     }
 

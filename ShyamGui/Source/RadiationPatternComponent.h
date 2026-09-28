@@ -45,6 +45,10 @@ public:
     void resetView();
     void zoomIn();
     void zoomOut();
+
+    /** Frame the selected units, or all of them when nothing is selected.
+        Finding one cabinet in a 100 m field otherwise means hunting for it. */
+    void zoomToSelection();
     void refreshView() { repaint(); }
 
     // Plot toolbar tools (Shape is a family; construction chosen separately).
