@@ -61,7 +61,10 @@ public:
             o.dialogBackgroundColour = Brand::panel();
             o.escapeKeyTriggersCloseButton = true;
             o.useNativeTitleBar = true;
-            o.resizable = true;
+            // Not resizable: with it on, the window came up filling the screen
+            // instead of sizing to the view, and a box drawn a metre across
+            // tells you nothing more than one drawn at a sensible size.
+            o.resizable = false;
             o.launchAsync();
         };
         addAndMakeVisible (view3dBtn_);
