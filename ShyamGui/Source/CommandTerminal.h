@@ -7,7 +7,7 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// CommandTerminal — AutoCAD-style command line + VS Code look.
+// CommandTerminal - AutoCAD-style command line + VS Code look.
 // Alias → canonical via CommandRegistry; coloured scrollback; Esc cancels.
 // ---------------------------------------------------------------------------
 class CommandTerminal : public juce::Component,
@@ -84,7 +84,7 @@ public:
         addAndMakeVisible (input_);
 
         appendLine ("Atomik command terminal", LineKind::Normal);
-        appendLine ("Type HELP or ? for commands. Shortcuts: L LINE, PE PENCIL, ER ERASER, SPK speaker…", LineKind::Normal);
+        appendLine ("Type HELP or ? for commands. Shortcuts: L LINE, PE PENCIL, ER ERASER, SPK speaker...", LineKind::Normal);
         appendLine ("", LineKind::Normal);
     }
 
@@ -455,7 +455,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Floating terminal window — undocked from the main bottom panel.
+// Floating terminal window - undocked from the main bottom panel.
 // ---------------------------------------------------------------------------
 class TerminalFloatWindow : public juce::DocumentWindow
 {
@@ -483,7 +483,7 @@ public:
 
     bool keyPressed (const juce::KeyPress& key) override
     {
-        // Esc cancels the in-progress command inside CommandTerminal — never
+        // Esc cancels the in-progress command inside CommandTerminal - never
         // treat it as a window close/minimise shortcut.
         if (key.isKeyCode (juce::KeyPress::escapeKey))
             return true;

@@ -711,7 +711,7 @@ void RadiationPatternComponent::updateDrawPrompt()
     {
         p = "ORTHO ";
         p += (orthoAlign_ == OrthoAlign::Horizontal) ? "Horizontal" : "Vertical";
-        p += ": select 2+ speakers — linked gap ";
+        p += ": select 2+ speakers - linked gap ";
         p += Units::metres ((double) orthoSpacingM_, 2);
     }
 
@@ -1124,7 +1124,7 @@ juce::Point<float> RadiationPatternComponent::snapAnnotPointFull (juce::Point<fl
         y = std::round (p.y / step) * step;
     }
 
-    // 2) Object snap (edges / corners / centres) — wins when closer than ~10 px.
+    // 2) Object snap (edges / corners / centres) - wins when closer than ~10 px.
     //    Applied per-axis so a left edge can lock while Y still follows the grid.
     const float tolX = 10.0f / juce::jmax (1.0f, worldScaleX());
     const float tolY = 10.0f / juce::jmax (1.0f, worldScaleY());
@@ -1136,7 +1136,7 @@ juce::Point<float> RadiationPatternComponent::snapAnnotPointFull (juce::Point<fl
     if (hitX) x = ox;
     if (hitY) y = oy;
 
-    // Tak / objectHit: only other drawing edges — not speakers, mics, or centres
+    // Tak / objectHit: only other drawing edges - not speakers, mics, or centres
     // (those caused random clicks and armed the sound before a real shape meet).
     if (objectHit != nullptr)
     {
@@ -1194,7 +1194,7 @@ void RadiationPatternComponent::noteSnapSound (bool objectSnapEngaged,
 juce::Point<float> RadiationPatternComponent::applyOrtho (juce::Point<float> from,
                                                           juce::Point<float> to) const
 {
-    // Drawing constraint: Line Ortho construction or hold Shift — not the Ortho align tool.
+    // Drawing constraint: Line Ortho construction or hold Shift - not the Ortho align tool.
     const bool force = construction_ == Construction::LineOrtho
                     || juce::ModifierKeys::getCurrentModifiers().isShiftDown();
     if (! force)
@@ -1529,7 +1529,7 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> annotPt, float rad
             return false;
         }), annotations_.end());
 
-    // Indices shift after erase — clear selection to avoid pointing at the wrong shape.
+    // Indices shift after erase - clear selection to avoid pointing at the wrong shape.
     setSelectedAnnotation (-1);
 }
 
@@ -1668,7 +1668,7 @@ void RadiationPatternComponent::moveSelectionBy (juce::Point<float> deltaAnnot,
 
     for (int idx : selectedMics_)
     {
-        // Group / mixed selection move: free translate only — ring snap is
+        // Group / mixed selection move: free translate only - ring snap is
         // handled by the dedicated Drag::Mic path (original first snap pattern).
         if (idx < 0 || idx >= (int) mics_.size()) continue;
         auto& mic = mics_[(size_t) idx];
@@ -2110,7 +2110,7 @@ bool RadiationPatternComponent::pointHitsTextBoxBorder (juce::Point<float> pt,
     if (! expanded.contains (unrot)) return false;
     const auto shrunk = local.reduced (radius);
     if (shrunk.getWidth() <= 0.0f || shrunk.getHeight() <= 0.0f)
-        return true; // thin box — whole area is border
+        return true; // thin box - whole area is border
     return ! shrunk.contains (unrot);
 }
 
@@ -2259,7 +2259,7 @@ void RadiationPatternComponent::drawTextBoxRotateIcon (juce::Graphics& g,
                                                        juce::Point<float> centre,
                                                        float radius)
 {
-    // Three curved arrows only — no disc / red ring.
+    // Three curved arrows only - no disc / red ring.
     const float arcR = radius * 0.72f;
     const float stroke = juce::jmax (1.4f, radius * 0.18f);
 
@@ -2374,7 +2374,7 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
 
 juce::String RadiationPatternComponent::formatLengthLabel (float metres)
 {
-    // Ruler / shape dims — always show the active unit system.
+    // Ruler / shape dims - always show the active unit system.
     if (Units::imperial())
     {
         const double ft = (double) metres * 3.280839895;
@@ -2560,7 +2560,7 @@ void RadiationPatternComponent::updateRubberBandAt (juce::Point<float> screenPt)
 bool RadiationPatternComponent::tryFinishRubberBandAt (juce::Point<float> screenPt)
 {
     // Click-drag-release: finish 2-point shapes / ruler when the drag travelled enough.
-    // Use screen pixels — world minDist (~5 cm) is sub-pixel at Fit View, so a plain
+    // Use screen pixels - world minDist (~5 cm) is sub-pixel at Fit View, so a plain
     // click's mouseUp used to commit an invisible micro-line and eat the first stroke.
     constexpr float kMinDragPx = 6.0f;
     if (screenPt.getDistanceFrom (rubberBandStartScreen_) < kMinDragPx)
@@ -2947,7 +2947,7 @@ bool RadiationPatternComponent::pasteClipboard()
             toAdd.push_back (s);
         }
         newSpeakers = onPasteSpeakers (std::move (toAdd));
-        // Control panel notify refreshes speakers_ via syncRenderer — re-read selection.
+        // Control panel notify refreshes speakers_ via syncRenderer - re-read selection.
     }
 
     selectedAnnots_ = std::move (newAnnots);
@@ -3304,7 +3304,7 @@ void RadiationPatternComponent::resetView()
 
 void RadiationPatternComponent::zoomIn()
 {
-    // World-plane zoom — any tool; works with or without a finished RUN.
+    // World-plane zoom - any tool; works with or without a finished RUN.
     if (params_.viewMode == ViewMode::Directivity) return;
     if (params_.viewMode == ViewMode::MeasuredPolar && ! showingBemHeatmap()) return;
 
@@ -3370,7 +3370,7 @@ void RadiationPatternComponent::buildImage()
             const size_t idx = (size_t) row * W + col;
             juce::Colour c;
 
-            // SPL heatmap — 7-color scale (black→blue→cyan→green→yellow→orange→red).
+            // SPL heatmap - 7-color scale (black→blue→cyan→green→yellow→orange→red).
             {
                 const float dB = (result_.splRelDB.size() == (size_t) W * (size_t) H)
                                     ? result_.splRelDB[idx]
@@ -3382,7 +3382,7 @@ void RadiationPatternComponent::buildImage()
                 }
                 else
                 {
-                    // Continuous: fixed 0…−36 colour span (−6 dB always same hue).
+                    // Continuous: fixed 0...-36 colour span (-6 dB always same hue).
                     // db Floor only blacks out levels at/below the floor.
                     const float t = ColourMaps::relDbToColourT (dB, (float) params_.dBfloor);
                     c = ColourMaps::sevenColor (t);
@@ -3684,7 +3684,7 @@ RadiationPatternComponent::GridMetrics RadiationPatternComponent::currentGridMet
 
 juce::String RadiationPatternComponent::formatGridLabel (double metres)
 {
-    // Tick positions land on nice display steps — show them in the active unit.
+    // Tick positions land on nice display steps - show them in the active unit.
     if (Units::imperial())
     {
         const double ft = metres * 3.280839895;
@@ -3782,7 +3782,7 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     forTicks (visX0, visX1, majorStep, [&] (double x) { vline (x, true); });
     forTicks (visY0, visY1, majorStep, [&] (double y) { hline (y, true); });
 
-    // Axis labels follow major spacing so zoom reveals 62, 63, 64… then cm/mm.
+    // Axis labels follow major spacing so zoom reveals 62, 63, 64... then cm/mm.
     g.setFont (Brand::techMed (Brand::Type::gridNum));
     const int labelW = Units::imperial() ? 72 : 56;
 
@@ -4071,7 +4071,7 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const 
 
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)
 {
-    // Distance reference rings (1 / 2 / 4 / 8 m) — toggleable from the plot toolbar.
+    // Distance reference rings (1 / 2 / 4 / 8 m) - toggleable from the plot toolbar.
     if (showDistanceRings_)
     {
         static constexpr float kRingM[] = { 1.0f, 2.0f, 4.0f, 8.0f };
@@ -4096,7 +4096,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         }
     }
 
-    // True Q21S plan footprint (750 mm W × 917 mm D). Selected = thick black boundary.
+    // True Q21S plan footprint (750 mm W x 917 mm D). Selected = thick black boundary.
     for (int i = 0; i < (int) speakers_.size(); ++i)
     {
         const auto& spk = speakers_[i];
@@ -4113,7 +4113,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 
         if (isSel)
         {
-            // Vivid magenta-red glow INSIDE the cabinet — keeps the outer border crisp.
+            // Vivid magenta-red glow INSIDE the cabinet - keeps the outer border crisp.
             const auto glow = juce::Colour (0xffff3d6e);
             const float maxInset = juce::jmin (box.getWidth(), box.getHeight()) * 0.42f;
             for (int ring = 1; ring <= 5; ++ring)
@@ -4250,13 +4250,13 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
 void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     // Figma "Home Screen 1.1": the Rel. SPL bar is 18x750.66 at x=1813,y=163.65
-    // inside a canvas of x=340..1920, y=132..979 — i.e. 31.65px below the canvas
+    // inside a canvas of x=340..1920, y=132..979 - i.e. 31.65px below the canvas
     // top, 89px in from its right edge, with 96px of the canvas height left over
     // for the tick above and the caption below. Expressed here through the
     // window scale so it holds at other window sizes.
     // `bounds` is the gutter to the right of the plot, so anchor the bar to its
     // LEFT edge. Anchoring from the right instead pushed the bar back over the
-    // heatmap whenever the gutter was narrower than that offset — which is what
+    // heatmap whenever the gutter was narrower than that offset - which is what
     // happens full-screen, where the plot takes more of the width.
     const int barW = UiConfig::Scale::px (14);                       // -> 18px
     const int barX = bounds.getX() + UiConfig::Scale::px (4);
@@ -4296,7 +4296,7 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
         g.setColour (outline);
         g.drawRect (barX, barY, barW, (int) (bh * (float) bands + 0.5f), 1);
     }
-    else // continuous — fixed −6 dB legend ticks; floor is the bottom stop only
+    else // continuous - fixed -6 dB legend ticks; floor is the bottom stop only
     {
         const float floor = (float) params_.dBfloor;
         const float span = juce::jmax (ColourMaps::kRelSplDesignSpanDB, -floor);
@@ -4311,7 +4311,7 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
         g.setColour (outline);
         g.drawRect (barX, barY, barW, barH, 1);
 
-        // Ticks every −6 dB from 0 down to floor (e.g. 0,−6,…,−36) — never −9.
+        // Ticks every -6 dB from 0 down to floor (e.g. 0,-6,...,-36) - never -9.
         const float step = ColourMaps::kRelSplStepDB;
         const int nTicks = juce::jmax (1, (int) std::lround (-floor / step));
         for (int i = 0; i <= nTicks; ++i)
@@ -4335,7 +4335,7 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
 }
 
 // ---------------------------------------------------------------------------
-// CLIO-style Atomik polar frame (vector only — never pastes graph images).
+// CLIO-style Atomik polar frame (vector only - never pastes graph images).
 // Polar frame aligned with SPL heatmap: 0 deg = forward = right (+X),
 // 90 deg = up (+Y), angles increase counter-clockwise (math / heatmap sense).
 // dB rings 6 / 0 / -6 / -12 / -18 / -24, ATOMIK branding.
@@ -4428,7 +4428,7 @@ namespace
             g.setColour (grid);
             g.drawEllipse (out.cx - rr, out.cy - rr, 2 * rr, 2 * rr,
                            db == 0 ? 1.3f : 0.9f);
-            // Labels along the forward (+X / 0°) spoke — right side.
+            // Labels along the forward (+X / 0°) spoke - right side.
             g.setColour (axis);
             g.drawText (juce::String (db),
                         (int) (out.cx + rr + 4), (int) (out.cy - 7),
@@ -4461,7 +4461,7 @@ namespace
                     juce::Justification::centred);
     }
 
-    // Closed polar stroke in (angle, dB) — dense 0.5° samples, rounded joins.
+    // Closed polar stroke in (angle, dB) - dense 0.5° samples, rounded joins.
     // Interpolates in dB (not XY) so lobes stay smooth curves, not hard corners.
     void strokeClioCurve (juce::Graphics& g, const ClioFrame& fr,
                           const std::vector<float>& deg,
@@ -4559,8 +4559,8 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
-// DIRECTIVITY — CLIO-style Atomik plot of the *simulated* far-field pattern
-// (AcousticEngine::polarMag). No measured-unit CSV overlay here — that lives
+// DIRECTIVITY - CLIO-style Atomik plot of the *simulated* far-field pattern
+// (AcousticEngine::polarMag). No measured-unit CSV overlay here - that lives
 // on the Measured Polar view only.
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -4605,12 +4605,12 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
         g.setColour (juce::Colour (0xff5a6270));
         g.setFont (Brand::tech (Brand::Type::colourBarTick));
         g.drawText (nEnabled == 0 ? "Enable a unit and press RUN"
-                                  : "No polar data — press RUN",
+                                  : "No polar data - press RUN",
                     bounds.withTrimmedTop (bounds.getHeight() / 2),
                     juce::Justification::centred);
     }
 
-    // Speaker markers (live list — reflects delete / enable immediately).
+    // Speaker markers (live list - reflects delete / enable immediately).
     float mx = 0.0f, my = 0.0f;
     if (nEnabled > 0)
     {
@@ -4644,7 +4644,7 @@ void RadiationPatternComponent::drawPolarPlot (juce::Graphics& g, juce::Rectangl
 }
 
 // ---------------------------------------------------------------------------
-// Measured polar — CLIO-style Atomik plot from real MeasurementIntegrationPack
+// Measured polar - CLIO-style Atomik plot from real MeasurementIntegrationPack
 // readings (Room = ShyamGuild, Ground Plane = Factory). Exact CSV points only.
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::drawMeasuredPolar (juce::Graphics& g,
@@ -4845,7 +4845,7 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
                              formatDim (preview.pts[0].getDistanceFrom (preview.pts[1])));
     }
 
-    // Text Box: ghost under cursor (click to place — no corner rubber-band).
+    // Text Box: ghost under cursor (click to place - no corner rubber-band).
     if (tool_ == Tool::Shape && drawShape_ == DrawShape::TextBox && hoverValid_
         && ! sessionActive_)
     {
@@ -5154,7 +5154,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Add Mic armed: place on heatmap — but clicking an existing mic selects it.
+    // Add Mic armed: place on heatmap - but clicking an existing mic selects it.
     if (addMicArmed_ && currentAnnotSpace() == AnnotSpace::World)
     {
         const int mHit = micHitTestScreen (e.position);
@@ -5335,7 +5335,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             }
         }
 
-        // Mic hit (world heatmap only) — glyph + label in screen space.
+        // Mic hit (world heatmap only) - glyph + label in screen space.
         if (currentAnnotSpace() == AnnotSpace::World)
         {
             const int mHit = micHitTestScreen (e.position);
@@ -5483,14 +5483,14 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             return true;
         };
 
-        // Shape border / stroke (lines, arcs, rect edges) — pickable even near speakers.
+        // Shape border / stroke (lines, arcs, rect edges) - pickable even near speakers.
         if (applyAnnotationHit (annotationBorderHitTest (annot, radius)))
             return;
 
         // Filled interior only when no speaker/mic under the click.
         {
             const int fillHit = annotationFillHitTest (annot, radius);
-            // Edit text boxes via double-click only — single click selects / drags.
+            // Edit text boxes via double-click only - single click selects / drags.
             if (applyAnnotationHit (fillHit))
                 return;
         }
@@ -5506,7 +5506,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Pan / layout — SPL world view only
+    // Pan / layout - SPL world view only
     if (currentAnnotSpace() == AnnotSpace::PolarPlot)
         return;
 
@@ -5839,7 +5839,7 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
                                                 const juce::MouseWheelDetails& wheel)
 {
-    // Scroll-wheel zoom in every tool mode (Select / Shape / Pencil / …).
+    // Scroll-wheel zoom in every tool mode (Select / Shape / Pencil / ...).
     // Skip polar-only views that do not use the world zoom transform.
     if (params_.viewMode == ViewMode::Directivity) return;
     if (params_.viewMode == ViewMode::MeasuredPolar && ! showingBemHeatmap()) return;

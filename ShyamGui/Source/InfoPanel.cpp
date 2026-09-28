@@ -102,9 +102,9 @@ void InfoPanel::updateInfo (const SimResult& r, const SimParams& p, int selected
                               + juce::String (Units::metresToDisplay (s.y), 1) + ") " + u;
         {   // this unit's own enclosure, not Q21S's under every model
             const auto cab = cabinetFor (s.model);
-            posStr += "  ·  "
-                    + Units::dim (cab.widthM * 1000.0) + "×"
-                    + Units::dim (cab.heightM * 1000.0) + "×"
+            posStr += "  -  "
+                    + Units::dim (cab.widthM * 1000.0) + "x"
+                    + Units::dim (cab.heightM * 1000.0) + "x"
                     + Units::dim (cab.depthM * 1000.0);
         }
         setRowVal (kPos, posStr);

@@ -3,11 +3,11 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// MicReceiver — virtual probe on the SPL heatmap (does not affect physics).
+// MicReceiver - virtual probe on the SPL heatmap (does not affect physics).
 // ---------------------------------------------------------------------------
 struct MicReceiver
 {
-    int   id = 1;                 // Mic 1, Mic 2, …
+    int   id = 1;                 // Mic 1, Mic 2, ...
     float x = 50.0f;              // world metres
     float y = 50.0f;
     float relDb = 0.0f;           // live relative SPL from heatmap (peak ≈ 0)

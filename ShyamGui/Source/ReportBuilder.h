@@ -80,7 +80,7 @@ namespace ReportBuilder
                               + nHeatPages + 1 /*summary*/;
         int pageNo = 0;
 
-        // Footer only — no running header (cleaner client-facing pages).
+        // Footer only - no running header (cleaner client-facing pages).
         auto chrome = [&] (const juce::String& /*runningTitle*/, bool /*topHeader*/ = true)
         {
             ++pageNo;

@@ -160,7 +160,7 @@ namespace MeasurementData
         return best;
     }
 
-    // Build one curve from one sweep only — never shares a reference with
+    // Build one curve from one sweep only - never shares a reference with
     // another distance (that was mixing 0.5 m and 1 m levels).
     inline MeasuredCurve buildCurve (const RawSweep& sweep)
     {
@@ -272,7 +272,7 @@ namespace MeasurementData
     //
     // WHY spikes happened before:
     //  1) The vertical axis (0 deg / 180 deg) is solid black from dB *labels*,
-    //     not the curve — ray-casting there produced wild radii.
+    //     not the curve - ray-casting there produced wild radii.
     //  2) Grid ticks and the outer frame were sometimes picked as the curve.
     //  3) Connecting those bad samples made "peak / starburst" plots.
     //
@@ -375,8 +375,8 @@ namespace MeasurementData
     }
 
     // Measurement environments. Product default is Q21S BEM polars (OpenField).
-    // Legacy Room (Gylt) maps to ShyamGuild CSVs — kept for pack compatibility.
-    // BEM2in = BEM2inch (15" sealed) BEM polars — a fully separate device: its own
+    // Legacy Room (Gylt) maps to ShyamGuild CSVs - kept for pack compatibility.
+    // BEM2in = BEM2inch (15" sealed) BEM polars - a fully separate device: its own
     // CSV file prefix, frequency catalogue and embedded pack, never merged
     // with Q21S. Values match AcousticEngine::MeasurementSourceId.
     enum Source { OpenField = 0, Gylt = 1, BEM2in = 2 };   // Q21S / Room (legacy) / BEM2inch
@@ -452,7 +452,7 @@ namespace MeasurementData
             return hz == 80 || hz == 200 || hz == 500;
         }
         const double* freqs; int nFreqs;
-        frequencyCatalogue (source, freqs, nFreqs);   // Q21S or BEM2inch — isolated
+        frequencyCatalogue (source, freqs, nFreqs);   // Q21S or BEM2inch - isolated
         for (int i = 0; i < nFreqs; ++i)
             if ((int) std::lround (freqs[i]) == hz)
                 return true;
@@ -492,7 +492,7 @@ namespace MeasurementData
         return loadCsvSweepText (file.loadFileAsString());
     }
 
-    // Each model bakes into its own namespace (EmbeddedQ21S / EmbeddedBEM2inch) —
+    // Each model bakes into its own namespace (EmbeddedQ21S / EmbeddedBEM2inch) -
     // looked up by source so the two embedded packs never cross-match.
     inline RawSweep loadCsvSweepEmbedded (int source, const char* fileName)
     {
@@ -607,7 +607,7 @@ namespace MeasurementData
             return out;
         }
 
-        // Q21S or BEM2inch — each model's own catalogue only (never blended).
+        // Q21S or BEM2inch - each model's own catalogue only (never blended).
         const double* freqs; int nFreqs;
         frequencyCatalogue (source, freqs, nFreqs);
         for (int i = 0; i < nFreqs; ++i)
@@ -695,7 +695,7 @@ namespace MeasurementData
     // Resolve a dataset folder portably (Windows/macOS).
     // Prefer paths near the running exe / CWD (the cloned repo), then fall back
     // to a legacy absolute Windows path. Checking legacy first is wrong on
-    // machines that still have an old D:\shayam gui tree without Q21S CSVs —
+    // machines that still have an old D:\shayam gui tree without Q21S CSVs -
     // that made Windows heatmaps diverge from macOS.
     // Optional markerFile must exist inside a candidate before it is accepted.
     inline juce::File resolveSourceFolder (const juce::File& legacyDevPath,
@@ -752,13 +752,13 @@ namespace MeasurementData
         if (accept (legacyDevPath))
             return legacyDevPath;
 
-        return {};   // missing — never return a folder that failed the marker check
+        return {};   // missing - never return a folder that failed the marker check
     }
 
-    // MeasurementIntegrationPack/Data — primary source of real CSV readings.
+    // MeasurementIntegrationPack/Data - primary source of real CSV readings.
     // Marker is a native Q21S far-field polar so old Factory/ShyamGuild-only
     // packs (which also have manifest.csv) are never selected.
-    // Include ShyamGui/… so an EXE under version-archive/artifacts still finds
+    // Include ShyamGui/... so an EXE under version-archive/artifacts still finds
     // the repo pack when walking up to the clone root.
     inline juce::File packDataFolder()
     {
@@ -786,7 +786,7 @@ namespace MeasurementData
                 { "shyamGuildMeasurements",
                   "ShyamGui/shyamGuildMeasurements" });
 
-        // Q21S OpenField — pack CSVs only (no legacy Factory xlsx required).
+        // Q21S OpenField - pack CSVs only (no legacy Factory xlsx required).
         return resolveSourceFolder (
             juce::File ("D:\\shayam gui\\prediction software\\MeasurementIntegrationPack\\Data"),
             { "ShyamGui/prediction software/MeasurementIntegrationPack/Data",
@@ -804,7 +804,7 @@ namespace MeasurementData
                 { "shyamGuildMeasurements" });
 
         if (source == BEM2in)
-            // BEM2inch: separate raw-BEM folder — never falls back to Q21S's.
+            // BEM2inch: separate raw-BEM folder - never falls back to Q21S's.
             return resolveSourceFolder (
                 juce::File ("D:\\shayam gui\\BEM_Data_2inch_10m"),
                 { "BEM_Data_2inch_10m", "../BEM_Data_2inch_10m", "ShyamGui/../BEM_Data_2inch_10m" },
@@ -851,7 +851,7 @@ namespace MeasurementData
         return R.back();
     }
 
-    // Interpolate absolute SPL (dB) vs angle — CLIO-style (dB domain, not linear R).
+    // Interpolate absolute SPL (dB) vs angle - CLIO-style (dB domain, not linear R).
     inline float interpSplDb (const MeasuredCurve& cv, float deg)
     {
         const auto& A = cv.angleDeg;
@@ -885,7 +885,7 @@ namespace MeasurementData
     }
 
     // Exact measured points, on-axis normalised (CLIO): rel_dB = SPL - SPL(0°).
-    // Never invents angles — plot/interpolate through these only.
+    // Never invents angles - plot/interpolate through these only.
     inline void measuredPointsDb (const MeasuredCurve& cv,
                                   std::vector<float>& degs, std::vector<float>& dbs)
     {
@@ -902,7 +902,7 @@ namespace MeasurementData
     }
 
     // Upsample one curve to 1 deg for engine / dense stroke fallback.
-    // On-axis = 0 dB (CLIO convention). Single curve only — never merges distances.
+    // On-axis = 0 dB (CLIO convention). Single curve only - never merges distances.
     inline void sampleCurveDb (const MeasuredCurve& cv,
                                std::vector<float>& degs, std::vector<float>& dbs)
     {
@@ -928,7 +928,7 @@ namespace MeasurementData
         if (dbs.size() < 8) return;
 
         detail::medianFilterCircular (dbs, 2);
-        detail::smoothCircular (dbs, 6);   // ~13° window — CLIO-style smooth lobe
+        detail::smoothCircular (dbs, 6);   // ~13° window - CLIO-style smooth lobe
 
         const int n = (int) dbs.size();
         std::vector<float> aOut, dOut;
@@ -998,7 +998,7 @@ namespace MeasurementData
         return out;
     }
 
-    // Far-field arc for 100×100 m SPL prediction. Near-field (0.5 m) BEM arcs
+    // Far-field arc for 100x100 m SPL prediction. Near-field (0.5 m) BEM arcs
     // embed cabinet geometry as fake beams; prefer the largest available radius
     // ≥ 1.0 m (typically 2.0 m for Q21S / 52 Hz).
     inline float farFieldDirectivityDistance (const MeasuredSet& set, float fallback = 1.0f)
@@ -1133,7 +1133,7 @@ namespace MeasurementData
     {
         if (gain.size() != 360) return;
 
-        // Mid-plane physics is L/R symmetric — average out mirror-overlap errors.
+        // Mid-plane physics is L/R symmetric - average out mirror-overlap errors.
         for (int deg = 1; deg < 180; ++deg)
         {
             const float a = 0.5f * (gain[(size_t) deg] + gain[(size_t) (360 - deg)]);
@@ -1263,7 +1263,7 @@ namespace MeasurementData
         if (packDir.isDirectory())
             set.packPath = packDir.getFullPathName();
         else if (EmbeddedQ21S::numFiles > 0)
-            set.packPath = "embedded://Q21S";   // baked into EXE — no sidecar Data/
+            set.packPath = "embedded://Q21S";   // baked into EXE - no sidecar Data/
 
         const auto freqList = discoverFrequencies (packDir, xlsxFolder, source);
 
@@ -1307,7 +1307,7 @@ namespace MeasurementData
 
     // VACS-style Atomik Prediction Software sheet (matches Export_Reference /
     // Atomik_Directivity_* sample). Writes absolute measured SPL at native
-    // angles — values differ per frequency / distance from the loaded Excel/CSV.
+    // angles - values differ per frequency / distance from the loaded Excel/CSV.
     inline bool writeAtomikDirectivitySheet (const juce::File& file,
                                              const MeasuredCurve& cv,
                                              int hz,

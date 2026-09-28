@@ -8,7 +8,7 @@
 #include <functional>
 
 // ---------------------------------------------------------------------------
-// RadiationPatternComponent — 2D world renderer + CAD-style draw overlays.
+// RadiationPatternComponent - 2D world renderer + CAD-style draw overlays.
 //
 // Annotations use Shape → Construction → Modifiers (AutoCAD-like). Stored in
 // world metres (SPL) or normalised polar-plot space (Directivity / Measured).
@@ -193,10 +193,10 @@ public:
     std::function<void()>                  onMicsChanged;
     std::function<void()>                  onAddMicArmedChanged;
     std::function<void()>                  onAddSpeakerArmedChanged;
-    /** Place a new speaker at world (x, y) metres — MainComponent → ControlPanel. */
+    /** Place a new speaker at world (x, y) metres - MainComponent → ControlPanel. */
     std::function<void(float, float)>      onPlaceSpeakerAt;
     std::function<bool(const juce::KeyPress&)> onKeyPressed;
-    /** Right-click while a non-Select tool (or Add Mic/Speaker) is armed —
+    /** Right-click while a non-Select tool (or Add Mic/Speaker) is armed -
         same "back to cursor" action as Esc. Normal Select-mode right-click
         (context menu) is untouched. */
     std::function<void()>                  onRequestCancelCurrentTool;
@@ -262,7 +262,7 @@ private:
                              bool& hit) noexcept;
     void collectObjectSnapAxes (std::vector<float>& xs, std::vector<float>& ys,
                                 bool ignoreSelected) const;
-    /** Shape L/R/T/B only (no centres / speakers / mics) — used for snap tak. */
+    /** Shape L/R/T/B only (no centres / speakers / mics) - used for snap tak. */
     void collectAnnotationEdgeAxes (std::vector<float>& xs, std::vector<float>& ys,
                                     bool ignoreSelected) const;
     /** True when sel shares an edge (or aligned edge) with another annotation. */

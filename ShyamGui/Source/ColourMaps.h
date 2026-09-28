@@ -3,7 +3,7 @@
 #include <cmath>
 
 // ---------------------------------------------------------------------------
-// ColourMaps — maps a normalised float t in [0,1] to a juce::Colour.
+// ColourMaps - maps a normalised float t in [0,1] to a juce::Colour.
 // Primary SPL map: 7-color heatmap (black→blue→cyan→green→yellow→orange→red).
 // cmapIndex: 0=seven  1=turbo  2=hot  3=parula  4=gray  5=jet
 // ---------------------------------------------------------------------------
@@ -100,16 +100,16 @@ inline juce::Colour gray (float t)
 }
 
 // ---------------------------------------------------------------------------
-// dB floor is display range only — it does NOT stretch colours. A level of
+// dB floor is display range only - it does NOT stretch colours. A level of
 // -6 dB is always the same colour whether the floor is -36 or -54; the floor
 // just clips everything below it to the bottom of the scale.
 // ---------------------------------------------------------------------------
 
-// Design span of sevenColor / palette (0 … −36 dB).
+// Design span of sevenColor / palette (0 ... -36 dB).
 inline constexpr float kRelSplDesignSpanDB = 36.0f;
 inline constexpr float kRelSplStepDB       = 6.0f;
 
-// Continuous map: fixed dB→colour (0 → t=1, −36 → t=0). Floor only clips.
+// Continuous map: fixed dB→colour (0 → t=1, -36 → t=0). Floor only clips.
 inline float relDbToColourT (float dB, float floorDB) noexcept
 {
     if (floorDB < 0.0f && dB <= floorDB)

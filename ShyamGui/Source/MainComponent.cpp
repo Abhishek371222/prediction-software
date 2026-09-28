@@ -179,11 +179,11 @@ MainComponent::MainComponent (ProjectData project)
     btnHelp_.setTooltip ("Help");
     btnPrefsIcon_.setTooltip ("Preferences");
     btnMore_.setTooltip ("More options");
-    // Figma redesign: Info/Help/Settings form row 2's "Help" cluster —
+    // Figma redesign: Info/Help/Settings form row 2's "Help" cluster -
     // reparented into plotHeader_ so it can lay them out like every other
     // labeled cluster (icons + label + divider). btnMore_ has no Figma slot
     // and stays hidden (see resized()), so it keeps its MainComponent parent.
-    plotHeader_.setHelpIcons (btnPrefsIcon_, btnInfo_, btnHelp_);   // gear, info, ? — Figma order
+    plotHeader_.setHelpIcons (btnPrefsIcon_, btnInfo_, btnHelp_);   // gear, info, ? - Figma order
     addAndMakeVisible (btnMore_);
     btnPrefsIcon_.onClick = [this] { openPreferences(); };
     btnMore_.onClick      = [this] { showOverflowMenu(); };
@@ -216,7 +216,7 @@ MainComponent::MainComponent (ProjectData project)
     };
     plotHeader_.btnPencil_.onClick   = [this]
     {
-        // Radio-group untoggles also fire onClick — only act when Pencil turns ON.
+        // Radio-group untoggles also fire onClick - only act when Pencil turns ON.
         if (! plotHeader_.btnPencil_.getToggleState())
             return;
         applyPlotTool (RadiationPatternComponent::Tool::Pencil, true);
@@ -388,7 +388,7 @@ MainComponent::MainComponent (ProjectData project)
     headerStatus_.setMode (StatusStrip::Mode::Pill);
     statusStrip_.setMode (StatusStrip::Mode::RunInfo);
     // Figma redesign: "Ready" lives in row 2's ribbon (far right, same row
-    // as the tool icons), not the title row — reparent into plotHeader_.
+    // as the tool icons), not the title row - reparent into plotHeader_.
     plotHeader_.setReadyPill (headerStatus_,
                               [this] { return headerStatus_.preferredPillWidth(); });
     // ...and the red "SPL Heatmap | ..." caption belongs on the canvas's
@@ -446,7 +446,7 @@ MainComponent::MainComponent (ProjectData project)
         else
         {
             // Display-only params (db Floor / contour bands): recolour immediately
-            // and skip a full physics recompute — the relative field is unchanged.
+            // and skip a full physics recompute - the relative field is unchanged.
             const bool displayOnly =
                 std::abs (live.dBfloor - lastParams_.dBfloor) > 1.0e-6
                 || live.bandedSPL != lastParams_.bandedSPL
@@ -459,7 +459,7 @@ MainComponent::MainComponent (ProjectData project)
                 || live.useMeasuredDirectivity != lastParams_.useMeasuredDirectivity
                 || live.speakers.size() != lastParams_.speakers.size();
 
-            // Speakers compared lightly — full recompute still scheduled when unsure.
+            // Speakers compared lightly - full recompute still scheduled when unsure.
             bool speakersSame = ! physicsChanged
                 && live.speakers.size() == lastParams_.speakers.size();
             if (speakersSame)
@@ -498,7 +498,7 @@ MainComponent::MainComponent (ProjectData project)
             else if (! displayOnly)
                 scheduleRecompute(); // e.g. other sim flags without speaker/freq delta
             else
-                updateSettingsBar(); // floor / bands only — image already recoloured
+                updateSettingsBar(); // floor / bands only - image already recoloured
         }
     };
     controlPanel_.onRunClicked  = [this] { runSimulation(); };
@@ -515,7 +515,7 @@ MainComponent::MainComponent (ProjectData project)
         {
             reportStatus ("Limit reached: "
                           + juce::String (ControlPanel::kMaxSpeakers)
-                          + " Q21S units max — delete one to add another", false);
+                          + " Q21S units max - delete one to add another", false);
             return;
         }
         patternComp_.setAddSpeakerArmed (true);
@@ -544,7 +544,7 @@ MainComponent::MainComponent (ProjectData project)
             plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
             reportStatus ("Limit reached: "
                           + juce::String (ControlPanel::kMaxSpeakers)
-                          + " Q21S units max — delete one to add another", false);
+                          + " Q21S units max - delete one to add another", false);
             return;
         }
 
@@ -555,9 +555,9 @@ MainComponent::MainComponent (ProjectData project)
         const int n = (int) controlPanel_.getParams().speakers.size();
         const juce::String model = controlPanel_.activeModelName();
         reportStatus (n >= ControlPanel::kMaxSpeakers
-                          ? model + " placed — limit of "
+                          ? model + " placed - limit of "
                                 + juce::String (ControlPanel::kMaxSpeakers) + " reached"
-                          : model + " placed — click again to add another (Esc cancels)",
+                          : model + " placed - click again to add another (Esc cancels)",
                       true);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
@@ -632,7 +632,7 @@ MainComponent::MainComponent (ProjectData project)
     highlightViewBtn (currentView_);
     updatePlotChrome();
 
-    // Load the project's scene (may be empty — clean slate for new projects).
+    // Load the project's scene (may be empty - clean slate for new projects).
     controlPanel_.applyProject (project_);
 
     AppSettings::get().addChangeListener (this);
@@ -764,7 +764,7 @@ ProjectData MainComponent::currentProject() const
 juce::juce_wchar MainComponent::shortcutLetter (const juce::KeyPress& key)
 {
     // Caps Lock must not break Ctrl/Cmd+Z/Y. Prefer the physical key code, then
-    // the text character, then Ctrl letter codes (1=A … 26=Z) that some OSes
+    // the text character, then Ctrl letter codes (1=A ... 26=Z) that some OSes
     // report when a modifier is held. Always compare in lowercase.
     auto fromCtrlCode = [] (int v) -> juce::juce_wchar
     {
@@ -962,7 +962,7 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
         return true;
     }
 
-    // Prefer live modifiers — Caps Lock / drawing-tool focus can leave KeyPress mods stale.
+    // Prefer live modifiers - Caps Lock / drawing-tool focus can leave KeyPress mods stale.
     const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
     const bool chord = mods.isCommandDown() || mods.isCtrlDown();
     if (! chord || mods.isAltDown())
@@ -971,7 +971,7 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
     const int code = key.getKeyCode();
     const auto textCh = key.getTextCharacter();
 
-    // Ctrl+[ or Ctrl+\ — cancel current command (same as Esc for tools).
+    // Ctrl+[ or Ctrl+\ - cancel current command (same as Esc for tools).
     if (code == '[' || textCh == '[' || code == '\\' || textCh == '\\')
     {
         cancelCurrentCommand();
@@ -980,7 +980,7 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
 
     const auto letter = shortcutLetter (key);
 
-    // Ctrl/Cmd+S — save (works even while editing a text box).
+    // Ctrl/Cmd+S - save (works even while editing a text box).
     if (letter == 's')
     {
         saveProject();
@@ -1064,7 +1064,7 @@ void MainComponent::reportStatus (const juce::String& state, bool ready)
     statusStrip_.setStatus (state, ready);
     headerStatus_.setStatus (state, ready);
     // The pill sizes itself to its text, so the ribbon has to re-lay-out when
-    // the message changes — otherwise longer statuses stay clipped.
+    // the message changes - otherwise longer statuses stay clipped.
     plotHeader_.refreshStatusLayout();
 }
 
@@ -1123,7 +1123,7 @@ void MainComponent::dockTerminal()
 {
     if (terminalFloat_ == nullptr)
     {
-        // Already docked — still refresh chrome.
+        // Already docked - still refresh chrome.
         if (! commandTerminal_.getParentComponent())
             addAndMakeVisible (commandTerminal_);
         AppSettings::get().setTerminalUndocked (false);
@@ -1203,14 +1203,14 @@ MainComponent::TerminalResult MainComponent::armDrawCommand (const juce::String&
         terminalSessionKind_ = TerminalSessionKind::None;
         applyPlotTool (T::Pencil, false, false);
         preferTerminalFocus();
-        return TerminalResult::ok ("PENCIL — draw freehand on the plot (Esc cancels).");
+        return TerminalResult::ok ("PENCIL - draw freehand on the plot (Esc cancels).");
     }
     if (verb == "eraser")
     {
         terminalSessionKind_ = TerminalSessionKind::None;
         applyPlotTool (T::Eraser, false, false);
         preferTerminalFocus();
-        return TerminalResult::ok ("ERASER — drag on shapes to erase (Esc cancels).");
+        return TerminalResult::ok ("ERASER - drag on shapes to erase (Esc cancels).");
     }
     if (verb == "dist" || verb == "ruler")
     {
@@ -1337,7 +1337,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const ju
             return TerminalResult::fail ("Invalid point. Use x,y (e.g. 10,20).");
         const auto d = pt - terminalMoveBase_;
         if (patternComp_.onWillEdit) patternComp_.onWillEdit();
-        // World and annot space share metres on SPL view; polar uses normalized — still apply same delta in annot space.
+        // World and annot space share metres on SPL view; polar uses normalized - still apply same delta in annot space.
         patternComp_.moveSelectionBy (d, d);
         if (patternComp_.onEditCommitted) patternComp_.onEditCommitted();
         patternComp_.repaint();
@@ -1362,7 +1362,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const ju
             }
             return TerminalResult::fail ("Need at least 2 points before FINISH.");
         }
-        // Close option — only while PLINE session (not CIRCLE alias)
+        // Close option - only while PLINE session (not CIRCLE alias)
         if (lower == "close" || (lower == "c" && terminalSessionKind_ == TerminalSessionKind::Draw))
         {
             if (patternComp_.finishPolylineCommand (true))
@@ -1381,7 +1381,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const ju
         && patternComp_.getDrawShape() == RadiationPatternComponent::DrawShape::Line
         && patternComp_.drawSessionPointCount() >= 2)
     {
-        // LINE: Enter after 2+ points — already committed by feed; treat as finish
+        // LINE: Enter after 2+ points - already committed by feed; treat as finish
         applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
         terminalSessionKind_ = TerminalSessionKind::None;
         preferTerminalFocus();
@@ -1418,7 +1418,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const ju
         else if (shapeBefore == RadiationPatternComponent::DrawShape::Square)
             done = "Square created.";
         else if (shapeBefore == RadiationPatternComponent::DrawShape::TextBox)
-            done = "Text box placed — type in the plot.";
+            done = "Text box placed - type in the plot.";
         else if (shapeBefore == RadiationPatternComponent::DrawShape::Polyline)
             done = "Polyline created.";
 
@@ -1428,7 +1428,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalSessionLine (const ju
         return TerminalResult::endSession (done);
     }
 
-    // Still collecting points — AutoCAD-style next prompts
+    // Still collecting points - AutoCAD-style next prompts
     juce::String next = "Specify next point:";
     if (shapeBefore == RadiationPatternComponent::DrawShape::Line)
         next = "Specify next point:";
@@ -1556,12 +1556,12 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
     if (verb == "saveas")
     {
         saveProjectAs();
-        return TerminalResult::ok ("Save As…");
+        return TerminalResult::ok ("Save As...");
     }
     if (verb == "open")
     {
         openProjectInCurrentWindow();
-        return TerminalResult::ok ("Open project…");
+        return TerminalResult::ok ("Open project...");
     }
 
     if (verb == "run")
@@ -1641,7 +1641,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
             patternComp_.setAddMicArmed (true);
             applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
             preferTerminalFocus();
-            return TerminalResult::ok ("ADDMIC — click the plot to place a mic (Esc cancels).");
+            return TerminalResult::ok ("ADDMIC - click the plot to place a mic (Esc cancels).");
         }
         juce::Point<float> pt;
         if (! parseAnnotPoint (args, pt))
@@ -1658,7 +1658,7 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
             patternComp_.setAddSpeakerArmed (true);
             applyPlotTool (RadiationPatternComponent::Tool::Select, false, false);
             preferTerminalFocus();
-            return TerminalResult::ok ("ADDSPEAKER — click the plot to place a speaker (Esc cancels).");
+            return TerminalResult::ok ("ADDSPEAKER - click the plot to place a speaker (Esc cancels).");
         }
         juce::Point<float> pt;
         if (! parseAnnotPoint (args, pt))
@@ -1873,7 +1873,7 @@ void MainComponent::paint (juce::Graphics& g)
     const int bodyTop2 = headerH + Brand::UI::plotHeaderH;
     const int bottomTop = H - bottomH;
 
-    // Figma: flat regions, flush to each other — no rounded cards and no gaps.
+    // Figma: flat regions, flush to each other - no rounded cards and no gaps.
     // The sidebar is a light-grey tray; the bottom strip stays white.
     g.setColour (Brand::sidebarBg());
     if (sideW > 0)
@@ -1944,11 +1944,11 @@ void MainComponent::resized()
     const int centreW = juce::jmax (280, W - plotX);
 
     // Header row 1 (Figma redesign): logo + AutoSave on the left, title
-    // centred — nothing on the right. Stats/Project/More have no Figma slot;
+    // centred - nothing on the right. Stats/Project/More have no Figma slot;
     // hidden but fully intact in code (see reportStatus / showStatsPopup /
     // showProjectMenu / showOverflowMenu). Info/Help/Settings AND the
     // "Ready" pill all live in row 2's ribbon now (see setHelpIcons /
-    // setReadyPill in the constructor) — matching the Figma mock, where
+    // setReadyPill in the constructor) - matching the Figma mock, where
     // Ready sits in the same row as the tool icons, not the title row.
     const int rightPad = UiConfig::Scale::px (12);
     // Figma centres the 20px "Auto Save" checkbox on y=28.5 inside the 58px
@@ -2020,8 +2020,8 @@ void MainComponent::resized()
     juce::ignoreUnused (paramH);
     paramBar_.setBounds (0, 0, 0, 0);
 
-    // Figma redesign: the tool ribbon (plotHeader_) spans the FULL body width —
-    // above both the sidebar and the canvas, like one continuous two-row header —
+    // Figma redesign: the tool ribbon (plotHeader_) spans the FULL body width -
+    // above both the sidebar and the canvas, like one continuous two-row header -
     // instead of sitting only above the canvas. Sidebar + canvas share a lower
     // top, below that full-width strip.
     const int bodyTop        = titleH;            // ribbon sits flush under the title row
@@ -2031,7 +2031,7 @@ void MainComponent::resized()
     const int bodyH      = juce::jmax (80, bottomTop - bodyTop2);
 
     // Sidebar runs the full height from the header down to the window bottom
-    // (Figma y=132..1080) — the bottom strip only spans the canvas column.
+    // (Figma y=132..1080) - the bottom strip only spans the canvas column.
     const int sidebarBottom = H;
     const int sidebarH = juce::jmax (80, sidebarBottom - bodyTop2);
     const bool collapsed = AppSettings::get().sidebarCollapsed();
@@ -2055,7 +2055,7 @@ void MainComponent::resized()
         controlViewport_.setVisible (true);
         controlViewport_.setScrollBarThickness (UiConfig::Scale::px (8));
         // Content starts at the very top of the panel so section 1 sits level
-        // with the hamburger, which overlays the top-right corner — the old
+        // with the hamburger, which overlays the top-right corner - the old
         // reserved strip just left a band of empty grey above "1. FREQUENCY".
         const int panelH = juce::jmax (40, sidebarH);
         controlViewport_.setBounds (sideX, bodyTop2, sideW, panelH);
@@ -2070,7 +2070,7 @@ void MainComponent::resized()
     }
     btnSidebarToggle_.toFront (false);
 
-    // Tool ribbon — Figma draws it full-bleed: edge to edge, no side margin
+    // Tool ribbon - Figma draws it full-bleed: edge to edge, no side margin
     // and no rounded card, closed by a hairline along its bottom edge (drawn
     // in PlotHeaderBar::paint). Info/Settings/Help are this ribbon's own
     // "Help" cluster (see PlotHeaderBar::setHelpIcons / resized()).
@@ -2097,7 +2097,7 @@ void MainComponent::resized()
     // Red "SPL Heatmap | ..." caption: canvas top-left, as in the Figma mock
     // (it used to sit inside the ribbon and push every cluster to the right).
     {
-        // Figma: caption at x=357, y=147 — 17px in from the canvas's left edge
+        // Figma: caption at x=357, y=147 - 17px in from the canvas's left edge
         // and 15px below its top.
         auto& caption = plotHeader_.getTitleLabel();
         const int capPadX = UiConfig::Scale::px (13);
@@ -2121,7 +2121,7 @@ void MainComponent::resized()
 
     // Bottom strip (Figma y=979..1080, x=340..1920): "Last run" / "Elapsed"
     // stacked at the left, SAVE IMAGE (PNG) + EXPORT SPL (CSV) at the right.
-    // View Mode and Terminal have no slot in the mock — hidden, code intact.
+    // View Mode and Terminal have no slot in the mock - hidden, code intact.
     exportHeader_.setVisible (false);
     exportHeader_.setBounds (0, 0, 0, 0);
 
@@ -2229,7 +2229,7 @@ void MainComponent::applyResult (const SimResult& r)
     // how much unsaved work was pending. Report the actual save state.
     updateSaveIndicator();
     // Figma's bottom strip spells these "Last run : 11 JUL 2026 14:52:31" and
-    // "Elapsed : 1.5s" — spaced colon, uppercase month, no space before "s".
+    // "Elapsed : 1.5s" - spaced colon, uppercase month, no space before "s".
     statusStrip_.setLastRun ("Last run : "
         + juce::Time::getCurrentTime().formatted ("%d %b %Y %H:%M:%S").toUpperCase());
     statusStrip_.setElapsed ("Elapsed : " + juce::String (lastElapsedSec_, 1) + "s");
@@ -2734,7 +2734,7 @@ void MainComponent::refreshFrequencyResponse()
 
     // The sweep walks the currently-browsed model's own catalogue only; that
     // model's speakers must be probed at each swept Hz, so its own resolved
-    // frequency field is updated alongside p.frequency — the OTHER model's
+    // frequency field is updated alongside p.frequency - the OTHER model's
     // field (and therefore its speakers' rendered pattern) stays untouched.
     const int browsedModel = controlPanel_.getBrowsedModel();
 
@@ -3118,7 +3118,7 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
 {
     SimParams p = base;
     p.frequency = freq;
-    // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue —
+    // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue -
     // update only that model's resolved frequency so the other model's
     // speakers keep rendering at their own unrelated frequency.
     if (measSource_ == MeasurementData::BEM2in) p.frequencyBEM2inch = freq;
@@ -3249,12 +3249,12 @@ MeasuredSet MainComponent::referenceSetFor (int source) const
 {
     if (source == MeasurementData::BEM2in)      return measuredBEM2inch_;
     if (source == MeasurementData::OpenField) return measuredQ21S_;
-    // Legacy Room — not part of the always-loaded pair (no Speaker::model
+    // Legacy Room - not part of the always-loaded pair (no Speaker::model
     // ever selects it); load on demand only if explicitly chosen.
     return MeasurementData::loadMeasurements (MeasurementData::folderForSource (source), source);
 }
 
-// Q21S and BEM2inch are always both (re)loaded together — a scene can mix
+// Q21S and BEM2inch are always both (re)loaded together - a scene can mix
 // units of either, so neither model's data may depend on which one the
 // "Measurement set" reference view (section 4) currently shows.
 void MainComponent::reloadAllMeasurements()
@@ -3310,13 +3310,13 @@ void MainComponent::setMeasurementDistance (float distanceM)
     updateSettingsBar();
 
     // UI distance drives Measured Polar only. SPL prediction keeps the far-field
-    // (≈2 m) pattern — no need to rebuild engine tables or recompute.
+    // (≈2 m) pattern - no need to rebuild engine tables or recompute.
     if (currentView_ == ViewMode::MeasuredPolar)
         patternComp_.repaint();
 }
 
 // Section 4's "Measurement set" now only selects which device the Measured
-// Polar reference view shows. It no longer gates the engine — every placed
+// Polar reference view shows. It no longer gates the engine - every placed
 // speaker already simulates with its own model's directivity (both are
 // always loaded), so switching this never needs a heatmap recompute.
 void MainComponent::setMeasurementSource (int src)

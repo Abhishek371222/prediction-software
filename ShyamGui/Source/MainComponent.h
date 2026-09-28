@@ -16,7 +16,7 @@
 #include "CommandTerminal.h"
 
 // ---------------------------------------------------------------------------
-// MainComponent — owns all sub-panels, runs AcousticEngine::compute on a
+// MainComponent - owns all sub-panels, runs AcousticEngine::compute on a
 // background thread, and keeps the scene/renderer/info panels in sync.
 // Edits are debounced via a Timer so dragging sliders or speakers stays
 // responsive; switching view mode only re-colours the cached result.
@@ -207,7 +207,7 @@ private:
     // (measuredQ21S_/measuredBEM2inch_ + their own directivity tables below) so
     // a scene can mix units of either model, each simulated with its own
     // data. measured_/measSource_/measDir_ track only which one is shown by
-    // the "Measurement set" Measured Polar reference view — they no longer
+    // the "Measurement set" Measured Polar reference view - they no longer
     // gate what the engine uses (see AcousticEngine::Speaker::model).
     MeasuredSet  measured_;
     MeasuredSet  measuredQ21S_, measuredBEM2inch_;
@@ -220,7 +220,7 @@ private:
     void         reloadAllMeasurements();      // (re)loads both models + their directivity tables
     MeasuredSet  referenceSetFor (int source) const;
 
-    // Per-frequency directivity tables, one array per device, always current —
+    // Per-frequency directivity tables, one array per device, always current -
     // fed into SimParams together every recompute (see run()) so each speaker
     // can pick its own model's table; never merged into one shared table.
     std::vector<DirectivityPattern> directivityQ21STables_, directivityBEM2inchTables_;

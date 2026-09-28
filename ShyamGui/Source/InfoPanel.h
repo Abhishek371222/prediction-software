@@ -3,7 +3,7 @@
 #include "AcousticEngine.h"
 
 // ---------------------------------------------------------------------------
-// InfoPanel — read-only physics & scene summary (world, frequency/wavelength,
+// InfoPanel - read-only physics & scene summary (world, frequency/wavelength,
 // active-speaker count, and the currently selected speaker's parameters).
 // ---------------------------------------------------------------------------
 class InfoPanel : public juce::Component

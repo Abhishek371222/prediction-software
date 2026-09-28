@@ -8,7 +8,7 @@
 #include <cmath>
 
 // ---------------------------------------------------------------------------
-// Frequency Response plot — one curve per mic across kSupportedFrequencies.
+// Frequency Response plot - one curve per mic across kSupportedFrequencies.
 // Curves are relative to the reference mic (*). Hosted in a small floating
 // window (MicFrequencyResponseWindow) so the main UI layout is unchanged.
 // ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Small floating FR window — shown while mics exist; does not resize the plot.
+// Small floating FR window - shown while mics exist; does not resize the plot.
 // ---------------------------------------------------------------------------
 class MicFrequencyResponseWindow : public juce::DocumentWindow
 {

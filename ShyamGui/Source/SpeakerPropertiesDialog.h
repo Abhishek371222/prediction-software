@@ -3,6 +3,7 @@
 #include "BrandTheme.h"
 #include "AppSettings.h"
 #include "AcousticEngine.h"
+#include "Speaker3DView.h"
 
 // ---------------------------------------------------------------------------
 // Read-only speaker Properties panel (name, cabinet size, position, DSP).
@@ -29,12 +30,12 @@ public:
         // Each model carries its own enclosure now, so these are the selected
         // unit's real dimensions rather than Q21S's shown under every name.
         const auto cab = cabinetFor (spk.model);
-        addRow ("Dimensions (W × H × D)",
-               Units::dim (cab.widthM * 1000.0) + " × "
-               + Units::dim (cab.heightM * 1000.0) + " × "
+        addRow ("Dimensions (W x H x D)",
+               Units::dim (cab.widthM * 1000.0) + " x "
+               + Units::dim (cab.heightM * 1000.0) + " x "
                + Units::dim (cab.depthM * 1000.0));
-        addRow ("Plan footprint (W × D)",
-               Units::dim (cab.widthM * 1000.0) + " × "
+        addRow ("Plan footprint (W x D)",
+               Units::dim (cab.widthM * 1000.0) + " x "
                + Units::dim (cab.depthM * 1000.0));
         addRow ("Position",
                "(" + juce::String (Units::metresToDisplay (spk.x), 2) + ", "
@@ -42,10 +43,30 @@ public:
         addRow ("Gain", juce::String (spk.gainDB, 0) + " dB");
         addRow ("Delay", juce::String (spk.delayMs, 1) + " ms");
         addRow ("Polarity", spk.polarityInverted ? "Reverse" : "Normal");
-        addRow ("Orientation", spk.reverseOrientation ? "Reverse (−x)" : "Forward (+x)");
+        addRow ("Orientation", spk.reverseOrientation ? "Reverse (-x)" : "Forward (+x)");
         addRow ("Enabled", spk.enabled ? "Yes" : "No");
 
-        setSize (360, 44 + (int) rows_.size() * 26 + 16);
+        // The rows give the numbers; this gives the shape. A plan view can
+        // never show height, so the solid is the only place all three
+        // dimensions are visible at once.
+        view3dBtn_.setButtonText ("View in 3D");
+        view3dBtn_.setColour (juce::TextButton::buttonColourId, Brand::accent());
+        view3dBtn_.setColour (juce::TextButton::textColourOffId, Brand::onAccent());
+        view3dBtn_.onClick = [this, m = spk.model, name = juce::String (speakerModelName (spk.model))]
+        {
+            auto* body = new Speaker3DView (m);
+            juce::DialogWindow::LaunchOptions o;
+            o.content.setOwned (body);
+            o.dialogTitle = name + " - 3D view";
+            o.dialogBackgroundColour = Brand::panel();
+            o.escapeKeyTriggersCloseButton = true;
+            o.useNativeTitleBar = true;
+            o.resizable = true;
+            o.launchAsync();
+        };
+        addAndMakeVisible (view3dBtn_);
+
+        setSize (360, 44 + (int) rows_.size() * 26 + 16 + 40);
     }
 
     void paint (juce::Graphics& g) override
@@ -67,6 +88,8 @@ public:
             row->val.setBounds (line);
             r.removeFromTop (2);
         }
+        r.removeFromTop (6);
+        view3dBtn_.setBounds (r.removeFromTop (28));
     }
 
 private:
@@ -92,5 +115,6 @@ private:
     }
 
     juce::Label title_;
+    juce::TextButton view3dBtn_;
     juce::OwnedArray<Row> rows_;
 };

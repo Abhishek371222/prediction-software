@@ -138,7 +138,7 @@ void PreferencesComponent::resized()
     appearanceHdr_.setBounds (pad, y, W, secHdrH);
     y += UiConfig::Scale::px (28);
     themeLabel_.setBounds (pad, y, labelW, rowH);
-    // Dark theme hidden for this release (light-only exe) — Light takes
+    // Dark theme hidden for this release (light-only exe) - Light takes
     // Dark's old slot instead of leaving a gap. AppSettings::setTheme()
     // ignores Dark regardless, so this button is now purely informational.
     themeDarkBtn_.setVisible (false);

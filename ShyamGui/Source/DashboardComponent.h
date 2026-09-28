@@ -5,7 +5,7 @@
 #include "ProjectData.h"
 
 // ---------------------------------------------------------------------------
-// DashboardComponent — the launch screen ("Home Screen" in the Figma file).
+// DashboardComponent - the launch screen ("Home Screen" in the Figma file).
 // Two views inside one centred card: a menu (New / Open / Recent) and the
 // new-project details form.
 // ---------------------------------------------------------------------------

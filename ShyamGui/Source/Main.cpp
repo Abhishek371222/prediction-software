@@ -104,7 +104,7 @@ public:
             setContentOwned (dash, true);
             setResizable (true, true);
 
-            // Free resize within sensible bounds — no fixed aspect ratio, so the
+            // Free resize within sensible bounds - no fixed aspect ratio, so the
             // window can be sized/maximised to any monitor/resolution and the
             // layout (see DashboardComponent::resized()) adapts to whatever
             // width/height it's given, down to small 1024x768-class desktops.

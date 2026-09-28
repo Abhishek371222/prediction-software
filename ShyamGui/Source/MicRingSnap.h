@@ -90,7 +90,7 @@ namespace MicRingSnap
     }
 
     /** Angle of (wx,wy) about speaker, degrees, relative to Q21S facing.
-        0° = forward (+X, or −X when reverseOrientation), CCW like the polar / heatmap. */
+        0° = forward (+X, or -X when reverseOrientation), CCW like the polar / heatmap. */
     inline float angleDegFromSpeaker (float wx, float wy, const Speaker& s) noexcept
     {
         const float dx = wx - s.x;

@@ -330,7 +330,7 @@ void DashboardComponent::paint (juce::Graphics& g)
 
 void DashboardComponent::resized()
 {
-    // Keep the app-wide scale coherent for this window too — the LookAndFeel
+    // Keep the app-wide scale coherent for this window too - the LookAndFeel
     // sizes button text from it.
     Brand::UI::applyWindowScale (getWidth(), getHeight());
 

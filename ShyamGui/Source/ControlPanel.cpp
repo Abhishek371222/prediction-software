@@ -56,7 +56,7 @@ ControlPanel::ControlPanel()
         addAndMakeVisible (b);
     };
 
-    // Clean slate — no units until the user adds one or applies a layout/preset.
+    // Clean slate - no units until the user adds one or applies a layout/preset.
     selected_ = -1;
 
     auto addSection = [&] (SectionHeader& h, bool& open)
@@ -105,14 +105,14 @@ ControlPanel::ControlPanel()
     };
     addAndMakeVisible (freqBox_);
 
-    // Frequency stepping via < > removed — v1.1 uses a full-width dropdown only.
+    // Frequency stepping via < > removed - v1.1 uses a full-width dropdown only.
     freqPrevBtn_.setVisible (false);
     freqNextBtn_.setVisible (false);
 
     // --- Speaker selector --------------------------------------------------
     addSection (speakersHdr_, secSpeakersOpen_);
 
-    // Model picker — drives measurement source + frequency catalogue.
+    // Model picker - drives measurement source + frequency catalogue.
     configTxt (speakerModelLabel_, "Speaker model");
     speakerModelBox_.addItem ("Q21S",   1);   // source 0
     speakerModelBox_.addItem ("BEM 2inch", 3);   // source 2
@@ -335,10 +335,10 @@ ControlPanel::ControlPanel()
         applyArrayPreset (kind, count);
     };
 
-    // RESET / CLEAR — centred text links at the bottom (no Run Simulation in v1.1).
+    // RESET / CLEAR - centred text links at the bottom (no Run Simulation in v1.1).
     // Figma draws "Set to Default" / "Clear All" as ordinary filled sidebar
     // buttons (#F6F6F6 fill, hairline border, 2px radius, black centred
-    // label) — not the borderless text links this used to use.
+    // label) - not the borderless text links this used to use.
     auto styleTextLink = [] (juce::TextButton& b, const juce::String& id)
     {
         juce::ignoreUnused (id);
@@ -443,7 +443,7 @@ void ControlPanel::setMeasurementSource (int idx)
 
     // Target frequency: if this model was visited before, restore its saved Hz.
     // If first visit (savedFreqHz_ == -1), pick the nearest available frequency
-    // to where the user just was — so the heatmap doesn't jump unnecessarily.
+    // to where the user just was - so the heatmap doesn't jump unnecessarily.
     const double saved = (idx >= 0 && idx < 3) ? savedFreqHz_[idx] : -1.0;
     double targetHz = kSupportedFrequencies[0];
     if (saved >= 0.0)
@@ -478,7 +478,7 @@ juce::String ControlPanel::activeModelName() const
 void ControlPanel::updateModelDependentLabels()
 {
     // "Add" tooltip and section 2's header describe what the NEXT unit will
-    // be (section 2's own browsing model) — the list underneath may show a
+    // be (section 2's own browsing model) - the list underneath may show a
     // mix of Q21S/BEM2inch units since rebuildSpeakerBox() labels each by its
     // own tag, not this one.
     const juce::String name = activeModelName();
@@ -494,8 +494,8 @@ void ControlPanel::rebuildSpeakerBox()
 {
     updatingUI_ = true;
     speakerBox_.clear (juce::dontSendNotification);
-    // Each unit is labelled by its OWN model tag — never the section-2
-    // browsing selection — so a mixed scene's list never mislabels units.
+    // Each unit is labelled by its OWN model tag - never the section-2
+    // browsing selection - so a mixed scene's list never mislabels units.
     for (int i = 0; i < (int) speakers_.size(); ++i)
         speakerBox_.addItem (juce::String (speakerModelTag (speakers_[(size_t) i].model))
                                 + "-" + juce::String (speakerModelOrdinal (speakers_, i)), i + 1);
@@ -521,7 +521,7 @@ void ControlPanel::refreshEditors()
         polarityToggle_.setToggleState    (s.polarityInverted,   juce::dontSendNotification);
         orientationToggle_.setToggleState (s.reverseOrientation, juce::dontSendNotification);
         enabledToggle_.setToggleState     (s.enabled,            juce::dontSendNotification);
-        // Section 3's header always names the SELECTED unit's own model —
+        // Section 3's header always names the SELECTED unit's own model -
         // never the section-2 browsing selection, which may differ.
         editHdr_.setTitle ("3. Selected " + juce::String (speakerModelName (s.model)));
     }
@@ -785,7 +785,7 @@ void ControlPanel::pushSharedEdit()
     const bool enabled  = enabledToggle_.getToggleState();
 
     // Shared acoustic params apply to every speaker currently selected on the plot.
-    // Do not touch X/Y here — slider step (0.1 m) would break object/grid snaps.
+    // Do not touch X/Y here - slider step (0.1 m) would break object/grid snaps.
     std::vector<int> targets = selectedSpeakers_;
     if (targets.empty())
         targets.push_back (selected_);
@@ -946,7 +946,7 @@ void ControlPanel::resetToDefaults()
     savedFreqHz_[2] = -1.0;
     simFrequencyHz_ = -1.0;   // next speaker placed reseeds the scene frequency
 
-    // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz —
+    // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz -
     // fixes a stale-catalogue bug if the user was browsing BEM2inch (section 2)
     // when Reset was clicked.
     setMeasurementSource (0);
@@ -1065,7 +1065,7 @@ SimParams ControlPanel::getParams() const
     p.colourmap  = 0;
     p.bandedSPL  = bandsToggle_.getToggleState();
     p.octaveSmoothing = true; // always on (UI control removed)
-    p.useMeasuredDirectivity = true; // always on — Q21S BEM polars drive heatmap + Directivity
+    p.useMeasuredDirectivity = true; // always on - Q21S BEM polars drive heatmap + Directivity
     p.speakers   = speakers_;
     return p;
 }
@@ -1301,7 +1301,7 @@ void ControlPanel::resized()
         y += rowH + gap;
     };
     // Every row helper already advances by its own trailing `gap`, so a section
-    // break only needs the difference — otherwise the two stack and each
+    // break only needs the difference - otherwise the two stack and each
     // section drifts further below its Figma position than the last.
     auto sectionBreak = [&] () { y += juce::jmax (0, secGap - gap); };
 
@@ -1385,7 +1385,7 @@ void ControlPanel::resized()
     measDistBox_.setVisible (false);
     sectionBreak();
 
-    // 5. Workspace — no counterpart in the Figma mock (it stops at SIMULATION),
+    // 5. Workspace - no counterpart in the Figma mock (it stops at SIMULATION),
     // so the whole section is hidden. Header/toggle and their handlers remain.
     workspaceHdr_.setVisible (false);
     workspaceHdr_.setBounds (0, 0, 0, 0);
@@ -1404,7 +1404,7 @@ void ControlPanel::resized()
     layoutRotSlider_.setVisible (false);
     layoutOpacitySlider_.setVisible (false);
 
-    // 6. Array Presets — removed from UI
+    // 6. Array Presets - removed from UI
     presetHdr_.setVisible (false);
     presetBox_.setVisible (false);
     applyPresetBtn_.setVisible (false);

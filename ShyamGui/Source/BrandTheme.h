@@ -5,7 +5,7 @@
 #include "EmbeddedAssets.h"
 
 // ===========================================================================
-// Atomik brand theme — central palette, fonts (Montserrat + Space Mono) and a
+// Atomik brand theme - central palette, fonts (Montserrat + Space Mono) and a
 // LookAndFeel that applies them app-wide.
 //
 // Brand / chrome tokens (product spec):
@@ -71,7 +71,7 @@ namespace Brand
         p.muted         = juce::Colour (0xffb8b8bc);
         p.onBtn         = juce::Colour (0xff000000);
         p.plotBg        = juce::Colour (0xff1c1c1c);
-        p.plotGrid      = juce::Colour (0x1affffff);   // #FFFFFF @ ~10% — softer on dark heatmap
+        p.plotGrid      = juce::Colour (0x1affffff);   // #FFFFFF @ ~10% - softer on dark heatmap
         p.plotTitle     = juce::Colour (0xfffafafa);
         p.axisLabel     = juce::Colour (0xffffffff);
         p.activeLabel   = juce::Colour (0xfffffafa);
@@ -195,7 +195,7 @@ namespace Brand
         return fill.interpolatedWith (juce::Colours::black, 0.12f);
     }
     constexpr float boxStroke = controlBorderPx;
-    // Typography — aliases UiTextConfig.h (edit sizes in UiTextConfig.h only).
+    // Typography - aliases UiTextConfig.h (edit sizes in UiTextConfig.h only).
     namespace Type
     {
         constexpr float appTitle           = UiConfig::FontSize::appTitle;
@@ -252,7 +252,7 @@ namespace Brand
         constexpr float prefsNote          = UiConfig::FontSize::prefsNote;
     }
 
-    // Layout metrics — scaled at runtime from UiTextConfig baseline (1340 x 820).
+    // Layout metrics - scaled at runtime from UiTextConfig baseline (1340 x 820).
     namespace UI
     {
         inline float scale = 1.0f;
@@ -364,7 +364,7 @@ namespace Brand
 
         inline float scaledFont (float basePx) { return basePx * scale; }
     }
-    // Resolve bundled Assets portably (walk up from CWD / exe — works on macOS).
+    // Resolve bundled Assets portably (walk up from CWD / exe - works on macOS).
     inline juce::File resolveProjectChild (const juce::String& rel,
                                            const juce::File& legacyDevPath)
     {
@@ -476,7 +476,7 @@ namespace Brand
     // Logical names used when building Font objects below.
     inline const char* monoName() { return "Space Mono"; }
 
-    // Montserrat weight helpers — LookAndFeel maps these names to bundled TTFs.
+    // Montserrat weight helpers - LookAndFeel maps these names to bundled TTFs.
     inline juce::Font tech (float height, bool bold = false)   // Regular (or Bold if flagged)
     {
         if (bold)
@@ -804,7 +804,7 @@ namespace Brand
             setColour (juce::ComboBox::outlineColourId,            controlBorder());
             setColour (juce::ComboBox::arrowColourId,              onBtnIn());
 
-            // Slider / control value boxes are light fills — ink must stay dark while typing.
+            // Slider / control value boxes are light fills - ink must stay dark while typing.
             setColour (juce::Slider::textBoxTextColourId,          onBtnIn());
             setColour (juce::Slider::textBoxBackgroundColourId,    btnIn());
             setColour (juce::Slider::textBoxOutlineColourId,       controlBorder());
@@ -956,7 +956,7 @@ namespace Brand
 
             const bool horiz = (style == juce::Slider::LinearHorizontal);
             // Figma draws the progress side as a chunky pill and leaves only a
-            // hairline for the remainder, so the two need different weights —
+            // hairline for the remainder, so the two need different weights -
             // one shared track height rendered both as a thin line.
             const float trackH = 2.0f;    // unfilled remainder
             const float fillH  = 6.5f;    // filled progress pill
@@ -1077,7 +1077,7 @@ namespace Brand
             l->setColour (juce::Label::backgroundColourId,          btnIn());
             l->setColour (juce::Label::outlineColourId,             controlBorder());
             l->setColour (juce::Label::textColourId,                onBtnIn());
-            // Active editor inherits these — without them, dark-theme defaultText (white)
+            // Active editor inherits these - without them, dark-theme defaultText (white)
             // paints white-on-white inside the value box.
             l->setColour (juce::Label::textWhenEditingColourId,     onBtnIn());
             l->setColour (juce::TextEditor::textColourId,           onBtnIn());
@@ -1106,7 +1106,7 @@ namespace Brand
                 g.setColour (label.findColour (juce::Label::textColourId));
                 g.setFont (getLabelFont (label));
                 const auto textArea = getLabelBorderSize (label).subtractedFrom (label.getLocalBounds());
-                // Labels that opt out of shrinking (scale == 1) must never ellipsize —
+                // Labels that opt out of shrinking (scale == 1) must never ellipsize -
                 // header version "v1.3.0" was clipping to "v1..." inside JUCE padding.
                 if (label.getMinimumHorizontalScale() >= 0.999f)
                     g.drawText (label.getText(), textArea, label.getJustificationType(), false);
@@ -1160,7 +1160,7 @@ namespace Brand
             const auto font = enabledLbl ? techMed (fontSize)
                             : sidebar   ? tech (fontSize)
                                         : tech (fontSize);
-            // UI::tickSize is already window-scaled — do not multiply by UI::scale again.
+            // UI::tickSize is already window-scaled - do not multiply by UI::scale again.
             const float tickScale = headerBar ? UiConfig::Control::headerTickScale
                                              : UiConfig::Control::sidebarTickScale;
             const int maxSide = juce::jmax (1, button.getHeight() - 2);
@@ -1277,7 +1277,7 @@ namespace Brand
                             bool isMouseOver, bool isMouseDown) override
         {
             juce::ignoreUnused (bar);
-            // Transparent track — pill floats over the panel background.
+            // Transparent track - pill floats over the panel background.
             if (thumbSize <= 0)
                 return;
 

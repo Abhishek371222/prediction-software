@@ -3,8 +3,8 @@
 #include <complex>
 
 // ---------------------------------------------------------------------------
-// Speaker — a single subwoofer in the 2D world (pure data, no JUCE).
-// Q21S cabinet: W 750 mm × H 784 mm × D 917 mm (plan footprint = W × D).
+// Speaker - a single subwoofer in the 2D world (pure data, no JUCE).
+// Q21S cabinet: W 750 mm x H 784 mm x D 917 mm (plan footprint = W x D).
 // ---------------------------------------------------------------------------
 struct Speaker
 {
@@ -24,7 +24,7 @@ struct Speaker
     float tiltDeg     = 0.0f;   // down-tilt, degrees
     // Which device this unit is: 0 = Q21S, 2 = BEM2inch (matches
     // MeasurementData::Source / AcousticEngine::MeasurementSourceId). Each
-    // unit is simulated with its OWN model's directivity — a scene can freely
+    // unit is simulated with its OWN model's directivity - a scene can freely
     // mix both; they are never blended into one shared pattern.
     int   model              = 0;
 };
@@ -57,7 +57,7 @@ inline int speakerModelOrdinal (const std::vector<Speaker>& all, int index) noex
     return n;
 }
 
-// Q21S product cabinet dimensions (metres). Plan view uses width × depth.
+// Q21S product cabinet dimensions (metres). Plan view uses width x depth.
 // Q21S enclosure, manufacturer figures: 1546 x 679 x 1024 mm
 // (60.86" x 26.73" x 40.31"), read in the pro-audio convention Height x
 // Width x Depth. Width 679 mm is a single 21" driver plus baffle either
@@ -75,9 +75,9 @@ namespace Q21SCabinet
     // 60.86 x 26.73 x 40.31 in. These were previously mapped as H x W x D,
     // which swapped width and height and drew the plan footprint less than
     // half its true width.
-    constexpr float widthM  = 1.546f;   // 1546 mm — left/right, across the baffle
-    constexpr float heightM = 0.679f;   // 679 mm — vertical
-    constexpr float depthM  = 1.024f;   // 1024 mm — front/back (firing axis)
+    constexpr float widthM  = 1.546f;   // 1546 mm - left/right, across the baffle
+    constexpr float heightM = 0.679f;   // 679 mm - vertical
+    constexpr float depthM  = 1.024f;   // 1024 mm - front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
 }
 
@@ -88,9 +88,9 @@ namespace Q21SCabinet
 // have flattened its near field over half a metre of empty air.
 namespace BEM2inchCabinet
 {
-    constexpr float widthM  = 0.459f;    // 459 mm — left/right, across the mouth
-    constexpr float heightM = 0.2765f;   // 276.5 mm — vertical
-    constexpr float depthM  = 0.150f;    // 150 mm — front/back (firing axis)
+    constexpr float widthM  = 0.459f;    // 459 mm - left/right, across the mouth
+    constexpr float heightM = 0.2765f;   // 276.5 mm - vertical
+    constexpr float depthM  = 0.150f;    // 150 mm - front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;
 }
 
@@ -135,7 +135,7 @@ struct BemFieldPattern
     bool               ok = false;
 };
 
-// Per-model frequency catalogues — native BEM xlsx bands only (no interpolated
+// Per-model frequency catalogues - native BEM xlsx bands only (no interpolated
 // extras). Q21S and BEM2inch are two completely separate devices: each keeps
 // its own array below and the two are never merged or shared.
 static constexpr double kQ21SFrequencies[] = {
@@ -154,7 +154,7 @@ static constexpr int kNumBEM2inchFrequencies =
 // this header doesn't need to include MeasurementData.h).
 enum class MeasurementSourceId { Q21S = 0, Room = 1, BEM2in = 2 };
 
-// Isolated per-model catalogue lookup — never returns a blended list.
+// Isolated per-model catalogue lookup - never returns a blended list.
 inline void frequencyCatalogue (int source, const double*& freqs, int& count) noexcept
 {
     if (source == (int) MeasurementSourceId::BEM2in)
@@ -170,7 +170,7 @@ inline void frequencyCatalogue (int source, const double*& freqs, int& count) no
 }
 
 // UI catalogue = the currently active model's native band list only. Repointed
-// by setActiveFrequencyCatalogue() whenever the measurement source changes —
+// by setActiveFrequencyCatalogue() whenever the measurement source changes -
 // the previous model's array is fully swapped out, never merged (single
 // active pointer, so the two devices' frequencies cannot collide at runtime).
 extern const double* kSupportedFrequencies;
@@ -227,8 +227,8 @@ struct SimParams
 
     std::vector<Speaker> speakers;
 
-    // Measured BEM directivity tables, one array per device — always applied
-    // (useMeasuredDirectivity is forced on — no UI toggle). Each Speaker picks
+    // Measured BEM directivity tables, one array per device - always applied
+    // (useMeasuredDirectivity is forced on - no UI toggle). Each Speaker picks
     // its table by its own `model` field (directivity = Q21S/source 0,
     // directivityBEM2inch = source 2); the engine never blends the two.
     std::vector<DirectivityPattern> directivity;
@@ -273,14 +273,14 @@ struct SimResult
     int    measuredDirectivityHz   = 0;       // which reading frequency was used (0 = none)
 
     // When true, splDB was built from an absolute BEM mid-plane stamp (unused
-    // in the product path — full-world measured-directivity simulation instead).
+    // in the product path - full-world measured-directivity simulation instead).
     bool   usedBemField = false;
     double bemOriginX   = 0.0;
     double bemOriginY   = 0.0;
 };
 
 // ---------------------------------------------------------------------------
-// AcousticEngine — BEM polar × 1/r over the full world, coherent array sum.
+// AcousticEngine - BEM polar x 1/r over the full world, coherent array sum.
 //
 // Each enabled speaker uses ITS OWN model's measured BEM directivity D(θ) and
 // on-axis dB SPL at R_ref (Q21S and BEM2inch units may coexist in one scene).
@@ -292,7 +292,7 @@ class AcousticEngine
 public:
     static SimResult compute (const SimParams& p);
 
-    // Point probe (no full grid). intensityDb = 10·log10(I); absDb when measured.
+    // Point probe (no full grid). intensityDb = 10-log10(I); absDb when measured.
     // Used for Frequency Response curves across mics / frequencies.
     static bool sampleIntensityAt (const SimParams& p, float x, float y,
                                    float& intensityDb, float& absDb);

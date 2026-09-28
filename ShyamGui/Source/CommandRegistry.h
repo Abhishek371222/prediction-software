@@ -3,7 +3,7 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// CommandRegistry — single source of truth for canonical CAD commands + aliases.
+// CommandRegistry - single source of truth for canonical CAD commands + aliases.
 // Aliases resolve to the same canonical verb the host already handles.
 // Unsupported AutoCAD commands are intentionally omitted (not registered).
 // ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ namespace CommandRegistry
         static const char* aOpacity[] = { "OP", nullptr };
         static const char* aAddMic[]  = { "MIC", nullptr };
         static const char* aAddSpk[]  = { "SPK", "SP", "SPEAKER", nullptr };
-        static const char* aCopy[]    = { nullptr }; // clipboard COPY — no CO (AutoCAD displace COPY N/A)
+        static const char* aCopy[]    = { nullptr }; // clipboard COPY - no CO (AutoCAD displace COPY N/A)
         static const char* aNone[]    = { nullptr };
 
         static const Entry kTable[] = {
@@ -118,7 +118,7 @@ namespace CommandRegistry
             { "ERASER",  aEraser, "Eraser tool", false },
             { "COLOR",   aColor,  "Draw colour picker", false },
             { "COLOUR",  aColor,  "Draw colour picker", false },
-            { "OPACITY", aOpacity,"Set fill opacity 0–100", false },
+            { "OPACITY", aOpacity,"Set fill opacity 0-100", false },
             { "ADDMIC",  aAddMic, "Arm mic place (or ADDMIC x,y)", false },
             { "ADDSPEAKER", aAddSpk,"Arm speaker place (or SPK x,y)", false },
         };
@@ -166,7 +166,7 @@ namespace CommandRegistry
     inline juce::String helpText()
     {
         juce::String s;
-        s << "Atomik Acoustic Simulation Engine — command line\n"
+        s << "Atomik Acoustic Simulation Engine - command line\n"
           << "Short form and full name run the same command.\n"
           << "\n"
           << "DRAW\n"

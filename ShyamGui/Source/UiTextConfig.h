@@ -4,7 +4,7 @@
 // UI TEXT & LAYOUT CONTROL PANEL
 // =============================================================================
 // Change numbers here, rebuild (Release), and the whole app updates.
-// This file is constants only — no logic. BrandTheme.h and UI components
+// This file is constants only - no logic. BrandTheme.h and UI components
 // read these values.
 // =============================================================================
 
@@ -25,7 +25,7 @@ namespace UiConfig
     constexpr bool showViewSwitcher = false;
 
     // -------------------------------------------------------------------------
-    // RESPONSIVE SCALE — baseline = default window (1340 x 820, scale 1.0)
+    // RESPONSIVE SCALE - baseline = default window (1340 x 820, scale 1.0)
     // Smaller MacBook / laptop windows may shrink to minFactor; larger scale up.
     // -------------------------------------------------------------------------
     namespace Scale
@@ -104,17 +104,17 @@ namespace UiConfig
         // Layout row-height bumps below keep the same compact/CAD look at a size
         // that's actually readable without feeling bulky.
         constexpr float sectionHeader       = 13.0f;
-        // Field labels: "X Position (m)", "Grid Resolution", checkbox text, …
+        // Field labels: "X Position (m)", "Grid Resolution", checkbox text, ...
         constexpr float fieldLabel          = 13.0f;
         // Slider numeric boxes (mono) and info-panel value column (right side)
         constexpr float fieldValue          = 13.0f;
-        // Info-panel row keys (left column) — usually same as fieldLabel
+        // Info-panel row keys (left column) - usually same as fieldLabel
         constexpr float infoKey             = 13.0f;
 
         // --- Plot chrome -----------------------------------------------------
-        // Title above heatmap: "SPL Heatmap | 2 devices | 50 Hz | …"
+        // Title above heatmap: "SPL Heatmap | 2 devices | 50 Hz | ..."
         constexpr float plotTitle           = 11.5f;
-        // Axis tick numbers along plot edges (0 m, 10 m, 20 m …)
+        // Axis tick numbers along plot edges (0 m, 10 m, 20 m ...)
         constexpr float plotGridNumber      = 11.5f;
         // Secondary plot axis / annotation text
         constexpr float plotAxis            = 11.5f;
@@ -140,8 +140,8 @@ namespace UiConfig
         constexpr float bottomBarButton       = 11.5f;
         // View tile captions (legacy icon tiles)
         constexpr float viewTileCaption       = 11.0f;
-        // Status strip: "Ready", "Last run: …", "Elapsed: …"
-        // Bottom strip "Last run : …" / "Elapsed : …" and the ribbon's Ready
+        // Status strip: "Ready", "Last run: ...", "Elapsed: ..."
+        // Bottom strip "Last run : ..." / "Elapsed : ..." and the ribbon's Ready
         // pill. Calibrated against the Figma render's ink width (see the
         // sidebar note above for why this isn't just the CSS px value).
         constexpr float statusBar             = 18.0f;
@@ -158,14 +158,14 @@ namespace UiConfig
         constexpr float exportFrequency     = 20.0f;
         constexpr float exportChartTitle    = 19.0f;
         constexpr float exportSubtitle      = 14.0f;
-        constexpr float exportPolarRing     = 13.0f;   // mono — dB rings & angle labels
+        constexpr float exportPolarRing     = 13.0f;   // mono - dB rings & angle labels
         constexpr float exportPolarCenter   = 15.0f;
 
         // --- Left control sidebar -------------------------------------------
         // Figma uses Montserrat 14px Medium for the numbered section headers
         // and 12px Regular for every field label, value and button. These
         // bases are calibrated by measuring rendered ink width against the
-        // Figma render, not by dividing the CSS px value — JUCE's Font height
+        // Figma render, not by dividing the CSS px value - JUCE's Font height
         // is the whole line box, so matching ink needs a larger number.
         constexpr float sidebarMainValue      = 14.3f;  // -> 12px ink  values / combo text
         constexpr float sidebarSectionTitle   = 19.1f;  // -> 14px ink  "1. FREQUENCY (Hz)"
@@ -179,7 +179,7 @@ namespace UiConfig
 
         // --- Project Dashboard (startup screen) -------------------------------
         // This window is much smaller than the main editor's 1340x820 reference,
-        // so its Scale::factor is clamped to minFactor (0.78) — these bases are
+        // so its Scale::factor is clamped to minFactor (0.78) - these bases are
         // picked so the RENDERED size (base * 0.78) is actually legible.
         // "NEW PROJECT" / "OPEN EXISTING PROJECT" big action buttons
         constexpr float dashActionButton      = 22.0f;
@@ -196,8 +196,8 @@ namespace UiConfig
         // Header "Statistics" dropdown button (Montserrat SemiBold)
         constexpr float headerStatsButton     = 12.0f;
         // Small toolbar labels: "Opacity", "Gap", and the drawing-tool status
-        // prompt ("LINE: click the plot…"). Were hardcoded literals (10px, no
-        // scale) — named + scaled here so they track the legibility pass above.
+        // prompt ("LINE: click the plot..."). Were hardcoded literals (10px, no
+        // scale) - named + scaled here so they track the legibility pass above.
         constexpr float plotToolbarLabel      = 12.5f;
         // Ribbon "Opacity" caption and its percentage. Its own size because the
         // shared plotToolbarLabel rendered these too small to read in the
@@ -205,7 +205,7 @@ namespace UiConfig
         constexpr float ribbonOpacityLabel    = 16.0f;
         // Ribbon cluster captions ("File", "Navigation", ...). Calibrated by
         // measuring rendered ink against the Figma render rather than by
-        // converting a CSS px value — JUCE's Font height is the whole line box,
+        // converting a CSS px value - JUCE's Font height is the whole line box,
         // so it needs a larger number than the design's nominal font-size to
         // put the same amount of ink on screen.
         constexpr float ribbonClusterLabel    = 15.0f;
@@ -219,7 +219,7 @@ namespace UiConfig
     }
 
     // -------------------------------------------------------------------------
-    // LOOK-AND-FEEL SCALING — how fonts fit inside control heights
+    // LOOK-AND-FEEL SCALING - how fonts fit inside control heights
     // -------------------------------------------------------------------------
     namespace Laf
     {
@@ -227,7 +227,7 @@ namespace UiConfig
         constexpr float buttonHeightScale   = 0.50f;
         // ComboBox dropdown
         constexpr float comboHeightScale    = 0.54f;
-        // ToggleButton / checkbox label — use full fieldLabel on sidebar (no crush)
+        // ToggleButton / checkbox label - use full fieldLabel on sidebar (no crush)
         constexpr float toggleHeightScale   = 0.72f;
         // Header title auto-shrink when window is narrow (minimum px)
         constexpr float titleShrinkMin      = 12.0f;
@@ -240,11 +240,11 @@ namespace UiConfig
     }
 
     // -------------------------------------------------------------------------
-    // LAYOUT (pixels) — panel widths, row heights, header chrome
+    // LAYOUT (pixels) - panel widths, row heights, header chrome
     // -------------------------------------------------------------------------
     namespace Layout
     {
-        // Left sidebar — widened + row heights raised to match the larger
+        // Left sidebar - widened + row heights raised to match the larger
         // FontSize::sidebar* values above (legibility pass); same layout shape,
         // just enough room for 13px text instead of 9-9.5px.
         // Figma "Home Screen 1.1": sidebar is 340px of a 1920px canvas, i.e.
@@ -252,8 +252,8 @@ namespace UiConfig
         constexpr int sidebarWidth          = 258;  // -> 340px
         constexpr int sidebarCollapsedWidth = 32;   // rail when sidebar is collapsed
         // Sidebar metrics, all Figma pixels / 1.317 (see 02-layout-left-panel.md):
-        //   12px content gutter · 36px input rows · 24px section headers ·
-        //   ~48px slider-row pitch · 28.8px checkboxes · 101px value boxes.
+        //   12px content gutter - 36px input rows - 24px section headers -
+        //   ~48px slider-row pitch - 28.8px checkboxes - 101px value boxes.
         constexpr int sidebarPadding        = 9;    // -> 12px content gutter
         // Right info panel (Scene Summary, Selected Speaker)
         constexpr int infoPanelWidth          = 264;
@@ -300,7 +300,7 @@ namespace UiConfig
         constexpr int ribbonReadyRightPad     = 45;   // -> 60px right margin
         // Main window title band (logo + centred title)
         constexpr int headerBandHeight        = 44;
-        // ATOMIK wordmark inside the header. Was 14px — at the low end of the
+        // ATOMIK wordmark inside the header. Was 14px - at the low end of the
         // window-size scale range that rendered the wordmark's fine strokes
         // as an illegible smudge. Raised to use more of the available
         // headerBandHeight (44, minus padY top+bottom) while still leaving
@@ -362,10 +362,10 @@ namespace UiConfig
     }
 
     // -------------------------------------------------------------------------
-    // CONTROL CHROME — sliders, checkboxes (not text size)
+    // CONTROL CHROME - sliders, checkboxes (not text size)
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
-    // PLOT GRID — how strongly the metre grid reads over the SPL field.
+    // PLOT GRID - how strongly the metre grid reads over the SPL field.
     // The light theme's plotGrid token is an opaque mid-grey meant for a pale
     // canvas; drawn at full strength over the near-black field it overpowered
     // the data, so both weights are knocked back here. Raise these to make the

@@ -30,7 +30,7 @@ public:
 
     void setTheme (ThemeMode t)
     {
-        // Dark theme hidden for this release — force light regardless of
+        // Dark theme hidden for this release - force light regardless of
         // what's requested. Remove this line to re-enable dark theme.
         t = ThemeMode::Light;
         if (t == theme_) return;
@@ -84,7 +84,7 @@ public:
         if (b == terminalUndocked_) return;
         terminalUndocked_ = b;
         store();
-        // No sendChangeMessage — layout is driven explicitly by MainComponent.
+        // No sendChangeMessage - layout is driven explicitly by MainComponent.
     }
 
     // --- Recent projects (most-recent first, capped) -----------------------
@@ -146,7 +146,7 @@ private:
         o.folderName          = "Atomik";
         props_ = std::make_unique<juce::PropertiesFile> (o);
 
-        // Dark theme hidden for this release (light-only exe) — ignore any
+        // Dark theme hidden for this release (light-only exe) - ignore any
         // stored preference. Code path kept intact for a later re-enable.
         theme_ = ThemeMode::Light;
         juce::ignoreUnused (props_->getIntValue ("theme", (int) ThemeMode::Dark));
@@ -247,7 +247,7 @@ namespace Units
         return juce::String (v, dp) + " " + smallLengthUnit();
     }
 
-    // Grid / ruler / dim labels: picks mm·cm·m (SI) or in·ft (Imperial).
+    // Grid / ruler / dim labels: picks mm-cm-m (SI) or in-ft (Imperial).
     inline juce::String formatLengthSmart (double metresVal)
     {
         if (imperial())
@@ -292,7 +292,7 @@ namespace Units
     }
     inline juce::String waveNumberUnit() { return juce::String ("rad/") + lengthUnit(); }
 
-    // ---- Snap increment (metres) — SI: 100 mm; Imperial: 1 ft ---------------
+    // ---- Snap increment (metres) - SI: 100 mm; Imperial: 1 ft ---------------
     inline double snapStepMetres()
     {
         return imperial() ? 0.3048 : 0.1;   // international foot / 0.1 m

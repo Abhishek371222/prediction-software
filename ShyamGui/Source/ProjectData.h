@@ -49,7 +49,7 @@ struct ProjectData
 
     // -----------------------------------------------------------------------
     // Older builds parked the factory array on the lower edge (y = 10 m,
-    // x ≈ 10…20). Remap only that legacy pattern when loading old projects.
+    // x ≈ 10...20). Remap only that legacy pattern when loading old projects.
     static void migrateLegacyCornerDefaults (std::vector<Speaker>& speakers)
     {
         if (speakers.empty() || speakers.size() > 3) return;
@@ -77,7 +77,7 @@ struct ProjectData
     {
         ProjectData p;
         p.meta = m;
-        // Clean slate — no speakers until the user adds units.
+        // Clean slate - no speakers until the user adds units.
         return p;
     }
 
@@ -168,7 +168,7 @@ struct ProjectData
                         s.polarityInverted   = (bool) o->getProperty ("polarityInverted");
                         s.reverseOrientation = (bool) o->getProperty ("reverseOrientation");
                         s.enabled            = o->hasProperty ("enabled") ? (bool) o->getProperty ("enabled") : true;
-                        // Old project files predate the BEM2inch device — default to Q21S.
+                        // Old project files predate the BEM2inch device - default to Q21S.
                         s.model              = o->hasProperty ("model") ? (int) o->getProperty ("model") : 0;
                         // Projects saved before the elevation view have no
                         // height or tilt; ground level and no tilt is the

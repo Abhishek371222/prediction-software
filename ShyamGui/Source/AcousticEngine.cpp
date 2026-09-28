@@ -7,7 +7,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Active frequency catalogue — defaults to Q21S; setActiveFrequencyCatalogue()
+// Active frequency catalogue - defaults to Q21S; setActiveFrequencyCatalogue()
 // repoints both on a measurement-source switch (see AcousticEngine.h).
 const double* kSupportedFrequencies    = kQ21SFrequencies;
 int           kNumSupportedFrequencies = kNumQ21SFrequencies;
@@ -77,7 +77,7 @@ static double dirFactor (const DirectivityPattern* pat, double k,
           + dirFactorRaw (pat, k, facing, theta + eps)) / 3.0;
 }
 
-// Table to search for a given speaker's own model — never blends devices.
+// Table to search for a given speaker's own model - never blends devices.
 static const std::vector<DirectivityPattern>& tableFor (const SimParams& p, int model)
 {
     return (model == 2) ? p.directivityBEM2inch : p.directivity;
@@ -85,7 +85,7 @@ static const std::vector<DirectivityPattern>& tableFor (const SimParams& p, int 
 
 // This speaker's OWN model's currently-selected frequency (never the other
 // model's, never the shared/displayed p.frequency when it belongs to a
-// different model) — see SimParams::frequencyQ21S / frequencyBEM2inch. This is
+// different model) - see SimParams::frequencyQ21S / frequencyBEM2inch. This is
 // what isolates directivity pattern selection per device: changing one
 // model's frequency cannot change what this returns for the other model.
 static double ownFrequency (const SimParams& p, int model)
@@ -153,14 +153,14 @@ SimResult AcousticEngine::compute (const SimParams& p)
     res.activeSpeakers = (int) srcs.size();
 
     // Info-panel summary only; a mixed scene may carry several models/patterns
-    // at once — this just reports whichever one was found first.
+    // at once - this just reports whichever one was found first.
     res.usedMeasuredDirectivity = false;
     res.measuredDirectivityHz   = 0;
     for (const auto& s : srcs)
         if (s.pat != nullptr) { res.usedMeasuredDirectivity = true; res.measuredDirectivityHz = s.pat->hz; break; }
 
     // Absolute SPL requires every active speaker to carry its own calibrated
-    // pattern — a partially-calibrated mixed scene falls back to relative only
+    // pattern - a partially-calibrated mixed scene falls back to relative only
     // rather than showing a misleading absolute number.
     bool hasAbs = ! srcs.empty();
     for (const auto& s : srcs) hasAbs = hasAbs && s.hasAbs;
@@ -180,7 +180,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
     // Per speaker, per band: that speaker's own model's pattern, band-offset
     // from THAT model's own frequency (never the shared displayed f, and
-    // never the other model's) — srcs is already enabled-only, same order.
+    // never the other model's) - srcs is already enabled-only, same order.
     std::vector<std::vector<const DirectivityPattern*>> patBand (
         srcs.size(), std::vector<const DirectivityPattern*> ((size_t) mCount, nullptr));
     {
@@ -366,7 +366,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
     // Each speaker's absolute amplitude already carries its own onAxisSplDb/
     // refDistanceM calibration (see ampAbs above), so the summed intensity
-    // converts to dB directly — no separate reference-intensity division
+    // converts to dB directly - no separate reference-intensity division
     // needed (this is algebraically identical to the previous single-model
     // onAxisAbs + 10*log10(I/Iref) formula when every speaker shares one
     // model, and generalises correctly when they don't).
@@ -480,7 +480,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     const double f = std::max (1.0, p.frequency);
 
     // hasAbs requires every active speaker's own model to carry a calibrated
-    // pattern at ITS OWN frequency — mirrors compute()'s conservative
+    // pattern at ITS OWN frequency - mirrors compute()'s conservative
     // mixed-scene fallback.
     bool hasAbs = true;
     for (auto& s : srcs)

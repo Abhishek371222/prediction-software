@@ -9,7 +9,7 @@
 #include <functional>
 
 // ---------------------------------------------------------------------------
-// ControlPanel — owns the editable scene (speaker list + global settings) and
+// ControlPanel - owns the editable scene (speaker list + global settings) and
 // is the single source of truth for SimParams. Any edit fires onChanged so
 // MainComponent can recompute; speaker drags in the renderer are pushed back
 // here via setSpeakerPosition().
@@ -30,11 +30,11 @@ public:
     std::function<void()>    onClearAll;           // clear SPL heatmap drawings / lines
     std::function<void(int)> onSelectionChanged;   // selected speaker index
     std::function<void()>    onSectionsChanged;    // a section expanded/collapsed (re-size viewport)
-    /** "+ Add" — request click-to-place on the plot (MainComponent arms the renderer). */
+    /** "+ Add" - request click-to-place on the plot (MainComponent arms the renderer). */
     std::function<void()>    onAddSpeakerRequest;
 
     // 0=Q21S, 1=GYLT, 2=BEM2inch. Fires when section 2's Speaker Model picker
-    // changes, to update the Measured Polar reference view — it no longer
+    // changes, to update the Measured Polar reference view - it no longer
     // gates the engine, since every placed speaker simulates with its own
     // model regardless (there's no separate "Measurement set" selector).
     std::function<void(int)> onMeasurementSourceChanged;
@@ -139,7 +139,7 @@ private:
     void deleteSpeaker();
     void applyDeviceLayout (int count);   // 1/2/3 devices, same plane, 3 m apart
     void pushEdit();          // commit editor values into selected speaker
-    void pushPositionEdit();  // X/Y only — avoids quantizing snapped positions
+    void pushPositionEdit();  // X/Y only - avoids quantizing snapped positions
     void syncPositionRanges();   // X/Y slider spans follow the world extent
     void pushSharedEdit();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
@@ -212,7 +212,7 @@ private:
     juce::Label  floorLabel_;
     juce::Slider floorSlider_;
     juce::ToggleButton bandsToggle_;
-    // Measured directivity is always on (Q21S BEM) — no UI toggle.
+    // Measured directivity is always on (Q21S BEM) - no UI toggle.
 
     // Region the next simulation covers. Replaces a hard-coded 100 x 100 m.
     double worldW_ = 100.0, worldH_ = 100.0;
