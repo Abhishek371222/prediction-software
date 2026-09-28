@@ -14,6 +14,10 @@ struct Speaker
     float delayMs    = 0.0f;    // milliseconds
     bool  polarityInverted   = false;   // Normal / Reverse
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
+    // Where the cabinet points, in degrees counter-clockwise from +x, so 0
+    // fires right and 90 fires up the plan. Snapped to 5 degrees by the
+    // rotation handle. Orientation only - the cabinet keeps its size.
+    float rotationDeg        = 0.0f;
     bool  enabled            = true;
     // Where the cabinet sits vertically, and how far it is aimed down.
     // These describe the rig for the elevation view and for reports; the SPL
@@ -71,13 +75,16 @@ inline int speakerModelOrdinal (const std::vector<Speaker>& all, int index) noex
 // and the near-field level follow from these numbers.
 namespace Q21SCabinet
 {
-    // Manufacturer figures are quoted W x H x D: 1546 x 679 x 1024 mm, i.e.
-    // 60.86 x 26.73 x 40.31 in. These were previously mapped as H x W x D,
-    // which swapped width and height and drew the plan footprint less than
-    // half its true width.
-    constexpr float widthM  = 1.546f;   // 1546 mm - left/right, across the baffle
-    constexpr float heightM = 0.679f;   // 679 mm - vertical
-    constexpr float depthM  = 1.024f;   // 1024 mm - front/back (firing axis)
+    // Top view per the placement sketch: 900 mm across the baffle by 1000 mm
+    // front to back. NOTE this disagrees with the spec sheet quoted earlier
+    // (W x H x D = 1546 x 679 x 1024 mm, 60.86 x 26.73 x 40.31 in), which is
+    // a larger cabinet entirely. The sketch wins here because it is what the
+    // placement UI is being drawn against; if the spec sheet is the truth,
+    // these three numbers are the only place to change.
+    constexpr float widthM  = 0.900f;   // 900 mm - left/right, across the baffle
+    constexpr float heightM = 0.679f;   // 679 mm - vertical (unchanged: the
+                                        //   sketch gives the top view only)
+    constexpr float depthM  = 1.000f;   // 1000 mm - front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;  // singularity floor for 1/r
 }
 
@@ -88,9 +95,10 @@ namespace Q21SCabinet
 // have flattened its near field over half a metre of empty air.
 namespace BEM2inchCabinet
 {
-    constexpr float widthM  = 0.459f;    // 459 mm - left/right, across the mouth
-    constexpr float heightM = 0.2765f;   // 276.5 mm - vertical
-    constexpr float depthM  = 0.150f;    // 150 mm - front/back (firing axis)
+    constexpr float widthM  = 0.500f;    // 500 mm - left/right, across the mouth
+    constexpr float heightM = 0.2765f;   // 276.5 mm - vertical (unchanged: the
+                                         //   sketch gives the top view only)
+    constexpr float depthM  = 0.500f;    // 500 mm - front/back (firing axis)
     constexpr float halfExtentM = depthM * 0.5f;
 }
 

@@ -101,6 +101,8 @@ public:
     void applyProject (const ProjectData& p);   // load scene from a project
 
     void setSpeakerPosition (int index, float x, float y);
+    /** Heading in degrees, already snapped by the plot's rotation handle. */
+    void setSpeakerRotation (int index, float deg);
     void selectSpeaker (int index);
     /** Sync plot multi-select into the panel (primary drives the editor values). */
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);

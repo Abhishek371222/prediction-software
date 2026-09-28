@@ -842,6 +842,12 @@ void ControlPanel::notifyChanged()
 }
 
 // ---------------------------------------------------------------------------
+void ControlPanel::setSpeakerRotation (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].rotationDeg = deg;
+}
+
 void ControlPanel::setSpeakerPosition (int index, float x, float y)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;

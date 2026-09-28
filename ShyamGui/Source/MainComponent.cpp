@@ -580,6 +580,13 @@ MainComponent::MainComponent (ProjectData project)
         controlPanel_.setSpeakerPosition (idx, x, y);
         scheduleRecompute();
     };
+    // Turning a cabinet changes where it fires, so the field really does have
+    // to be re-solved - unlike height or tilt, which the plan never reads.
+    patternComp_.onSpeakerRotated = [this] (int idx, float deg)
+    {
+        controlPanel_.setSpeakerRotation (idx, deg);
+        scheduleRecompute();
+    };
     patternComp_.onWillEdit = [this] { willEdit(); };
     patternComp_.onEditCommitted = [this] { commitEdit(); };
     patternComp_.onKeyPressed = [this] (const juce::KeyPress& k) { return handleEditShortcut (k); };

@@ -134,7 +134,9 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.x        = s.x;
         src.y        = s.y;
         src.gainLin  = std::pow (10.0, s.gainDB / 20.0);
-        src.facing   = s.reverseOrientation ? M_PI : 0.0;
+        // Free rotation plus the Reverse flag, which still flips it end for end.
+        src.facing   = s.rotationDeg * M_PI / 180.0
+                     + (s.reverseOrientation ? M_PI : 0.0);
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
@@ -468,7 +470,8 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         Src src;
         src.x = s.x; src.y = s.y;
         src.gainLin = std::pow (10.0, s.gainDB / 20.0);
-        src.facing = s.reverseOrientation ? M_PI : 0.0;
+        src.facing = s.rotationDeg * M_PI / 180.0
+                   + (s.reverseOrientation ? M_PI : 0.0);
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.model = s.model;

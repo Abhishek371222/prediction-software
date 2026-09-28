@@ -181,6 +181,8 @@ public:
 
     std::function<void(int)>               onSpeakerSelected;
     std::function<void(int, float, float)> onSpeakerMoved;
+    /** A unit was turned by its handle: index, new heading in degrees. */
+    std::function<void(int, float)> onSpeakerRotated;
     /** Paste speakers into the scene; return their new indices. */
     std::function<std::vector<int>(std::vector<Speaker>)> onPasteSpeakers;
     /** Remove speakers by index (e.g. Delete / context menu). */
@@ -404,7 +406,8 @@ private:
     bool  polarFrameValid_ = false;
 
     enum class Drag { None, Pan, Speaker, Layer, Pencil, Erase, RubberBand,
-                      Annot, AnnotResize, AnnotRotate, SelectionMove, Marquee, Mic } drag_ = Drag::None;
+                      Annot, AnnotResize, AnnotRotate, SelectionMove, Marquee, Mic,
+                      SpeakerRotate } drag_ = Drag::None;
     Tool               tool_ = Tool::Select;
     DrawShape          drawShape_ = DrawShape::Line;
     Construction       construction_ = Construction::LineTwoPoints;
@@ -413,6 +416,11 @@ private:
     float              orthoSpacingM_ = 3.0f;
     bool               drawGridSnap_ = false;
     int                draggedSpeaker_ = -1;
+    int                rotatingSpeaker_ = -1;
+
+    /** Screen position of a unit's rotation knob. It sits off the front face,
+        so swinging it aims the cabinet rather than spinning an abstract grip. */
+    juce::Point<float> speakerRotateHandle (const Speaker&) const;
     juce::Point<float> lastMouse_;
     juce::Point<float> lastAnnotDrag_ { 0, 0 };
     bool               annotDragMoved_ = false;

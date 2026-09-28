@@ -4052,6 +4052,17 @@ void RadiationPatternComponent::drawSpeakerDimensions (juce::Graphics& g,
                 juce::Justification::centred);
 }
 
+juce::Point<float> RadiationPatternComponent::speakerRotateHandle (const Speaker& spk) const
+{
+    // Off the FRONT face, so dragging it aims the cabinet instead of spinning
+    // an abstract grip - the knob ends up where the sound goes.
+    const auto c = worldToScreen (spk.x, spk.y);
+    const auto box = speakerFootprintScreen (spk);
+    const float reach = 0.5f * juce::jmax (box.getWidth(), box.getHeight()) + 18.0f;
+    const float th = juce::degreesToRadians (spk.rotationDeg);
+    return { c.x + std::cos (th) * reach, c.y - std::sin (th) * reach };
+}
+
 juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const Speaker& spk) const
 {
     // Straight through the view transform: with an isotropic view (see
@@ -4106,6 +4117,15 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         const bool reverse = spk.reverseOrientation;
 
         auto box = speakerFootprintScreen (spk);
+
+        // Everything that belongs to the cabinet turns with it. Screen Y runs
+        // downwards, so a counter-clockwise world rotation is a negative one
+        // here. The name label is drawn outside this block, upright, because a
+        // label you have to tilt your head to read is worse than no label.
+        juce::Graphics::ScopedSaveState spkState (g);
+        if (std::abs (spk.rotationDeg) > 0.01f)
+            g.addTransform (juce::AffineTransform::rotation (
+                -juce::degreesToRadians (spk.rotationDeg), c.x, c.y));
 
         // Body fill first so selection glow can sit inside the footprint.
         g.setColour (Brand::white().withAlpha (0.92f * alpha));
@@ -4182,6 +4202,39 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 
         if (showSpeakerDims_)
             drawSpeakerDimensions (g, box, spk, alpha);
+    }
+
+    // Rotation handles last, unrotated, so they sit on top of every cabinet.
+    // Only the selected units carry one: a thin stalk and a small knob on all
+    // eight at once would be clutter, and you cannot rotate what is not
+    // selected anyway.
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& spk = speakers_[i];
+        if (! ((i == selected_) || isSpeakerSelected (i))) continue;
+
+        const auto c = worldToScreen (spk.x, spk.y);
+        const auto h = speakerRotateHandle (spk);
+        const float alpha = spk.enabled ? 1.0f : 0.42f;
+
+        g.setColour (Brand::charcoal().withAlpha (0.55f * alpha));
+        g.drawLine (c.x, c.y, h.x, h.y, 1.0f);
+        g.setColour (juce::Colour (0xffff3d6e).withAlpha (0.95f * alpha));
+        g.fillEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f);
+        g.setColour (Brand::white().withAlpha (0.9f * alpha));
+        g.drawEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f, 1.0f);
+
+        // While turning, say the angle - the snap is invisible otherwise.
+        if (drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
+        {
+            g.setFont (Brand::tech (juce::jmax (9.0f, 10.5f * Brand::UI::scale), true));
+            const juce::String txt = juce::String (juce::roundToInt (spk.rotationDeg)) + " deg";
+            juce::Rectangle<float> pill (h.x - 26.0f, h.y - 26.0f, 52.0f, 16.0f);
+            g.setColour (Brand::charcoal().withAlpha (0.85f));
+            g.fillRoundedRectangle (pill, 3.0f);
+            g.setColour (Brand::white());
+            g.drawText (txt, pill.toNearestInt(), juce::Justification::centred);
+        }
     }
 
     drawOrthoSpacingOverlay (g);
@@ -5275,6 +5328,22 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     // Select: Windows-style multi-select (click / Ctrl+click / marquee) + group move.
     if (tool_ == Tool::Select)
     {
+        // Rotation knob first: it sits outside the cabinet, so if the normal
+        // selection test ran first a click on the knob would land on empty
+        // field and drop the selection instead of turning anything.
+        for (int i = 0; i < (int) speakers_.size(); ++i)
+        {
+            if (! ((i == selected_) || isSpeakerSelected (i))) continue;
+            if (speakerRotateHandle (speakers_[(size_t) i]).getDistanceFrom (e.position) > 9.0f)
+                continue;
+            if (onWillEdit) onWillEdit();
+            drag_ = Drag::SpeakerRotate;
+            rotatingSpeaker_ = i;
+            lastMouse_ = e.position;
+            repaint();
+            return;
+        }
+
         const bool additive = e.mods.isCommandDown() || e.mods.isCtrlDown();
         const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
             ? (10.0f / juce::jmax (1.0f, polarRadius_))
@@ -5766,6 +5835,27 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         if (onLayoutMoved) onLayoutMoved();
         repaint();
     }
+    else if (drag_ == Drag::SpeakerRotate && rotatingSpeaker_ >= 0
+             && rotatingSpeaker_ < (int) speakers_.size())
+    {
+        auto& spk = speakers_[(size_t) rotatingSpeaker_];
+        const auto c = worldToScreen (spk.x, spk.y);
+        // Screen Y is inverted, so negate it to get a world-space angle.
+        float deg = juce::radiansToDegrees (std::atan2 (-(e.position.y - c.y),
+                                                          e.position.x - c.x));
+        // Snap to 5 degrees: the value stored is always a multiple, never an
+        // in-between angle that merely looks like one.
+        deg = 5.0f * std::round (deg / 5.0f);
+        while (deg < 0.0f)     deg += 360.0f;
+        while (deg >= 360.0f)  deg -= 360.0f;
+
+        if (std::abs (deg - spk.rotationDeg) > 0.01f)
+        {
+            spk.rotationDeg = deg;
+            if (onSpeakerRotated) onSpeakerRotated (rotatingSpeaker_, deg);
+        }
+        repaint();
+    }
     else if (drag_ == Drag::Speaker && draggedSpeaker_ >= 0)
     {
         auto w = screenToWorld (e.position.x, e.position.y);
@@ -5828,6 +5918,7 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
                             || (drag_ == Drag::Mic && micDragMoved_));
     drag_ = Drag::None;
     draggedSpeaker_ = -1;
+    rotatingSpeaker_ = -1;
     resizeHandleIndex_ = -1;
     annotDragMoved_ = false;
     micDragMoved_ = false;

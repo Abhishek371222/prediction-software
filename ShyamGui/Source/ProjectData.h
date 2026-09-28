@@ -119,6 +119,7 @@ struct ProjectData
             o->setProperty ("model", s.model);   // 0 = Q21S, 2 = BEM2inch
             o->setProperty ("baseHeightM", s.baseHeightM);
             o->setProperty ("tiltDeg", s.tiltDeg);
+            o->setProperty ("rotationDeg", s.rotationDeg);
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
@@ -177,6 +178,9 @@ struct ProjectData
                                       ? (float) (double) o->getProperty ("baseHeightM") : 0.0f;
                         s.tiltDeg     = o->hasProperty ("tiltDeg")
                                       ? (float) (double) o->getProperty ("tiltDeg") : 0.0f;
+                        // Projects saved before the rotation handle point +x.
+                        s.rotationDeg = o->hasProperty ("rotationDeg")
+                                      ? (float) (double) o->getProperty ("rotationDeg") : 0.0f;
                         p.speakers.push_back (s);
                     }
                 }
