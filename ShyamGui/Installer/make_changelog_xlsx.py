@@ -109,6 +109,12 @@ banner(ws, "Atomik Simulation Engine - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.0.7", "2026-09-28", "Rotation handle + sketch sizes + 3D cabinet view",
+     "5-degree rotation handle on selected units (rotationDeg saved, re-solves the field); "
+     "plan footprints from the placement sketch (Q21S 900 x 1000 mm, BEM 2inch 500 x 500 mm); "
+     "Show sizes dimensions each cabinet W / D / H on the plan; View in 3D from Properties "
+     "with W / H / D on the box's edges; zero non-ASCII in UI string literals (mojibake fixed); "
+     "elevation views, height / tilt and Z / F shortcuts built but hidden behind a flag"],
     ["1.4.0.6", "2026-09-26", "Export metrics strip redesigned; Peak SPL withdrawn",
      "Charcoal footer strip and its duplicate wordmark replaced by a labelled "
      "key/value metrics panel (Frequency, Wavelength, Devices, Directivity, Scale, "
@@ -174,7 +180,56 @@ write_table(ws, 4, ["Version", "Date", "Summary", "Highlights"],
 ws.freeze_panes = "A5"
 
 # ===========================================================================
-# Sheet 2: v1.4.0.6 detailed changes
+# Sheet 2: v1.4.0.7 detailed changes
+# ===========================================================================
+ws1407 = wb.create_sheet("v1.4.0.7 Changes")
+ws1407.sheet_view.showGridLines = False
+banner(ws1407, "v1.4.0.7  -  Detailed Changes",
+       "2026-09-28  |  Rotation handle + sketch sizes + 3D cabinet view", 5)
+
+A, C, F = "Added", "Changed", "Fixed"
+v1407 = [
+    ["Plot", A, "Rotation handle, 5-degree snap",
+     "Stalk and knob off the front face of selected units; drag to aim, snapping "
+     "to 72 headings (0-355) with the live angle beside the knob. Hit-tested "
+     "before selection so the knob never drops it. rotationDeg saved in the "
+     "project (default 0); feeds Speaker::facing and re-solves the field",
+     "2026-09-28"],
+    ["Sidebar", A, "Show sizes (W x H x D)",
+     "Checkbox in section 2: extension lines, arrowed dimension lines and values "
+     "on each cabinet - W on the baffle edge, D on the firing axis, H called out "
+     "as (vertical). One-line fallback below ~26 px; follows SI / imperial; "
+     "display only", "2026-09-28"],
+    ["Properties", A, "View in 3D",
+     "Cabinet as a draggable solid (double-click resets), red baffle, W / H / D "
+     "dimensioned on the box's own edges; painted with JUCE paths, no OpenGL; "
+     "dialog sizes to content rather than full-screen", "2026-09-28"],
+    ["Views", A, "Elevation views, height / tilt, Z / F (hidden)",
+     "PLAN / FRONT / SIDE scale drawings, per-speaker baseHeightM and tiltDeg, "
+     "zoom-to-selection (Z) and fit (F) - built but off behind "
+     "UiConfig::showViewSwitcher; height / tilt still saved and loaded",
+     "2026-09-28"],
+    ["Speakers", C, "Plan sizes from the placement sketch",
+     "Q21S 900 x 1000 mm (was 1546 x 1024), BEM 2inch 500 x 500 mm (was "
+     "459 x 150); heights unchanged at 679 and 276.5 mm. Near-field floor "
+     "follows depth: Q21S 512 -> 500 mm, horn 75 -> 250 mm", "2026-09-28"],
+    ["UI", F, "Mojibake purged",
+     "JUCE reads literal bytes as Latin-1, so W x H x D showed as 'W A- H A- D' "
+     "and two tooltips showed 'a<euro>'. 246 characters across 30 files plus 34 "
+     "double-encoded sequences replaced; zero non-ASCII left in Source/ string "
+     "literals", "2026-09-28"],
+    ["Packaging", C, "Version -> v1.4.0.7",
+     "App, resource (string and numeric FILEVERSION, stale at 1,4,0,4), "
+     "installer, archive HTML/json, Windows Release EXE", "2026-09-28"],
+]
+write_table(ws1407, 4,
+            ["Area", "Type", "Item", "Detail", "When"],
+            v1407, [14, 10, 28, 72, 12],
+            type_colors={A: SUCCESS, C: ACCENT, F: WARNING}, type_col=2)
+ws1407.freeze_panes = "A5"
+
+# ===========================================================================
+# Sheet 3: v1.4.0.6 detailed changes
 # ===========================================================================
 ws1406 = wb.create_sheet("v1.4.0.6 Changes")
 ws1406.sheet_view.showGridLines = False

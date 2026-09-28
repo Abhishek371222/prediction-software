@@ -79,12 +79,14 @@
       Standalone backup index (not part of the simulation app).
       Starting at <strong>v1.3.0</strong> — download source, macOS DMG, or Windows
       installer / ZIP for any saved release. Current product cut is
-      <strong>v1.4.0.6</strong> (Figma UI cut, Gradient Plot naming, square full-bleed
+      <strong>v1.4.0.7</strong> (Figma UI cut, Gradient Plot naming, square full-bleed
       grid, working pan + middle-drag, 8-unit cap, SPL solve on all cores, Rel. SPL
       gradient and readable legend, BEM 2inch as a second speaker model with per-unit
-      model tags, per-model to-scale cabinets with the Q21S corrected to
-      1546 &times; 679 &times; 1024 mm, a redesigned export metrics strip, and selection
-      that no longer re-solves the scene; Q21S, BEM 2inch and UI assets embedded).
+      model tags, a redesigned export metrics strip, selection that no longer re-solves
+      the scene, a 5&deg; rotation handle to aim each speaker, plan footprints from the
+      placement sketch (Q21S 900 &times; 1000 mm, BEM 2inch 500 &times; 500 mm), Show sizes
+      dimensioning on the plan, and a 3D cabinet view from Properties; Q21S, BEM 2inch
+      and UI assets embedded).
     </p>
     <p class="status" id="status">Loading versions…</p>
     <div id="list"></div>
@@ -120,7 +122,7 @@
           <article class="card">
             <div class="row">
               <span class="ver">v${v.version}</span>
-              ${v.version === '1.4.0.6' ? '<span class="tag">latest</span>' : ''}
+              ${v.version === '1.4.0.7' ? '<span class="tag">latest</span>' : ''}
               ${v.version === '1.3.0' ? '<span class="tag">baseline</span>' : ''}
               <span class="notes">${(v.notes || '').replace(/</g, '&lt;')}</span>
               <span class="date">${created}</span>

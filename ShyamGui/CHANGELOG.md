@@ -23,9 +23,78 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.4** | 2026-09-21 | New Rel. SPL gradient; larger legend tick labels |
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
 | **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves; per-model cabinet size |
+| **1.4.0.7** | 2026-09-28 | 5-degree rotation handle; sketch plan sizes; Show sizes dimensioning; 3D cabinet view; mojibake purge |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.7] - 2026-09-28
+
+**Atomik Simulation Engine v1.4.0.7** - speakers can be aimed with a 5-degree
+rotation handle, plan footprints follow the placement sketch, cabinets can be
+dimensioned on the plot and inspected as a 3D solid, and all non-ASCII text is
+gone from the UI.
+
+### Added
+- **Rotation handle (5-degree snap).** Selected units show a thin stalk and knob
+  off their **front** face; dragging it turns the cabinet, snapping to multiples
+  of 5 degrees (72 headings, 0-355), with the live angle shown beside the knob.
+  The handle is hit-tested before normal selection, so grabbing the knob never
+  drops the selection. Each speaker stores `rotationDeg` (CCW from +x; 0 fires
+  right, 90 fires up the plan), saved in the project and defaulting to 0 so older
+  files open unchanged. Rotation is a real change of firing direction: it feeds
+  `Speaker::facing` in both `compute()` and `sampleIntensityAt()` and **re-solves
+  the field**.
+- **Show sizes (W x H x D).** A checkbox in sidebar section 2 dimensions every
+  placed cabinet on the plan: extension lines off the corners, a dimension line
+  with arrowheads, and the value on it - **W** along the baffle edge, **D** along
+  the firing axis, **H** called out separately as "(vertical)" since height is
+  into the page. Below about 26 px the marker falls back to a one-line label.
+  Follows the unit system (inches in imperial). Display only - nothing re-solves.
+- **3D cabinet view.** Speaker Properties gains **View in 3D**: the cabinet as a
+  solid, turned by dragging and reset by double-clicking, with the baffle in
+  signal red so the firing direction is unambiguous. W / H / D are dimensioned on
+  the box's own edges and rotate with it. Painted with JUCE paths (rotation,
+  back-face cull, depth sort) - no OpenGL. The dialog sizes to its content
+  instead of opening full-screen.
+- **Elevation views and per-speaker height / tilt (hidden).** PLAN / FRONT / SIDE
+  scale drawings, per-speaker `baseHeightM` and `tiltDeg`, and **Z** (zoom to
+  selection) / **F** (fit field) shortcuts are implemented but switched off behind
+  `UiConfig::showViewSwitcher = false`. Height and tilt are still saved and
+  loaded (defaulting to ground level / no tilt), so projects stay compatible
+  whichever way the flag is set.
+
+### Changed
+- **Plan footprints follow the placement sketch.**
+  **Q21S** 900 x 1000 mm (W x D; was 1546 x 1024),
+  **BEM 2inch** 500 x 500 mm (was 459 x 150). Heights unchanged at 679 mm and
+  276.5 mm. Plan marker, Show sizes, Properties rows, Info panel and the 3D view
+  all read the same `cabinetFor()`.
+
+### Fixed
+- **Mojibake in the UI.** JUCE decodes string-literal bytes as Latin-1, so the
+  Properties dialog showed "W A- H A- D" for "W x H x D", and two tooltips showed
+  "a<euro>" from sequences already double-encoded in `UiChrome.h` and
+  `CommandRegistry.h`. 246 characters replaced across 30 files, plus those 34
+  sequences; there are now zero non-ASCII characters inside any string literal
+  in `Source/`.
+
+### Notes
+- **Near-field floor moves with the new depths.** The engine clamps 1/r at half
+  the cabinet depth, so the Q21S floor goes 512 -> 500 mm and the 2" horn's goes
+  75 -> 250 mm. Levels within those distances of a cabinet differ slightly from
+  v1.4.0.6; the far field is unaffected.
+- The sketch's 900 x 1000 mm disagrees with the Q21S spec sheet
+  (1546 x 679 x 1024 mm). The sketch wins because it is what the placement UI is
+  drawn against; `AcousticEngine.h` records both.
+
+### Packaging
+- Version strings, file version resource (string **and** numeric
+  `FILEVERSION`, which had been left at 1,4,0,4) and installer -> **v1.4.0.7**.
+- **Windows Release** `Atomik Simulation Engine v1.4.0.7.exe` /
+  archive `Atomik-Windows-v1.4.0.7.exe` (Q21S + BEM 2inch + UI assets embedded).
 
 ---
 
