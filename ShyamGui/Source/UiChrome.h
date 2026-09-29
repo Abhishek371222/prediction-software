@@ -782,9 +782,12 @@ private:
 
         // Figma: cluster rules run the full height of the row, and the row is
         // closed by a hairline along its bottom edge.
-        g.setColour (Brand::border().withAlpha (0.45f));
+        g.setColour (Brand::border().withAlpha (UiConfig::Ribbon::dividerAlpha));
         for (int x : dividerX_)
             g.drawVerticalLine (x, 0.0f, (float) getHeight());
+        // The row's closing edge keeps its own weight - it separates the
+        // ribbon from the canvas, not one cluster from the next.
+        g.setColour (Brand::border().withAlpha (0.45f));
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
     }
 

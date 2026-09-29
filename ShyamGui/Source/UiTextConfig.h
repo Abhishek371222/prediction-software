@@ -371,6 +371,15 @@ namespace UiConfig
     // the data, so both weights are knocked back here. Raise these to make the
     // grid more prominent, lower them to let the field dominate.
     // -------------------------------------------------------------------------
+    namespace Ribbon
+    {
+        // The vertical rules between ribbon clusters. The base colour is a
+        // near-black hairline, so over the white ribbon the alpha IS the
+        // lightness: 0.45 gave a mid grey that read as heavy against the
+        // icons it separates.
+        constexpr float dividerAlpha = 0.20f;   // -> about #CCCCCC on white
+    }
+
     namespace PlotGrid
     {
         constexpr float majorAlpha     = 0.42f;   // every labelled gridline
