@@ -358,17 +358,32 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setDrawFillAlpha (plotHeader_.getFillAlpha01());
         plotHeader_.repaint();
     };
+    plotHeader_.onTextAlign = [this] (int a)
+    {
+        willEdit();
+        patternComp_.setTextAlign (a);
+        plotHeader_.setTextAlignState (a);
+        commitEdit();
+    };
+    plotHeader_.onTextSize = [this] (float px)
+    {
+        willEdit();
+        patternComp_.setTextSize (px);
+        commitEdit();
+    };
     patternComp_.onAnnotSelectionChanged = [this]
     {
         // Swatch + opacity follow the selected shape (or the draw brush if none).
         plotHeader_.setFillAlpha01 (patternComp_.getActiveFillAlpha());
         plotHeader_.setDrawColour (patternComp_.getActiveDrawColour());
         plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
+        syncTextControls();
         plotHeader_.repaint();
     };
     patternComp_.onToolChanged = [this] (RadiationPatternComponent::Tool t)
     {
         plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
+        syncTextControls();
         using T = RadiationPatternComponent::Tool;
         using A = PlotHeaderBar::ActiveTool;
         plotHeader_.setActiveTool (t == T::Select ? A::Select
@@ -680,6 +695,7 @@ MainComponent::MainComponent (ProjectData project)
     // Opacity starts greyed: the Select tool with nothing selected has no fill
     // to act on. setFillAlphaEnabled is the only thing that flips it.
     plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
+    syncTextControls();
 }
 
 MainComponent::~MainComponent()
@@ -2289,6 +2305,15 @@ void MainComponent::updatePlotChrome()
     }
     plotHeader_.setTitle (title);
     refreshCaptionColour();
+}
+
+void MainComponent::syncTextControls()
+{
+    // One place that answers "what should the Text cluster show", so the
+    // ribbon cannot drift from the selection.
+    plotHeader_.setTextControlsEnabled (patternComp_.hasTextTarget());
+    plotHeader_.setTextAlignState (patternComp_.getActiveTextAlign());
+    plotHeader_.setTextSizeState (patternComp_.getActiveTextSize());
 }
 
 void MainComponent::refreshCaptionColour()

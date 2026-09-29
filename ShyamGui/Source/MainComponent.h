@@ -217,6 +217,7 @@ private:
     float        measDistanceM_ = 0.5f;
     void         setMeasurementSource (int src);
     void         setMeasurementDistance (float distanceM);
+    void         syncTextControls();   // ribbon Text cluster <- plot state
     void         reloadAllMeasurements();      // (re)loads both models + their directivity tables
     MeasuredSet  referenceSetFor (int source) const;
 

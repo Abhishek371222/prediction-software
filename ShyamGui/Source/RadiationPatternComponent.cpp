@@ -284,6 +284,70 @@ float RadiationPatternComponent::getActiveFillAlpha() const noexcept
     return drawFillAlpha_;
 }
 
+bool RadiationPatternComponent::hasTextTarget() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
+        && annotations_[(size_t) selectedAnnot_].kind == Annotation::Kind::TextBox)
+        return true;
+
+    // Nothing selected: the controls still set up the NEXT text box.
+    return tool_ == Tool::Shape && drawShape_ == DrawShape::TextBox;
+}
+
+int RadiationPatternComponent::getActiveTextAlign() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox)
+            return a.align;
+    }
+    return drawTextAlign_;
+}
+
+float RadiationPatternComponent::getActiveTextSize() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox)
+            return a.fontPx;
+    }
+    return drawTextSize_;
+}
+
+void RadiationPatternComponent::setTextAlign (int align)
+{
+    drawTextAlign_ = juce::jlimit (0, 2, align);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox)
+            a.align = drawTextAlign_;
+    }
+    // A box being edited has to follow too, or the change only appears once
+    // you click away.
+    if (isEditingTextBox() && textEdit_ != nullptr)
+        textEdit_->setJustification (textBoxJustification (drawTextAlign_));
+    repaint();
+}
+
+void RadiationPatternComponent::setTextSize (float px)
+{
+    drawTextSize_ = (px <= 0.5f) ? 0.0f : juce::jlimit (5.0f, 200.0f, px);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox)
+            a.fontPx = drawTextSize_;
+    }
+    if (isEditingTextBox() && textEdit_ != nullptr)
+        layoutTextBoxEditor();
+    repaint();
+}
+
 bool RadiationPatternComponent::hasFillTarget() const noexcept
 {
     if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
@@ -1430,6 +1494,10 @@ bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
     if (drawShape_ == DrawShape::TextBox)
     {
         a.kind = Annotation::Kind::TextBox;
+        // A new box inherits the ribbon's current Text settings, the same way
+        // a new shape inherits the opacity slider.
+        a.align  = drawTextAlign_;
+        a.fontPx = drawTextSize_;
         a.rotationDeg = 0.0f;
         a.thicknessPx = 1.5f;
         a.text = "Text";
@@ -2150,7 +2218,9 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
                                                    a.colour.getFloatGreen(),
                                                    a.colour.getFloatBlue(),
                                                    1.0f);
-    const auto ink = base;
+    // Edit at the opacity it will actually have, so what you type is what
+    // you get - but never so faint it cannot be read while typing.
+    const auto ink = base.withAlpha (juce::jmax (0.35f, juce::jlimit (0.0f, 1.0f, a.fillAlpha)));
 
     textEdit_->setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     textEdit_->setColour (juce::TextEditor::textColourId, ink);
@@ -2249,8 +2319,12 @@ void RadiationPatternComponent::layoutTextBoxEditor()
     if (bounds.getHeight() < 24) bounds.setHeight (24);
 
     const float hPx = (float) bounds.getHeight();
-    const float fontH = juce::jlimit (11.0f, 22.0f, hPx * 0.28f);
+    // Was 0.28 of the box height while the painter used 0.22, so the text
+    // visibly jumped the moment you stopped editing. One helper now answers
+    // for both.
+    const float fontH = textBoxFontScreenPx (a, hPx);
     textEdit_->setFont (Brand::tech (fontH, false));
+    textEdit_->setJustification (textBoxJustification (a.align));
     textEdit_->setBounds (bounds);
     textEdit_->toFront (false);
 }
@@ -2292,6 +2366,27 @@ void RadiationPatternComponent::drawTextBoxRotateIcon (juce::Graphics& g,
                          ty - tipLen * 0.45f * dirY - tipLen * 0.55f * sideY);
         g.fillPath (tip);
     }
+}
+
+float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
+                                                      float boxHeightPx) const
+{
+    if (a.fontPx > 0.5f)
+    {
+        // A set size is a property of the drawing, not of the screen, so it
+        // rides the zoom exactly as the box does. Clamped only to keep a
+        // deep zoom from asking for a font thousands of pixels tall.
+        const float z = (a.space == AnnotSpace::World) ? zoom_ : 1.0f;
+        return juce::jlimit (5.0f, 400.0f, a.fontPx * z);
+    }
+    return juce::jlimit (10.0f, 22.0f, boxHeightPx * 0.22f);
+}
+
+juce::Justification RadiationPatternComponent::textBoxJustification (int align)
+{
+    if (align == 1) return juce::Justification::centredTop;
+    if (align == 2) return juce::Justification::topRight;
+    return juce::Justification::topLeft;
 }
 
 void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
@@ -2352,10 +2447,14 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
     if (wPx < 8.0f || hPx < 8.0f) return;
 
     const float pad = 6.0f;
-    const float fontH = juce::jlimit (10.0f, 22.0f, hPx * 0.22f);
+    const float fontH = textBoxFontScreenPx (a, hPx);
     g.setFont (Brand::tech (fontH, false));
 
-    const auto ink = base.withAlpha (juce::jlimit (0.45f, 1.0f, alphaMul));
+    // Opacity now reaches the text. It used to ignore a.fillAlpha entirely and
+    // floor the alpha at 0.45, so the slider moved, the readout changed and
+    // nothing on screen did - a text box has no fill, so its text IS what the
+    // opacity is for.
+    const auto ink = base.withAlpha (juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul);
 
     {
         juce::Graphics::ScopedSaveState textSs (g);
@@ -2368,7 +2467,7 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
         g.setColour (ink);
         const int maxLines = juce::jmax (1, (int) (box.getHeight() / (fontH * 1.15f)));
         g.drawFittedText (label, box.toNearestInt(),
-                          juce::Justification::topLeft, maxLines, 1.0f);
+                          textBoxJustification (a.align), maxLines, 1.0f);
     }
 }
 

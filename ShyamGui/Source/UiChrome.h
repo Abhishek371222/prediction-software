@@ -105,6 +105,47 @@ private:
 // ---------------------------------------------------------------------------
 // PlotHeaderBar - workspace title + navigation toolbar.
 // ---------------------------------------------------------------------------
+/** Word-style alignment glyph: four rules, ragged on the side the text is
+    not anchored to. Drawn rather than shipped as an SVG so it stays crisp at
+    any scale and adds no asset to embed. */
+class TextAlignButton : public juce::Button
+{
+public:
+    explicit TextAlignButton (int align) : juce::Button ("align"), align_ (align)
+    {
+        setClickingTogglesState (false);
+    }
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (getWidth() * 0.22f);
+        const bool on = getToggleState();
+        if (on || over || down)
+        {
+            g.setColour (on ? Brand::accent().withAlpha (0.16f)
+                            : Brand::border().withAlpha (down ? 0.45f : 0.28f));
+            g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f), 3.0f);
+        }
+
+        g.setColour (isEnabled() ? (on ? Brand::accent() : Brand::heading())
+                                 : Brand::muted().withAlpha (0.5f));
+        const float lh = juce::jmax (1.0f, r.getHeight() / 7.0f);
+        const float gap = r.getHeight() / 3.6f;
+        for (int i = 0; i < 4; ++i)
+        {
+            // Long, short, long, short - the short ones carry the ragged edge.
+            const float w = (i % 2 == 0) ? r.getWidth() : r.getWidth() * 0.62f;
+            float x = r.getX();
+            if (align_ == 1) x = r.getCentreX() - w * 0.5f;
+            else if (align_ == 2) x = r.getRight() - w;
+            g.fillRoundedRectangle (x, r.getY() + (float) i * gap, w, lh, lh * 0.5f);
+        }
+    }
+
+private:
+    int align_;
+};
+
 class PlotHeaderBar : public juce::Component
 {
 public:
@@ -232,6 +273,39 @@ public:
         styleClusterLabel (lblShapes_,  "Shapes");
         styleClusterLabel (lblColours_, "Colours");
         styleClusterLabel (lblHelp_,    "Help");
+        styleClusterLabel (lblText_,    "Text Box");
+
+        // Word-style text controls. Live only while a text box is the target,
+        // so they never look like they apply to a shape or a speaker.
+        btnAlignL_.setTooltip ("Align text left");
+        btnAlignC_.setTooltip ("Centre text");
+        btnAlignR_.setTooltip ("Align text right");
+        for (auto* b : { &btnAlignL_, &btnAlignC_, &btnAlignR_ })
+            addAndMakeVisible (*b);
+        btnAlignL_.onClick = [this] { if (onTextAlign) onTextAlign (0); };
+        btnAlignC_.onClick = [this] { if (onTextAlign) onTextAlign (1); };
+        btnAlignR_.onClick = [this] { if (onTextAlign) onTextAlign (2); };
+
+        fontSizeBox_.setComponentID ("ctrlCombo");
+        fontSizeBox_.setTooltip ("Text size. Auto fits the type to the box.");
+        fontSizeBox_.addItem ("Auto", 1);
+        {
+            // The sizes a word processor offers, so the list is familiar.
+            const int sizes[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64 };
+            int id = 2;
+            for (int v : sizes)
+                fontSizeBox_.addItem (juce::String (v), id++);
+        }
+        fontSizeBox_.setSelectedId (1, juce::dontSendNotification);
+        fontSizeBox_.onChange = [this]
+        {
+            if (textUpdating_) return;
+            if (! onTextSize) return;
+            const auto t = fontSizeBox_.getText();
+            onTextSize (t == "Auto" ? 0.0f : (float) t.getIntValue());
+        };
+        addAndMakeVisible (fontSizeBox_);
+        setTextControlsEnabled (false);
         styleClusterLabel (lblOptions_, "Options");
 
         // Colours: the exact Figma palette, top row then bottom row.
@@ -587,6 +661,37 @@ public:
         terminal verbs and MainComponent's handlers drive the same buttons. */
     static constexpr bool kShowOptionsCluster = false;
 
+    /** Text cluster: only live while a text box is selected (or the TextBox
+        tool is armed), exactly like the Opacity slider. */
+    void setTextControlsEnabled (bool on)
+    {
+        for (auto* b : { (juce::Component*) &btnAlignL_, (juce::Component*) &btnAlignC_,
+                         (juce::Component*) &btnAlignR_, (juce::Component*) &fontSizeBox_ })
+            b->setEnabled (on);
+        lblText_.setAlpha (on ? 1.0f : 0.45f);
+        repaint();
+    }
+
+    void setTextAlignState (int align)
+    {
+        btnAlignL_.setToggleState (align == 0, juce::dontSendNotification);
+        btnAlignC_.setToggleState (align == 1, juce::dontSendNotification);
+        btnAlignR_.setToggleState (align == 2, juce::dontSendNotification);
+        repaint();
+    }
+
+    void setTextSizeState (float px)
+    {
+        textUpdating_ = true;
+        fontSizeBox_.setText (px <= 0.5f ? juce::String ("Auto")
+                                         : juce::String (juce::roundToInt (px)),
+                              juce::dontSendNotification);
+        textUpdating_ = false;
+    }
+
+    std::function<void(int)>   onTextAlign;
+    std::function<void(float)> onTextSize;
+
     /** Re-applies the ribbon's edge indent to the adopted Help glyphs.
         MainComponent::refreshHeaderIcons() restyles them from scratch and
         stamps the header's own inset back on, which leaves them visibly
@@ -694,6 +799,10 @@ public:
     // button. btnFitView_ is that icon; it just triggers the original fitBtn_
     // so MainComponent's existing wiring keeps working untouched.
     juce::DrawableButton btnFitView_ { "fit", juce::DrawableButton::ImageFitted };
+    TextAlignButton  btnAlignL_ { 0 }, btnAlignC_ { 1 }, btnAlignR_ { 2 };
+    juce::ComboBox   fontSizeBox_;
+    juce::Label      lblText_;
+    bool             textUpdating_ = false;
 
     // Shapes cluster: Figma shows the shape tools as separate icons rather
     // than one button that opens a construction menu.
@@ -861,12 +970,16 @@ private:
         // rhythm the mock uses elsewhere: 14 units of air after the preceding
         // divider, then the controls, then 14 more before the next rule.
         static constexpr Cluster kOptions { 728, 852 };
+        // Text Box carries on past Help on the same rhythm: a little air after
+        // the preceding rule, three alignment glyphs on the icon pitch, then
+        // the size box, then the closing rule.
+        static constexpr Cluster kText    { 788, 960 };
         static constexpr int kOptionPillW = 50;           // "Snap" / "Ortho" pills
         static constexpr int kOptionPillGap = 6;
         static constexpr int kPlateLeft = 15;             // Figma  20
         static constexpr int kPitch     = 23;             // Figma  30 icon pitch
 
-        const int lastDividerX = kShowOptionsCluster ? kOptions.dividerX : kHelp.dividerX;
+        const int lastDividerX = kText.dividerX;
         const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
@@ -931,6 +1044,8 @@ private:
             plateLeft = plateRight;
         };
 
+        // Placed after every other cluster below, once plateLeft has walked
+        // across the row - see the Text Box block at the end of resized().
         cluster (kFile, lblFile_,
                  { &btnFileNew_, &btnFileOpen_, &btnFileSave_, &btnFileSaveAs_, &btnFileExport_ });
         cluster (kNav,   lblNav_,   { &btnSelect_, &btnPan_ });
@@ -1041,6 +1156,25 @@ private:
                 c->setVisible (false);
                 c->setBounds (0, 0, 0, 0);
             }
+        }
+
+        // Text Box: three alignment glyphs on the icon pitch, then the size
+        // box. It closes the row, so the Ready pill below starts after it.
+        {
+            int tx = px2 (kText.iconX);
+            for (auto* b : { (juce::Component*) &btnAlignL_, (juce::Component*) &btnAlignC_,
+                             (juce::Component*) &btnAlignR_ })
+            {
+                b->setBounds (tx, iconTop, tool, tool);
+                tx += pitch;
+            }
+            const int plateRight = px2 (kText.dividerX);
+            const int boxW = juce::jmax (px2 (34), plateRight - tx - px2 (10));
+            fontSizeBox_.setBounds (tx + px2 (4), iconTop, boxW, tool);
+            lblText_.setBounds (plateLeft, labelTop,
+                                juce::jmax (10, plateRight - plateLeft), labelH);
+            dividerX_.push_back (plateRight);
+            plateLeft = plateRight;
         }
 
         // "Ready" pill - far right of this same ribbon row (Figma puts it

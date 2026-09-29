@@ -161,10 +161,23 @@ public:
         std::vector<juce::Point<float>> pts;          // world m or polar-normalised
         juce::String text;                            // TextBox label
         float rotationDeg = 0.0f;                     // TextBox rotation (CCW degrees)
+        // TextBox type. fontPx is the height at the default fit (zoom 1), so
+        // the text scales with the plan like the box around it does; 0 keeps
+        // the old behaviour of sizing itself from the box.
+        float fontPx = 0.0f;
+        int   align  = 0;                             // 0 left, 1 centre, 2 right
     };
 
     std::vector<Annotation> getAnnotations() const { return annotations_; }
     void setAnnotations (std::vector<Annotation> a);
+
+    /** True when the ribbon's Text controls have something to act on: a text
+        box selected, or the TextBox tool armed so the next one inherits. */
+    bool  hasTextTarget()     const noexcept;
+    int   getActiveTextAlign() const noexcept;
+    float getActiveTextSize()  const noexcept;   // 0 = auto-fit to the box
+    void  setTextAlign (int align);
+    void  setTextSize  (float px);
 
     bool hasCopyableSelection() const noexcept;
     bool hasClipboardContent() const noexcept;
@@ -222,6 +235,11 @@ public:
 
 private:
     void buildImage();
+    /** Screen height for a text box's type, honouring a set size or falling
+        back to the auto fit. Shared by the painter and the in-place editor so
+        the text does not change size the moment you stop typing. */
+    float textBoxFontScreenPx (const Annotation&, float boxHeightPx) const;
+    static juce::Justification textBoxJustification (int align);
     /** CAD-style dimensioning on one plan marker: extension lines, arrowed
         dimension lines and their values, so it is obvious WHICH edge is the
         width and which is the depth. */
@@ -391,6 +409,9 @@ private:
     bool                showDistanceRings_ = false;
     bool                showMicDegrees_ = false;
     bool                showSpeakerDims_ = false;
+    // Defaults the next text box inherits, exactly as drawFillAlpha_ works.
+    int                 drawTextAlign_ = 0;
+    float               drawTextSize_  = 0.0f;
     LayoutLayer*        layout_ = nullptr;
     bool                layoutEditMode_ = false;
     bool                layoutSnap_ = false;
