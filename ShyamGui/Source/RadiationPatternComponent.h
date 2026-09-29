@@ -166,6 +166,9 @@ public:
         // the old behaviour of sizing itself from the box.
         float fontPx = 0.0f;
         int   align  = 0;                             // 0 left, 1 centre, 2 right
+        int   valign = 0;                             // 0 top, 1 middle, 2 bottom
+        bool  bold   = false;
+        bool  italic = false;
     };
 
     std::vector<Annotation> getAnnotations() const { return annotations_; }
@@ -177,7 +180,13 @@ public:
     int   getActiveTextAlign() const noexcept;
     float getActiveTextSize()  const noexcept;   // 0 = auto-fit to the box
     void  setTextAlign (int align);
+    void  setTextVAlign (int valign);
     void  setTextSize  (float px);
+    void  setTextBold   (bool on);
+    void  setTextItalic (bool on);
+    int   getActiveTextVAlign() const noexcept;
+    bool  getActiveTextBold()   const noexcept;
+    bool  getActiveTextItalic() const noexcept;
 
     bool hasCopyableSelection() const noexcept;
     bool hasClipboardContent() const noexcept;
@@ -411,7 +420,16 @@ private:
     bool                showSpeakerDims_ = false;
     // Defaults the next text box inherits, exactly as drawFillAlpha_ works.
     int                 drawTextAlign_ = 0;
+    int                 drawTextVAlign_ = 0;
     float               drawTextSize_  = 0.0f;
+    bool                drawTextBold_   = false;
+    bool                drawTextItalic_ = false;
+
+    /** Grow a text box downwards until the wrapped text fits. Figma's auto
+        height: the width you drew is kept, the box never shrinks under you. */
+    void growTextBoxToFit (int index);
+    /** The font a box actually renders with, weight and slant included. */
+    juce::Font textBoxFont (const Annotation&, float boxHeightPx) const;
     LayoutLayer*        layout_ = nullptr;
     bool                layoutEditMode_ = false;
     bool                layoutSnap_ = false;

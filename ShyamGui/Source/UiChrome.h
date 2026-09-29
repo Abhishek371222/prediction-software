@@ -111,7 +111,10 @@ private:
 class TextAlignButton : public juce::Button
 {
 public:
-    explicit TextAlignButton (int align) : juce::Button ("align"), align_ (align)
+    /** @param vertical true draws the stack anchored top / middle / bottom
+               instead of ragged left / centre / right. */
+    TextAlignButton (int align, bool vertical = false)
+        : juce::Button ("align"), align_ (align), vertical_ (vertical)
     {
         setClickingTogglesState (false);
     }
@@ -130,6 +133,22 @@ public:
         g.setColour (isEnabled() ? (on ? Brand::accent() : Brand::heading())
                                  : Brand::muted().withAlpha (0.5f));
         const float lh = juce::jmax (1.0f, r.getHeight() / 7.0f);
+
+        if (vertical_)
+        {
+            // Three rules held to one edge, with the box's own outline behind
+            // them so "which edge" reads at a glance.
+            g.drawRoundedRectangle (r, 1.5f, 1.0f);
+            const float blockH = lh * 5.0f;
+            float top = r.getY() + lh;
+            if (align_ == 1) top = r.getCentreY() - blockH * 0.5f;
+            else if (align_ == 2) top = r.getBottom() - lh - blockH;
+            for (int i = 0; i < 3; ++i)
+                g.fillRoundedRectangle (r.getX() + lh, top + (float) i * lh * 2.0f,
+                                        r.getWidth() - lh * 2.0f, lh, lh * 0.5f);
+            return;
+        }
+
         const float gap = r.getHeight() / 3.6f;
         for (int i = 0; i < 4; ++i)
         {
@@ -143,7 +162,8 @@ public:
     }
 
 private:
-    int align_;
+    int  align_;
+    bool vertical_;
 };
 
 class PlotHeaderBar : public juce::Component
@@ -285,6 +305,33 @@ public:
         btnAlignL_.onClick = [this] { if (onTextAlign) onTextAlign (0); };
         btnAlignC_.onClick = [this] { if (onTextAlign) onTextAlign (1); };
         btnAlignR_.onClick = [this] { if (onTextAlign) onTextAlign (2); };
+
+        btnVAlignT_.setTooltip ("Align text to the top of the box");
+        btnVAlignM_.setTooltip ("Centre text vertically");
+        btnVAlignB_.setTooltip ("Align text to the bottom of the box");
+        for (auto* b : { &btnVAlignT_, &btnVAlignM_, &btnVAlignB_ })
+            addAndMakeVisible (*b);
+        btnVAlignT_.onClick = [this] { if (onTextVAlign) onTextVAlign (0); };
+        btnVAlignM_.onClick = [this] { if (onTextVAlign) onTextVAlign (1); };
+        btnVAlignB_.onClick = [this] { if (onTextVAlign) onTextVAlign (2); };
+
+        auto styleStyleBtn = [this] (juce::TextButton& b, const juce::String& t,
+                                     const juce::String& tip)
+        {
+            b.setButtonText (t);
+            b.setTooltip (tip);
+            b.setClickingTogglesState (true);
+            b.setComponentID ("ribbonStyle");
+            b.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            b.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+            b.setColour (juce::TextButton::textColourOffId, Brand::heading());
+            b.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+            addAndMakeVisible (b);
+        };
+        styleStyleBtn (btnBold_,   "B", "Bold");
+        styleStyleBtn (btnItalic_, "I", "Italic");
+        btnBold_.onClick   = [this] { if (onTextBold)   onTextBold   (btnBold_.getToggleState()); };
+        btnItalic_.onClick = [this] { if (onTextItalic) onTextItalic (btnItalic_.getToggleState()); };
 
         fontSizeBox_.setComponentID ("ctrlCombo");
         fontSizeBox_.setTooltip ("Text size. Auto fits the type to the box.");
@@ -665,10 +712,18 @@ public:
         tool is armed), exactly like the Opacity slider. */
     void setTextControlsEnabled (bool on)
     {
-        for (auto* b : { (juce::Component*) &btnAlignL_, (juce::Component*) &btnAlignC_,
-                         (juce::Component*) &btnAlignR_, (juce::Component*) &fontSizeBox_ })
-            b->setEnabled (on);
-        lblText_.setAlpha (on ? 1.0f : 0.45f);
+        // The cluster is contextual, like Word's Table tools: with nothing to
+        // act on it takes no room at all, so the rest of the ribbon keeps the
+        // width the Figma mock gives it.
+        const bool changed = (textTargetActive_ != on);
+        textTargetActive_ = on;
+        for (auto* b : { (juce::Component*) &btnAlignL_,  (juce::Component*) &btnAlignC_,
+                         (juce::Component*) &btnAlignR_,  (juce::Component*) &btnVAlignT_,
+                         (juce::Component*) &btnVAlignM_, (juce::Component*) &btnVAlignB_,
+                         (juce::Component*) &btnBold_,    (juce::Component*) &btnItalic_,
+                         (juce::Component*) &fontSizeBox_, (juce::Component*) &lblText_ })
+            b->setVisible (on);
+        if (changed) resized();
         repaint();
     }
 
@@ -677,6 +732,21 @@ public:
         btnAlignL_.setToggleState (align == 0, juce::dontSendNotification);
         btnAlignC_.setToggleState (align == 1, juce::dontSendNotification);
         btnAlignR_.setToggleState (align == 2, juce::dontSendNotification);
+        repaint();
+    }
+
+    void setTextVAlignState (int valign)
+    {
+        btnVAlignT_.setToggleState (valign == 0, juce::dontSendNotification);
+        btnVAlignM_.setToggleState (valign == 1, juce::dontSendNotification);
+        btnVAlignB_.setToggleState (valign == 2, juce::dontSendNotification);
+        repaint();
+    }
+
+    void setTextStyleState (bool bold, bool italic)
+    {
+        btnBold_.setToggleState (bold, juce::dontSendNotification);
+        btnItalic_.setToggleState (italic, juce::dontSendNotification);
         repaint();
     }
 
@@ -690,7 +760,10 @@ public:
     }
 
     std::function<void(int)>   onTextAlign;
+    std::function<void(int)>   onTextVAlign;
     std::function<void(float)> onTextSize;
+    std::function<void(bool)>  onTextBold;
+    std::function<void(bool)>  onTextItalic;
 
     /** Re-applies the ribbon's edge indent to the adopted Help glyphs.
         MainComponent::refreshHeaderIcons() restyles them from scratch and
@@ -800,6 +873,9 @@ public:
     // so MainComponent's existing wiring keeps working untouched.
     juce::DrawableButton btnFitView_ { "fit", juce::DrawableButton::ImageFitted };
     TextAlignButton  btnAlignL_ { 0 }, btnAlignC_ { 1 }, btnAlignR_ { 2 };
+    TextAlignButton  btnVAlignT_ { 0, true }, btnVAlignM_ { 1, true }, btnVAlignB_ { 2, true };
+    juce::TextButton btnBold_, btnItalic_;
+    bool             textTargetActive_ = false;
     juce::ComboBox   fontSizeBox_;
     juce::Label      lblText_;
     bool             textUpdating_ = false;
@@ -973,13 +1049,13 @@ private:
         // Text Box carries on past Help on the same rhythm: a little air after
         // the preceding rule, three alignment glyphs on the icon pitch, then
         // the size box, then the closing rule.
-        static constexpr Cluster kText    { 788, 960 };
+        static constexpr Cluster kText    { 788, 1086 };
         static constexpr int kOptionPillW = 50;           // "Snap" / "Ortho" pills
         static constexpr int kOptionPillGap = 6;
         static constexpr int kPlateLeft = 15;             // Figma  20
         static constexpr int kPitch     = 23;             // Figma  30 icon pitch
 
-        const int lastDividerX = kText.dividerX;
+        const int lastDividerX = textTargetActive_ ? kText.dividerX : kHelp.dividerX;
         const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
@@ -1158,9 +1234,12 @@ private:
             }
         }
 
-        // Text Box: three alignment glyphs on the icon pitch, then the size
-        // box. It closes the row, so the Ready pill below starts after it.
+        // Text Box: horizontal alignment, vertical alignment, B / I, then the
+        // size list. Contextual - laid out only when a text box is the target,
+        // so the row is untouched the rest of the time.
+        if (textTargetActive_)
         {
+            const int grp = juce::jmax (2, px2 (6));   // air between sub-groups
             int tx = px2 (kText.iconX);
             for (auto* b : { (juce::Component*) &btnAlignL_, (juce::Component*) &btnAlignC_,
                              (juce::Component*) &btnAlignR_ })
@@ -1168,9 +1247,20 @@ private:
                 b->setBounds (tx, iconTop, tool, tool);
                 tx += pitch;
             }
+            tx += grp;
+            for (auto* b : { (juce::Component*) &btnVAlignT_, (juce::Component*) &btnVAlignM_,
+                             (juce::Component*) &btnVAlignB_ })
+            {
+                b->setBounds (tx, iconTop, tool, tool);
+                tx += pitch;
+            }
+            tx += grp;
+            btnBold_.setBounds   (tx, iconTop, tool, tool); tx += pitch;
+            btnItalic_.setBounds (tx, iconTop, tool, tool); tx += pitch;
+
             const int plateRight = px2 (kText.dividerX);
-            const int boxW = juce::jmax (px2 (34), plateRight - tx - px2 (10));
-            fontSizeBox_.setBounds (tx + px2 (4), iconTop, boxW, tool);
+            const int boxW = juce::jmax (px2 (34), plateRight - tx - grp - px2 (8));
+            fontSizeBox_.setBounds (tx + grp, iconTop, boxW, tool);
             lblText_.setBounds (plateLeft, labelTop,
                                 juce::jmax (10, plateRight - plateLeft), labelH);
             dividerX_.push_back (plateRight);

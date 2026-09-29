@@ -333,6 +333,119 @@ void RadiationPatternComponent::setTextAlign (int align)
     repaint();
 }
 
+int RadiationPatternComponent::getActiveTextVAlign() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox) return a.valign;
+    }
+    return drawTextVAlign_;
+}
+
+bool RadiationPatternComponent::getActiveTextBold() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox) return a.bold;
+    }
+    return drawTextBold_;
+}
+
+bool RadiationPatternComponent::getActiveTextItalic() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox) return a.italic;
+    }
+    return drawTextItalic_;
+}
+
+void RadiationPatternComponent::setTextVAlign (int valign)
+{
+    drawTextVAlign_ = juce::jlimit (0, 2, valign);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox) a.valign = drawTextVAlign_;
+    }
+    repaint();
+}
+
+void RadiationPatternComponent::setTextBold (bool on)
+{
+    drawTextBold_ = on;
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox) { a.bold = on; growTextBoxToFit (idx); }
+    }
+    if (isEditingTextBox()) layoutTextBoxEditor();
+    repaint();
+}
+
+void RadiationPatternComponent::setTextItalic (bool on)
+{
+    drawTextItalic_ = on;
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox) { a.italic = on; growTextBoxToFit (idx); }
+    }
+    if (isEditingTextBox()) layoutTextBoxEditor();
+    repaint();
+}
+
+void RadiationPatternComponent::growTextBoxToFit (int index)
+{
+    if (index < 0 || index >= (int) annotations_.size()) return;
+    auto& a = annotations_[(size_t) index];
+    if (a.kind != Annotation::Kind::TextBox || a.pts.size() < 2) return;
+
+    const auto local = textBoxLocalRect (a);
+    if (local.getWidth() < 1.0e-6f || local.getHeight() < 1.0e-6f) return;
+
+    const auto sTL = annotateToScreen (a, { local.getX(), local.getY() });
+    const auto sTR = annotateToScreen (a, { local.getRight(), local.getY() });
+    const auto sBL = annotateToScreen (a, { local.getX(), local.getBottom() });
+    const float wPx = sTL.getDistanceFrom (sTR);
+    const float hPx = sTL.getDistanceFrom (sBL);
+    if (wPx < 6.0f || hPx < 1.0f) return;
+
+    // Measure the wrapped text at the width the box already has.
+    const juce::String label =
+        (isEditingTextBox() && textEditIndex_ == index && textEdit_ != nullptr)
+            ? textEdit_->getText() : a.text;
+    if (label.isEmpty()) return;
+
+    const float pad = 6.0f;
+    juce::GlyphArrangement ga;
+    ga.addJustifiedText (textBoxFont (a, hPx), label, 0.0f, 0.0f,
+                         juce::jmax (10.0f, wPx - pad * 2.0f),
+                         juce::Justification::topLeft);
+    const float needPx = ga.getBoundingBox (0, -1, true).getBottom() + pad * 2.0f;
+    if (needPx <= hPx + 0.5f) return;          // grow only, never shrink
+
+    const float pxPerLocal = hPx / local.getHeight();
+    if (pxPerLocal < 1.0e-6f) return;
+    const float needLocal = needPx / pxPerLocal;
+
+    // Grow DOWNWARDS on screen. Which local edge that is depends on the space,
+    // so ask the transform rather than assuming world Y runs one way.
+    const bool bottomEdgeIsLower = (annotateToScreen (a, { local.getX(), local.getBottom() }).y
+                                    > annotateToScreen (a, { local.getX(), local.getY() }).y);
+    const float keepY = bottomEdgeIsLower ? local.getY() : local.getBottom();
+    const float newOther = bottomEdgeIsLower ? (keepY + needLocal) : (keepY - needLocal);
+
+    a.pts[0] = { local.getX(),     keepY };
+    a.pts[1] = { local.getRight(), newOther };
+}
+
 void RadiationPatternComponent::setTextSize (float px)
 {
     drawTextSize_ = (px <= 0.5f) ? 0.0f : juce::jlimit (5.0f, 200.0f, px);
@@ -359,8 +472,7 @@ bool RadiationPatternComponent::hasFillTarget() const noexcept
     if (tool_ == Tool::Shape)
         return drawShape_ == DrawShape::Circle
             || drawShape_ == DrawShape::Rectangle
-            || drawShape_ == DrawShape::Square
-            || drawShape_ == DrawShape::TextBox;
+            || drawShape_ == DrawShape::Square;
 
     return false;
 }
@@ -1497,7 +1609,10 @@ bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
         // A new box inherits the ribbon's current Text settings, the same way
         // a new shape inherits the opacity slider.
         a.align  = drawTextAlign_;
+        a.valign = drawTextVAlign_;
         a.fontPx = drawTextSize_;
+        a.bold   = drawTextBold_;
+        a.italic = drawTextItalic_;
         a.rotationDeg = 0.0f;
         a.thicknessPx = 1.5f;
         a.text = "Text";
@@ -1603,10 +1718,12 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> annotPt, float rad
 
 bool RadiationPatternComponent::isFilledShapeKind (Annotation::Kind k) noexcept
 {
+    // TextBox is deliberately NOT here. It has no fill, and emphasis is what
+    // Bold is for, so the Opacity control greys out for one instead of
+    // offering a slider that only fades the words.
     return k == Annotation::Kind::Rectangle
         || k == Annotation::Kind::Square
-        || k == Annotation::Kind::Circle
-        || k == Annotation::Kind::TextBox;
+        || k == Annotation::Kind::Circle;
 }
 
 int RadiationPatternComponent::annotationBorderHitTest (juce::Point<float> annotPt,
@@ -2218,9 +2335,7 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
                                                    a.colour.getFloatGreen(),
                                                    a.colour.getFloatBlue(),
                                                    1.0f);
-    // Edit at the opacity it will actually have, so what you type is what
-    // you get - but never so faint it cannot be read while typing.
-    const auto ink = base.withAlpha (juce::jmax (0.35f, juce::jlimit (0.0f, 1.0f, a.fillAlpha)));
+    const auto ink = base;
 
     textEdit_->setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     textEdit_->setColour (juce::TextEditor::textColourId, ink);
@@ -2231,6 +2346,17 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
     textEdit_->setBorder (juce::BorderSize<int> (4));
     textEdit_->setOpaque (false);
 
+    textEdit_->onTextChange = [this]
+    {
+        // Figma's auto height: the box follows the text as it wraps, so you
+        // never type into a container that silently clips what you wrote.
+        if (textEditIndex_ >= 0)
+        {
+            growTextBoxToFit (textEditIndex_);
+            layoutTextBoxEditor();
+            repaint();
+        }
+    };
     textEdit_->onEscapeKey = [this]
     {
         endTextBoxEdit (true);
@@ -2322,8 +2448,7 @@ void RadiationPatternComponent::layoutTextBoxEditor()
     // Was 0.28 of the box height while the painter used 0.22, so the text
     // visibly jumped the moment you stopped editing. One helper now answers
     // for both.
-    const float fontH = textBoxFontScreenPx (a, hPx);
-    textEdit_->setFont (Brand::tech (fontH, false));
+    textEdit_->setFont (textBoxFont (a, hPx));
     textEdit_->setJustification (textBoxJustification (a.align));
     textEdit_->setBounds (bounds);
     textEdit_->toFront (false);
@@ -2366,6 +2491,14 @@ void RadiationPatternComponent::drawTextBoxRotateIcon (juce::Graphics& g,
                          ty - tipLen * 0.45f * dirY - tipLen * 0.55f * sideY);
         g.fillPath (tip);
     }
+}
+
+juce::Font RadiationPatternComponent::textBoxFont (const Annotation& a,
+                                                   float boxHeightPx) const
+{
+    auto f = Brand::tech (textBoxFontScreenPx (a, boxHeightPx), a.bold);
+    if (a.italic) f.setItalic (true);
+    return f;
 }
 
 float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
@@ -2448,13 +2581,12 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
 
     const float pad = 6.0f;
     const float fontH = textBoxFontScreenPx (a, hPx);
-    g.setFont (Brand::tech (fontH, false));
+    g.setFont (textBoxFont (a, hPx));
 
-    // Opacity now reaches the text. It used to ignore a.fillAlpha entirely and
-    // floor the alpha at 0.45, so the slider moved, the readout changed and
-    // nothing on screen did - a text box has no fill, so its text IS what the
-    // opacity is for.
-    const auto ink = base.withAlpha (juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul);
+    // Fully opaque: opacity no longer applies to a text box (see
+    // isFilledShapeKind), so the only thing that can fade the words is a
+    // preview's own alphaMul.
+    const auto ink = base.withAlpha (juce::jlimit (0.0f, 1.0f, alphaMul));
 
     {
         juce::Graphics::ScopedSaveState textSs (g);
@@ -2466,8 +2598,15 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
                                            juce::jmax (1.0f, hPx - pad * 2.0f));
         g.setColour (ink);
         const int maxLines = juce::jmax (1, (int) (box.getHeight() / (fontH * 1.15f)));
+        // Horizontal and vertical alignment combine into one Justification.
+        int flags = (a.align == 1) ? juce::Justification::horizontallyCentred
+                  : (a.align == 2) ? juce::Justification::right
+                                   : juce::Justification::left;
+        flags |= (a.valign == 1) ? juce::Justification::verticallyCentred
+               : (a.valign == 2) ? juce::Justification::bottom
+                                 : juce::Justification::top;
         g.drawFittedText (label, box.toNearestInt(),
-                          textBoxJustification (a.align), maxLines, 1.0f);
+                          juce::Justification (flags), maxLines, 1.0f);
     }
 }
 
@@ -5149,6 +5288,19 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         grabKeyboardFocus();
 
     lastMouse_ = e.position;
+
+    // Click away to commit. The editor commits on losing focus, but a click on
+    // the plot does not always move focus off it, so a press outside the box
+    // being edited ends the edit first and then falls through to do whatever
+    // that click would normally have done.
+    if (isEditingTextBox() && textEditIndex_ >= 0
+        && textEditIndex_ < (int) annotations_.size())
+    {
+        const auto& edited = annotations_[(size_t) textEditIndex_];
+        const float radius = 10.0f / juce::jmax (1.0f, worldScale());
+        if (! pointHitsTextBox (screenToAnnot (e.position.x, e.position.y), edited, radius))
+            endTextBoxEdit (true);
+    }
 
     // Middle button pans from ANY tool, the way every CAD app behaves -- you
     // should not have to leave the tool you are drawing with to move the view.

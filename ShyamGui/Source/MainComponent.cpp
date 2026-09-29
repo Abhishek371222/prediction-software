@@ -365,10 +365,29 @@ MainComponent::MainComponent (ProjectData project)
         plotHeader_.setTextAlignState (a);
         commitEdit();
     };
+    plotHeader_.onTextVAlign = [this] (int v)
+    {
+        willEdit();
+        patternComp_.setTextVAlign (v);
+        plotHeader_.setTextVAlignState (v);
+        commitEdit();
+    };
     plotHeader_.onTextSize = [this] (float px)
     {
         willEdit();
         patternComp_.setTextSize (px);
+        commitEdit();
+    };
+    plotHeader_.onTextBold = [this] (bool on)
+    {
+        willEdit();
+        patternComp_.setTextBold (on);
+        commitEdit();
+    };
+    plotHeader_.onTextItalic = [this] (bool on)
+    {
+        willEdit();
+        patternComp_.setTextItalic (on);
         commitEdit();
     };
     patternComp_.onAnnotSelectionChanged = [this]
@@ -2313,6 +2332,9 @@ void MainComponent::syncTextControls()
     // ribbon cannot drift from the selection.
     plotHeader_.setTextControlsEnabled (patternComp_.hasTextTarget());
     plotHeader_.setTextAlignState (patternComp_.getActiveTextAlign());
+    plotHeader_.setTextVAlignState (patternComp_.getActiveTextVAlign());
+    plotHeader_.setTextStyleState (patternComp_.getActiveTextBold(),
+                                   patternComp_.getActiveTextItalic());
     plotHeader_.setTextSizeState (patternComp_.getActiveTextSize());
 }
 
