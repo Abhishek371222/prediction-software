@@ -40,6 +40,23 @@ public:
         nothing is re-solved, since cabinet size is not a solver input. */
     void setShowSpeakerDims (bool b) { showSpeakerDims_ = b; repaint(); }
     bool showSpeakerDims() const noexcept { return showSpeakerDims_; }
+    void setShowRays (bool b) { showRays_ = b; repaint(); }
+    bool showRays() const noexcept { return showRays_; }
+    /** Locked rays are drawn but cannot be grabbed, so a finished aim survives
+        clicking around a canvas the rays now cover a lot of. */
+    void setLockRays (bool b) { lockRays_ = b; repaint(); }
+    bool lockRays() const noexcept { return lockRays_; }
+    /** The SPL heatmap itself. Off leaves the grid, the speakers and their
+        rays on a bare canvas - the solve is untouched, only the paint. */
+    void setShowField (bool b) { showField_ = b; repaint(); }
+    bool showField() const noexcept { return showField_; }
+    /** True when the solved field is calibrated dB SPL, not relative. */
+    bool resultHasAbsoluteSpl() const noexcept { return result_.hasAbsoluteSpl; }
+    /** Shows or hides ORTHO's gap labels. It is not an overlay of its own:
+        with Ortho off there is no linked spacing to report, so there is
+        nothing to show. On by default, so Ortho reads as it always did. */
+    void setShowInterdistance (bool b) { showInterdistance_ = b; repaint(); }
+    bool showInterdistance() const noexcept { return showInterdistance_; }
 
     void setLayoutLayer (LayoutLayer* layer) { layout_ = layer; repaint(); }
     void setLayoutEditMode (bool b) { layoutEditMode_ = b; repaint(); }
@@ -169,13 +186,50 @@ public:
         int   valign = 0;                             // 0 top, 1 middle, 2 bottom
         bool  bold   = false;
         bool  italic = false;
+        float lineHeight = 1.0f;                      // multiple of the font height
+
+        // --- plane ---------------------------------------------------------
+        // A shape can be marked as a PLANE: a surface in the venue rather than
+        // a note drawn on top of it. Only the type changes how it draws.
+        // listenHgt is stored but carries no control yet - with no vertical
+        // directivity in the engine it cannot change a prediction, and a
+        // control that changes nothing reads as a bug.
+        enum class PlaneType    { Listening = 0, Virtual = 1, Architectural = 2 };
+        enum class ListenHeight { Seated = 0, Standing = 1 };
+        bool         isPlane   = false;
+        PlaneType    planeType = PlaneType::Listening;
+        ListenHeight listenHgt = ListenHeight::Seated;
+
+        /** Which shapes can be a plane: the ones that span or enclose ground.
+            A text box is a label and a ruler is a measurement, so neither
+            qualifies, and freehand makes too poor a boundary to offer. */
+        static bool canBePlane (Kind k) noexcept
+        {
+            return k == Kind::Line || k == Kind::Polyline || k == Kind::Rectangle
+                || k == Kind::Square || k == Kind::Circle;
+        }
     };
 
     std::vector<Annotation> getAnnotations() const { return annotations_; }
+
+    /** Annotations <-> JSON. Kept here rather than in ProjectData so that the
+        project format does not have to know what an Annotation is; it stores
+        the result verbatim. Every field round-trips, including the text-box
+        typography, so a saved drawing reopens exactly as it was left. */
+    static juce::var annotationsToVar (const std::vector<Annotation>&);
+    static std::vector<Annotation> annotationsFromVar (const juce::var&);
     void setAnnotations (std::vector<Annotation> a);
 
     /** True when the ribbon's Text controls have something to act on: a text
         box selected, or the TextBox tool armed so the next one inherits. */
+    /** True when the selection is a shape that could be a plane, so the
+        ribbon's Plane cluster has something to act on. */
+    bool  hasPlaneTarget()    const noexcept;
+    bool  getPlaneOn()        const noexcept;
+    int   getPlaneType()      const noexcept;   // 0 Listening, 1 Virtual, 2 Architectural
+    void  setPlaneOn   (bool on);
+    void  setPlaneType (int type);
+
     bool  hasTextTarget()     const noexcept;
     int   getActiveTextAlign() const noexcept;
     float getActiveTextSize()  const noexcept;   // 0 = auto-fit to the box
@@ -184,9 +238,11 @@ public:
     void  setTextSize  (float px);
     void  setTextBold   (bool on);
     void  setTextItalic (bool on);
+    void  setTextLineHeight (float mult);
     int   getActiveTextVAlign() const noexcept;
     bool  getActiveTextBold()   const noexcept;
     bool  getActiveTextItalic() const noexcept;
+    float getActiveTextLineHeight() const noexcept;
 
     bool hasCopyableSelection() const noexcept;
     bool hasClipboardContent() const noexcept;
@@ -199,6 +255,8 @@ public:
     void showSelectionContextMenu (juce::Point<int> screenPos);
     /** Right-click Properties for a Q21S under the cursor (index, or -1). */
     void showSelectionContextMenu (juce::Point<int> screenPos, int speakerUnderCursor);
+    /** Which mic is under this screen point, or -1. */
+    int  micAtScreen (juce::Point<float>) const noexcept;
     void showSpeakerProperties (int speakerIndex);
 
     std::function<void(int)>               onSpeakerSelected;
@@ -214,6 +272,9 @@ public:
     std::function<void()>                  onWillEdit;
     std::function<void()>                  onEditCommitted;
     std::function<void()>                  onAnnotSelectionChanged; // opacity slider sync
+    /** Right-click a mic -> "Listen here". The host opens the player; the
+        canvas has no business owning an audio device. */
+    std::function<void(int)>                onListenAtMic;
     std::function<void()>                  onMicsChanged;
     std::function<void()>                  onAddMicArmedChanged;
     std::function<void()>                  onAddSpeakerArmedChanged;
@@ -384,6 +445,25 @@ private:
     void snapMicWorld (float& wx, float& wy, bool playSoundIfNewClip);
     void beginMicDrag (int micIndex, juce::Point<float> screenPos);
     void drawShapeAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
+
+    /** Coverage over a plane, sampled from the SOLVED field - the same grid
+        the heatmap paints, so the numbers and the picture cannot disagree.
+        One frequency, because the map is one frequency. */
+    struct PlaneStats
+    {
+        bool  valid    = false;
+        bool  absolute = false;    // real dB SPL, or relative only
+        float minDb = 0.0f, maxDb = 0.0f, avgDb = 0.0f;
+        int   samples = 0;
+        float spreadDb() const noexcept { return maxDb - minDb; }
+    };
+    PlaneStats planeStatsFor (const Annotation&) const;
+
+    // How a plane differs from the same shape drawn as a note.
+    static bool  planeIsDashed  (const Annotation&) noexcept;
+    static float planeStrokeW   (const Annotation&) noexcept;
+    static float planeFillAlpha (const Annotation&, float base) noexcept;
+    void         drawPlaneTag   (juce::Graphics&, const Annotation&);
     void drawArcAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
     void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a,
                                 float alphaMul = 1.0f, bool showBorder = false);
@@ -418,12 +498,44 @@ private:
     bool                showDistanceRings_ = false;
     bool                showMicDegrees_ = false;
     bool                showSpeakerDims_ = false;
+    bool                showRays_ = false;
+    bool                lockRays_ = false;
+    // Off by default: the map is now something you switch on from the
+    // Mapping tab, not the thing the canvas always shows.
+    bool                showField_ = false;
+    bool                showInterdistance_ = true;
+
+    /** One dashed ray out of every enabled speaker, along the axis it is
+        aimed down, running off the edge of the plot so it reads as infinite.
+        Deliberately a single line rather than a fan: this says WHERE the
+        cabinet points and nothing about how wide it covers - the measured
+        data is one horizontal plane, so a spread would imply coverage it
+        cannot back up. */
+    void drawSpeakerRays (juce::Graphics&, juce::Rectangle<int> plotBounds);
+    /** Which speaker's ray is under this point, or -1. The ray doubles as a
+        long grab handle for aiming: the rotation knob is 8 px across, and the
+        ray is the same gesture with a target you cannot miss. */
+    int  rayHitTest (juce::Point<float>) const;
+    /** A ray is drawn for a speaker when Show Rays is on, and always for the
+        selected one - it replaced the rotation knob, so the selected unit must
+        carry its aiming handle whether or not the toggle is on. */
+    bool rayVisibleFor (int speakerIndex) const noexcept;
     // Defaults the next text box inherits, exactly as drawFillAlpha_ works.
     int                 drawTextAlign_ = 0;
     int                 drawTextVAlign_ = 0;
     float               drawTextSize_  = 0.0f;
     bool                drawTextBold_   = false;
     bool                drawTextItalic_ = false;
+    float               drawTextLineHeight_ = 1.0f;
+
+    /** Montserrat ships here as four upright faces only, and the theme's
+        getTypefaceForFont picks by weight name, so Font::setItalic had nothing
+        to bind to - the flag was set and the glyphs came back upright. The
+        slant is therefore synthesised at draw time, the way a word processor
+        fakes an oblique when a family has no true italic. tan 12 degrees. */
+    static constexpr float kItalicShear = 0.21f;
+    /** Extra pixels between baselines for a given font, from a.lineHeight. */
+    static float textBoxLeading (const Annotation&, const juce::Font&) noexcept;
 
     /** Grow a text box downwards until the wrapped text fits. Figma's auto
         height: the width you drew is kept, the box never shrinks under you. */

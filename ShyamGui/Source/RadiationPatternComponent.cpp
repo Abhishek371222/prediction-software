@@ -284,6 +284,54 @@ float RadiationPatternComponent::getActiveFillAlpha() const noexcept
     return drawFillAlpha_;
 }
 
+bool RadiationPatternComponent::hasPlaneTarget() const noexcept
+{
+    // Unlike the text controls this does NOT arm the next shape: a plane is a
+    // decision you make about something you have drawn and can see, not a mode
+    // you enter beforehand.
+    return selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
+        && Annotation::canBePlane (annotations_[(size_t) selectedAnnot_].kind);
+}
+
+bool RadiationPatternComponent::getPlaneOn() const noexcept
+{
+    return hasPlaneTarget() && annotations_[(size_t) selectedAnnot_].isPlane;
+}
+
+int RadiationPatternComponent::getPlaneType() const noexcept
+{
+    if (! hasPlaneTarget()) return 0;
+    return (int) annotations_[(size_t) selectedAnnot_].planeType;
+}
+
+void RadiationPatternComponent::setPlaneOn (bool on)
+{
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (Annotation::canBePlane (a.kind)) a.isPlane = on;
+    }
+    repaint();
+}
+
+void RadiationPatternComponent::setPlaneType (int type)
+{
+    const auto t = (Annotation::PlaneType)
+        juce::jlimit (0, (int) Annotation::PlaneType::Architectural, type);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (! Annotation::canBePlane (a.kind)) continue;
+        a.planeType = t;
+        // Choosing a type is choosing to be a plane - otherwise the buttons
+        // look live but the shape never changes.
+        a.isPlane = true;
+    }
+    repaint();
+}
+
 bool RadiationPatternComponent::hasTextTarget() const noexcept
 {
     if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
@@ -363,6 +411,33 @@ bool RadiationPatternComponent::getActiveTextItalic() const noexcept
     return drawTextItalic_;
 }
 
+float RadiationPatternComponent::getActiveTextLineHeight() const noexcept
+{
+    if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size())
+    {
+        const auto& a = annotations_[(size_t) selectedAnnot_];
+        if (a.kind == Annotation::Kind::TextBox) return a.lineHeight;
+    }
+    return drawTextLineHeight_;
+}
+
+void RadiationPatternComponent::setTextLineHeight (float mult)
+{
+    drawTextLineHeight_ = juce::jlimit (1.0f, 3.0f, mult);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        if (a.kind == Annotation::Kind::TextBox)
+        {
+            a.lineHeight = drawTextLineHeight_;
+            growTextBoxToFit (idx);       // taller lines need a taller box
+        }
+    }
+    if (isEditingTextBox()) layoutTextBoxEditor();
+    repaint();
+}
+
 void RadiationPatternComponent::setTextVAlign (int valign)
 {
     drawTextVAlign_ = juce::jlimit (0, 2, valign);
@@ -425,9 +500,11 @@ void RadiationPatternComponent::growTextBoxToFit (int index)
 
     const float pad = 6.0f;
     juce::GlyphArrangement ga;
-    ga.addJustifiedText (textBoxFont (a, hPx), label, 0.0f, 0.0f,
+    const auto font = textBoxFont (a, hPx);
+    ga.addJustifiedText (font, label, 0.0f, 0.0f,
                          juce::jmax (10.0f, wPx - pad * 2.0f),
-                         juce::Justification::topLeft);
+                         juce::Justification::topLeft,
+                         textBoxLeading (a, font));
     const float needPx = ga.getBoundingBox (0, -1, true).getBottom() + pad * 2.0f;
     if (needPx <= hPx + 0.5f) return;          // grow only, never shrink
 
@@ -780,11 +857,20 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
             g.drawEllipse (s.x - 9.0f, s.y - 11.0f, 18.0f, 18.0f, 1.4f);
 
         const juce::String label = micLabelText (m);
-        g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
-        g.setColour (Brand::panelDark().withAlpha (0.85f));
-        const float tw = (float) g.getCurrentFont().getStringWidth (label) + 10.0f;
-        auto box = juce::Rectangle<float> (s.x + 10.0f, s.y - 10.0f, tw, 16.0f);
+        const float fh = juce::jmax (11.0f, Brand::UI::scaledFont (12.5f));
+        g.setFont (Brand::tech (fh, true));
+        // Charcoal, not panelDark: this pill sits on the canvas, which is
+        // always dark, while panelDark follows the THEME and is plain white in
+        // the light one - so the white reading below was drawn white on white.
+        g.setColour (Brand::charcoal().withAlpha (0.94f));
+        const float tw = (float) g.getCurrentFont().getStringWidth (label) + fh;
+        const float th = fh * 1.55f;
+        auto box = juce::Rectangle<float> (s.x + 10.0f, s.y - th * 0.5f, tw, th);
         g.fillRoundedRectangle (box, 3.0f);
+        // A hairline in the mic's own colour keeps the reading tied to its
+        // marker when several sit close together.
+        g.setColour ((sel ? Brand::accent() : Brand::white()).withAlpha (0.55f));
+        g.drawRoundedRectangle (box, 3.0f, 1.0f);
         g.setColour (sel ? Brand::accent() : Brand::white());
         g.drawText (label, box.toNearestInt(), juce::Justification::centred, false);
     }
@@ -1613,6 +1699,7 @@ bool RadiationPatternComponent::acceptAnnotPoint (juce::Point<float> raw)
         a.fontPx = drawTextSize_;
         a.bold   = drawTextBold_;
         a.italic = drawTextItalic_;
+        a.lineHeight = drawTextLineHeight_;
         a.rotationDeg = 0.0f;
         a.thicknessPx = 1.5f;
         a.text = "Text";
@@ -2450,7 +2537,26 @@ void RadiationPatternComponent::layoutTextBoxEditor()
     // for both.
     textEdit_->setFont (textBoxFont (a, hPx));
     textEdit_->setJustification (textBoxJustification (a.align));
+    textEdit_->setLineSpacing (juce::jlimit (1.0f, 3.0f, a.lineHeight));
     textEdit_->setBounds (bounds);
+
+    // Lean the editor itself, so the words do not straighten up the moment you
+    // click into them. A component takes one transform, applied in the parent's
+    // space, so this pivots on the first baseline rather than per line - on a
+    // multi-line box the later lines sit a couple of pixels off where they
+    // land once committed.
+    if (a.italic)
+    {
+        const float anchor = (float) bounds.getY() + textEdit_->getFont().getAscent();
+        textEdit_->setTransform (juce::AffineTransform::translation (0.0f, -anchor)
+                                     .sheared (-kItalicShear, 0.0f)
+                                     .translated (0.0f, anchor));
+    }
+    else
+    {
+        textEdit_->setTransform ({});
+    }
+
     textEdit_->toFront (false);
 }
 
@@ -2496,9 +2602,20 @@ void RadiationPatternComponent::drawTextBoxRotateIcon (juce::Graphics& g,
 juce::Font RadiationPatternComponent::textBoxFont (const Annotation& a,
                                                    float boxHeightPx) const
 {
-    auto f = Brand::tech (textBoxFontScreenPx (a, boxHeightPx), a.bold);
-    if (a.italic) f.setItalic (true);
-    return f;
+    // Weight only. Slant is NOT set here: see kItalicShear - there is no
+    // italic Montserrat to switch to, so asking the Font for one silently
+    // returned the upright face. The shear is applied where the glyphs are
+    // drawn instead.
+    return Brand::tech (textBoxFontScreenPx (a, boxHeightPx), a.bold);
+}
+
+float RadiationPatternComponent::textBoxLeading (const Annotation& a,
+                                                 const juce::Font& f) noexcept
+{
+    // GlyphArrangement advances by (font height + leading), while TextEditor
+    // multiplies its line height. Converting here keeps the in-place editor
+    // and the painted result on the same baselines.
+    return f.getHeight() * (juce::jlimit (1.0f, 3.0f, a.lineHeight) - 1.0f);
 }
 
 float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
@@ -2580,7 +2697,6 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
     if (wPx < 8.0f || hPx < 8.0f) return;
 
     const float pad = 6.0f;
-    const float fontH = textBoxFontScreenPx (a, hPx);
     g.setFont (textBoxFont (a, hPx));
 
     // Fully opaque: opacity no longer applies to a text box (see
@@ -2597,16 +2713,52 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
                                            juce::jmax (1.0f, wPx - pad * 2.0f),
                                            juce::jmax (1.0f, hPx - pad * 2.0f));
         g.setColour (ink);
-        const int maxLines = juce::jmax (1, (int) (box.getHeight() / (fontH * 1.15f)));
-        // Horizontal and vertical alignment combine into one Justification.
-        int flags = (a.align == 1) ? juce::Justification::horizontallyCentred
-                  : (a.align == 2) ? juce::Justification::right
-                                   : juce::Justification::left;
-        flags |= (a.valign == 1) ? juce::Justification::verticallyCentred
-               : (a.valign == 2) ? juce::Justification::bottom
-                                 : juce::Justification::top;
-        g.drawFittedText (label, box.toNearestInt(),
-                          juce::Justification (flags), maxLines, 1.0f);
+
+        // drawFittedText has no line-spacing control, so the text is laid out
+        // by hand: GlyphArrangement takes the leading directly, and it is the
+        // same call growTextBoxToFit measures with, so what fits is what shows.
+        const auto font = textBoxFont (a, hPx);
+        const auto hJust = (a.align == 1) ? juce::Justification::horizontallyCentred
+                         : (a.align == 2) ? juce::Justification::right
+                                          : juce::Justification::left;
+        juce::GlyphArrangement ga;
+        ga.addJustifiedText (font, label,
+                             box.getX(), box.getY() + font.getAscent(),
+                             box.getWidth(), juce::Justification (hJust),
+                             textBoxLeading (a, font));
+
+        // Vertical alignment: shift the whole block, measured, so it lands the
+        // same way whatever the line height is.
+        if (a.valign != 0)
+        {
+            const auto bb = ga.getBoundingBox (0, -1, true);
+            const float slack = box.getHeight() - bb.getHeight();
+            const float dy = (box.getY() - bb.getY())
+                           + (a.valign == 1 ? slack * 0.5f : slack);
+            ga.moveRangeOfGlyphs (0, -1, 0.0f, dy);
+        }
+
+        // Keep long text inside the box the user drew, as the old maxLines did.
+        g.reduceClipRegion (box.expanded (pad).getSmallestIntegerContainer());
+
+        if (a.italic)
+        {
+            // Slant each glyph about its OWN baseline, so every line leans the
+            // same way. One shear over the whole block would rake multi-line
+            // text into a parallelogram.
+            for (int i = 0; i < ga.getNumGlyphs(); ++i)
+            {
+                const auto& pg = ga.getGlyph (i);
+                const float by = pg.getBaselineY();
+                pg.draw (g, juce::AffineTransform::translation (0.0f, -by)
+                                .sheared (-kItalicShear, 0.0f)
+                                .translated (0.0f, by));
+            }
+        }
+        else
+        {
+            ga.draw (g);
+        }
     }
 }
 
@@ -2922,6 +3074,208 @@ bool RadiationPatternComponent::pointHitsShapeFill (juce::Point<float> pt,
     return r.expanded (radius).contains (pt);
 }
 
+RadiationPatternComponent::PlaneStats
+RadiationPatternComponent::planeStatsFor (const Annotation& a) const
+{
+    PlaneStats st;
+    if (! hasData_ || a.pts.size() < 2 || a.space != AnnotSpace::World)
+        return st;
+
+    double sumI = 0.0;        // energy, not dB - see the average below
+    float  mn = 1.0e9f, mx = -1.0e9f;
+    int    n = 0;
+    bool   anyAbs = false;
+
+    auto take = [&] (float wx, float wy)
+    {
+        float absDb = 0.0f, relDb = 0.0f;
+        if (! sampleSplAtWorld (wx, wy, absDb, relDb)) return;
+        const float v = result_.hasAbsoluteSpl ? absDb : relDb;
+        anyAbs = anyAbs || result_.hasAbsoluteSpl;
+        mn = juce::jmin (mn, v);
+        mx = juce::jmax (mx, v);
+        // Spatial average is an average of ENERGY, then back to dB. Averaging
+        // the decibels themselves would quietly understate hot spots.
+        sumI += std::pow (10.0, (double) v / 10.0);
+        ++n;
+    };
+
+    const int kSide = 32;     // 1024 samples over an area is plenty and instant
+    const int kLine = 200;
+
+    if (a.kind == Annotation::Kind::Circle)
+    {
+        const auto c = a.pts[0];
+        const float r = c.getDistanceFrom (a.pts[1]);
+        if (r < 1.0e-6f) return st;
+        for (int iy = 0; iy <= kSide; ++iy)
+            for (int ix = 0; ix <= kSide; ++ix)
+            {
+                const float dx = (ix / (float) kSide * 2.0f - 1.0f) * r;
+                const float dy = (iy / (float) kSide * 2.0f - 1.0f) * r;
+                if (dx * dx + dy * dy <= r * r) take (c.x + dx, c.y + dy);
+            }
+    }
+    else if (a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
+    {
+        const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+        for (int iy = 0; iy <= kSide; ++iy)
+            for (int ix = 0; ix <= kSide; ++ix)
+                take (wr.getX() + wr.getWidth()  * (ix / (float) kSide),
+                      wr.getY() + wr.getHeight() * (iy / (float) kSide));
+    }
+    else if (a.kind == Annotation::Kind::Polyline && a.closed && a.pts.size() >= 3)
+    {
+        // Closed polyline is a real audience area, so it is sampled as one:
+        // bounding box, keeping whatever is inside.
+        float x0 = a.pts[0].x, x1 = x0, y0 = a.pts[0].y, y1 = y0;
+        for (const auto& pt : a.pts)
+        {
+            x0 = juce::jmin (x0, pt.x); x1 = juce::jmax (x1, pt.x);
+            y0 = juce::jmin (y0, pt.y); y1 = juce::jmax (y1, pt.y);
+        }
+        auto inside = [&] (float px, float py)
+        {
+            bool in = false;
+            for (size_t i = 0, j = a.pts.size() - 1; i < a.pts.size(); j = i++)
+            {
+                const auto& pi = a.pts[i];
+                const auto& pj = a.pts[j];
+                if (((pi.y > py) != (pj.y > py))
+                    && (px < (pj.x - pi.x) * (py - pi.y) / (pj.y - pi.y) + pi.x))
+                    in = ! in;
+            }
+            return in;
+        };
+        for (int iy = 0; iy <= kSide; ++iy)
+            for (int ix = 0; ix <= kSide; ++ix)
+            {
+                const float px = x0 + (x1 - x0) * (ix / (float) kSide);
+                const float py = y0 + (y1 - y0) * (iy / (float) kSide);
+                if (inside (px, py)) take (px, py);
+            }
+    }
+    else
+    {
+        // Line or open polyline: walk it, which is what a line of seats is.
+        for (size_t i = 1; i < a.pts.size(); ++i)
+        {
+            const auto p0 = a.pts[i - 1];
+            const auto p1 = a.pts[i];
+            for (int k = 0; k <= kLine; ++k)
+            {
+                const float t = k / (float) kLine;
+                take (p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
+            }
+        }
+    }
+
+    if (n == 0) return st;
+    st.valid    = true;
+    st.absolute = anyAbs;
+    st.minDb    = mn;
+    st.maxDb    = mx;
+    st.avgDb    = (float) (10.0 * std::log10 (sumI / (double) n));
+    st.samples  = n;
+    return st;
+}
+
+bool RadiationPatternComponent::planeIsDashed (const Annotation& a) noexcept
+{
+    // Virtual is a reference surface nobody occupies, so it reads as a
+    // construction line rather than as something solid.
+    return a.isPlane && a.planeType == Annotation::PlaneType::Virtual;
+}
+
+float RadiationPatternComponent::planeStrokeW (const Annotation& a) noexcept
+{
+    // Architectural is the building: heavier than anything drawn on it.
+    return (a.isPlane && a.planeType == Annotation::PlaneType::Architectural)
+             ? a.thicknessPx * 1.8f : a.thicknessPx;
+}
+
+float RadiationPatternComponent::planeFillAlpha (const Annotation& a, float base) noexcept
+{
+    if (! a.isPlane) return base;
+    // Listening is the only one people stand on, so it is the only one that
+    // reads as an AREA. The other two are outlines.
+    return (a.planeType == Annotation::PlaneType::Listening)
+             ? juce::jmax (base, 0.22f) : 0.0f;
+}
+
+void RadiationPatternComponent::drawPlaneTag (juce::Graphics& g, const Annotation& a)
+{
+    if (! a.isPlane) return;
+
+    // Without this a Listening plane and an ordinary filled rectangle look
+    // identical. The tag is what says "this is a surface, not a note".
+    const char* name = a.planeType == Annotation::PlaneType::Listening ? "LISTENING"
+                     : a.planeType == Annotation::PlaneType::Virtual   ? "VIRTUAL"
+                                                                       : "ARCHITECTURAL";
+
+    // Coverage, for the two types that are about measuring something. A wall
+    // is not a measurement, so Architectural carries no numbers.
+    juce::String stats;
+    if (a.planeType != Annotation::PlaneType::Architectural)
+    {
+        const auto st = planeStatsFor (a);
+        if (! st.valid)
+        {
+            stats = "no solve yet";
+        }
+        else
+        {
+            // The frequency is stated because the map is ONE frequency - these
+            // are not broadband numbers and must not be read as such.
+            const double f = result_.frequency;
+            stats = "avg " + juce::String (st.avgDb, 1)
+                  + (st.absolute ? " dB" : " dB rel")
+                  + "   min " + juce::String (st.minDb, 1)
+                  + "   max " + juce::String (st.maxDb, 1)
+                  + "   spread " + juce::String (st.spreadDb(), 1)
+                  + "   @ " + (f >= 100.0 ? juce::String ((int) (f + 0.5))
+                                          : juce::String (f, 1)) + " Hz";
+        }
+    }
+
+    const auto box = annotationScreenBounds (a);
+    const float h = juce::jmax (11.0f, 11.5f * Brand::UI::scale);
+    g.setFont (Brand::tech (h, true));
+    int w = g.getCurrentFont().getStringWidth (name) + (int) h;
+    if (stats.isNotEmpty())
+        w = juce::jmax (w, g.getCurrentFont().getStringWidth (stats) + (int) h);
+    w = juce::jmax (40, w);
+
+    // Above the shape by preference, but tucked inside it when that would put
+    // the tag off the top of the plot - a plane drawn near the far edge of the
+    // world would otherwise be the one plane you cannot identify.
+    const auto plot = plotArea();
+    const int pillH = (int) (h * (stats.isNotEmpty() ? 2.75f : 1.45f));
+    int pillY = (int) box.getY() - (int) (h * 1.7f);
+    if (pillY < plot.getY() + 2)
+        pillY = (int) box.getY() + 2;      // tuck inside the shape instead
+    // ...and the shape itself can be clipped by the plot edge, so the final
+    // say belongs to the plot, not the shape.
+    pillY = juce::jlimit (plot.getY() + 2, plot.getBottom() - pillH - 2, pillY);
+    const juce::Rectangle<int> pill (juce::jmax ((int) box.getX(), plot.getX() + 2),
+                                     pillY, w, pillH);
+    g.setColour (a.colour.withAlpha (0.92f));
+    g.fillRoundedRectangle (pill.toFloat(), 3.0f);
+    g.setColour (Brand::white());
+    if (stats.isEmpty())
+    {
+        g.drawText (name, pill, juce::Justification::centred);
+    }
+    else
+    {
+        auto top = pill.withHeight (pill.getHeight() / 2);
+        g.drawText (name, top, juce::Justification::centred);
+        g.setFont (Brand::tech (h * 0.95f, false));
+        g.drawText (stats, pill.withTrimmedTop (pill.getHeight() / 2),
+                    juce::Justification::centred);
+    }
+}
+
 void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
                                                      const Annotation& a,
                                                      float alphaMul)
@@ -2932,13 +3286,28 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
     juce::Graphics::ScopedSaveState ss (g);
     g.setOpacity (1.0f);
 
-    const float fillA = juce::jlimit (0.0f, 1.0f, a.fillAlpha) * alphaMul;
-    const float strokeA = juce::jlimit (0.15f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+    const float fillA = planeFillAlpha (a, juce::jlimit (0.0f, 1.0f, a.fillAlpha)) * alphaMul;
+    const float strokeA = a.isPlane
+        ? alphaMul
+        : juce::jlimit (0.15f, 1.0f, 0.55f + 0.45f * a.fillAlpha) * alphaMul;
+    const float strokeW = planeStrokeW (a);
     // Rebuild from RGB so we never inherit a stale alpha channel on colour.
     const auto base = juce::Colour::fromFloatRGBA (a.colour.getFloatRed(),
                                                    a.colour.getFloatGreen(),
                                                    a.colour.getFloatBlue(),
                                                    1.0f);
+
+    // One dashed stroker for both shapes below, so Virtual looks the same
+    // whether it is a rectangle or a circle.
+    auto strokeShape = [&] (const juce::Path& path)
+    {
+        g.setColour (base.withAlpha (strokeA));
+        if (! planeIsDashed (a)) { g.strokePath (path, juce::PathStrokeType (strokeW)); return; }
+        const float dl[] = { 8.0f, 6.0f };
+        juce::Path dashed;
+        juce::PathStrokeType (strokeW).createDashedStroke (dashed, path, dl, 2);
+        g.fillPath (dashed);
+    };
 
     if (a.kind == Annotation::Kind::Circle)
     {
@@ -2960,8 +3329,9 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
         auto sr = juce::Rectangle<float> (sc.x - rx, sc.y - ry, rx * 2.0f, ry * 2.0f);
         g.setColour (base.withAlpha (fillA));
         g.fillEllipse (sr);
-        g.setColour (base.withAlpha (strokeA));
-        g.drawEllipse (sr, a.thicknessPx);
+        juce::Path ring;
+        ring.addEllipse (sr);
+        strokeShape (ring);
         return;
     }
 
@@ -2976,8 +3346,9 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
 
     g.setColour (base.withAlpha (fillA));
     g.fillRect (sr);
-    g.setColour (base.withAlpha (strokeA));
-    g.drawRect (sr, a.thicknessPx);
+    juce::Path outline;
+    outline.addRectangle (sr);
+    strokeShape (outline);
 }
 
 void RadiationPatternComponent::drawArcAnnotation (juce::Graphics& g,
@@ -3211,6 +3582,16 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     showSelectionContextMenu (screenPos, -1);
 }
 
+int RadiationPatternComponent::micAtScreen (juce::Point<float> p) const noexcept
+{
+    // Matches the drawn glyph, which is about 10 px across with a stand below.
+    for (int i = (int) mics_.size(); --i >= 0;)
+        if (worldToScreen (mics_[(size_t) i].x, mics_[(size_t) i].y)
+                .getDistanceFrom (p) <= 12.0f)
+            return i;
+    return -1;
+}
+
 void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> screenPos,
                                                           int speakerUnderCursor)
 {
@@ -3218,6 +3599,13 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     const bool canEdit = hasCopyableSelection();
     const bool hasSpeakerProps = speakerUnderCursor >= 0
                               && speakerUnderCursor < (int) speakers_.size();
+
+    const int micIdx = micAtScreen (getMouseXYRelative().toFloat());
+    if (micIdx >= 0)
+    {
+        m.addItem (6, "Listen here");
+        m.addSeparator();
+    }
 
     if (hasSpeakerProps)
     {
@@ -3232,9 +3620,14 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     m.showMenuAsync (juce::PopupMenu::Options()
                          .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
                      [safe = juce::Component::SafePointer<RadiationPatternComponent> (this),
-                      speakerUnderCursor] (int result)
+                      speakerUnderCursor, micIdx] (int result)
                      {
                          if (safe == nullptr || result <= 0) return;
+                         if (result == 6)
+                         {
+                             if (safe->onListenAtMic) safe->onListenAtMic (micIdx);
+                             return;
+                         }
                          if (result == 1)
                              safe->copySelection();
                          else if (result == 5)
@@ -3650,6 +4043,10 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     if (params_.viewMode == ViewMode::ElevationFront
         || params_.viewMode == ViewMode::ElevationSide)
     {
+        // Same canvas as the plan with mapping off, so switching views does
+        // not switch the drawing from a dark field to a white page - and the
+        // white labels and grid keep the contrast they were designed for.
+        g.fillAll (ColourMaps::sevenColor (0.0f));
         drawElevation (g, getLocalBounds());
         drawMarqueeOverlay (g);
         return;
@@ -3672,10 +4069,18 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     {
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (pb);
-        if (hasData_)
+        if (hasData_ && showField_)
             drawField (g, pb);   // stretched to fill pb exactly
+        else if (! showField_)
+            // Mapping Off still needs a canvas. Painting the colour map's own
+            // floor - the shade a silent field would be - keeps every overlay
+            // (white labels, rays, grid) at the contrast it was designed for;
+            // the bare component background is white in the light theme, which
+            // made them vanish.
+            g.fillAll (ColourMaps::sevenColor (0.0f));
         drawLayout   (g, pb);
         drawGrid     (g, pb);
+        drawSpeakerRays (g, pb);   // under the markers, over the grid
         drawSpeakers (g, pb);
         drawAnnotations (g, pb);
         drawMics (g);
@@ -3683,7 +4088,8 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         drawMarqueeOverlay (g);
     }
 
-    if (hasData_)
+    // No scale without a map to read it against.
+    if (hasData_ && showField_)
         drawColourbar (g, getLocalBounds().withTrimmedLeft (pb.getWidth() + 8));
 }
 
@@ -3854,6 +4260,108 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
         g.drawText ("Add a speaker to see it in elevation",
                     pb, juce::Justification::centred);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Annotations <-> JSON. Kept on the component rather than in ProjectData so
+// the project format does not have to know what an Annotation is - it stores
+// the result verbatim.
+// ---------------------------------------------------------------------------
+juce::var RadiationPatternComponent::annotationsToVar (const std::vector<Annotation>& a)
+{
+    juce::Array<juce::var> out;
+    for (const auto& an : a)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind",         (int) an.kind);
+        o->setProperty ("construction", (int) an.construction);
+        o->setProperty ("space",        (int) an.space);
+        o->setProperty ("colour",       (int) (juce::int64) an.colour.getARGB());
+        o->setProperty ("fillAlpha",    an.fillAlpha);
+        o->setProperty ("thicknessPx",  an.thicknessPx);
+        o->setProperty ("closed",       an.closed);
+        o->setProperty ("text",         an.text);
+        o->setProperty ("rotationDeg",  an.rotationDeg);
+        o->setProperty ("fontPx",       an.fontPx);
+        o->setProperty ("align",        an.align);
+        o->setProperty ("valign",       an.valign);
+        o->setProperty ("bold",         an.bold);
+        o->setProperty ("italic",       an.italic);
+        o->setProperty ("lineHeight",   an.lineHeight);
+        o->setProperty ("isPlane",      an.isPlane);
+        o->setProperty ("planeType",    (int) an.planeType);
+        o->setProperty ("listenHgt",    (int) an.listenHgt);
+
+        // Points go in as a flat x,y,x,y list - half the JSON of an array of
+        // objects, and the order is the only thing that carries meaning.
+        juce::Array<juce::var> pts;
+        for (const auto& pt : an.pts) { pts.add (pt.x); pts.add (pt.y); }
+        o->setProperty ("pts", pts);
+
+        out.add (juce::var (o));
+    }
+    return out;
+}
+
+std::vector<RadiationPatternComponent::Annotation>
+RadiationPatternComponent::annotationsFromVar (const juce::var& v)
+{
+    std::vector<Annotation> out;
+    const auto* arr = v.getArray();
+    if (arr == nullptr) return out;
+
+    for (const auto& e : *arr)
+    {
+        auto* o = e.getDynamicObject();
+        if (o == nullptr) continue;
+
+        Annotation an;
+        auto geti = [o] (const char* k, int fallback)
+        { return o->hasProperty (k) ? (int) o->getProperty (k) : fallback; };
+        auto getf = [o] (const char* k, float fallback)
+        { return o->hasProperty (k) ? (float) (double) o->getProperty (k) : fallback; };
+        auto getb = [o] (const char* k, bool fallback)
+        { return o->hasProperty (k) ? (bool) o->getProperty (k) : fallback; };
+
+        // Clamped on the way in: a corrupt or hand-edited file must not be able
+        // to hand the painter an out-of-range enum.
+        an.kind         = (Annotation::Kind) juce::jlimit (0, (int) Annotation::Kind::TextBox,
+                                                           geti ("kind", 0));
+        an.construction = (Construction) juce::jmax (0, geti ("construction", 0));
+        an.space        = (AnnotSpace) juce::jmax (0, geti ("space", 0));
+        an.colour       = juce::Colour ((juce::uint32) geti ("colour",
+                                        (int) (juce::int64) an.colour.getARGB()));
+        an.fillAlpha    = juce::jlimit (0.0f, 1.0f, getf ("fillAlpha", an.fillAlpha));
+        an.thicknessPx  = juce::jlimit (0.1f, 64.0f, getf ("thicknessPx", an.thicknessPx));
+        an.closed       = getb ("closed", false);
+        an.text         = o->getProperty ("text").toString();
+        an.rotationDeg  = getf ("rotationDeg", 0.0f);
+        an.fontPx       = getf ("fontPx", 0.0f);
+        an.align        = juce::jlimit (0, 2, geti ("align", 0));
+        an.valign       = juce::jlimit (0, 2, geti ("valign", 0));
+        an.bold         = getb ("bold", false);
+        an.italic       = getb ("italic", false);
+        an.lineHeight   = juce::jlimit (1.0f, 3.0f, getf ("lineHeight", 1.0f));
+        an.isPlane      = getb ("isPlane", false)
+                            && Annotation::canBePlane (an.kind);
+        an.planeType    = (Annotation::PlaneType) juce::jlimit (
+                              0, (int) Annotation::PlaneType::Architectural,
+                              geti ("planeType", 0));
+        an.listenHgt    = (Annotation::ListenHeight) juce::jlimit (
+                              0, (int) Annotation::ListenHeight::Standing,
+                              geti ("listenHgt", 0));
+
+        if (const auto* pts = o->getProperty ("pts").getArray())
+            for (int i = 0; i + 1 < pts->size(); i += 2)
+                an.pts.push_back ({ (float) (double) (*pts)[i],
+                                    (float) (double) (*pts)[i + 1] });
+
+        // A shape with no points cannot be drawn or selected, so it would be an
+        // invisible item in every list it appears in.
+        if (! an.pts.empty())
+            out.push_back (std::move (an));
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -4272,28 +4780,99 @@ void RadiationPatternComponent::drawSpeakerDimensions (juce::Graphics& g,
         arrow ({ xLine, box.getBottom() }, { xLine, box.getBottom() - ah });
 
         // Rotated so it runs along the edge it measures, like a drawing.
+        const float textX = xLine + 9.0f;
+        const float ty = box.getCentreY();
+
         juce::Graphics::ScopedSaveState ss (g);
         g.addTransform (juce::AffineTransform::rotation (
-            -juce::MathConstants<float>::halfPi, xLine + 9.0f, box.getCentreY()));
+            -juce::MathConstants<float>::halfPi, textX, ty));
         g.drawText ("W " + Units::dim (cab.widthM * 1000.0),
-                    (int) (xLine + 9.0f - 60.0f), (int) (box.getCentreY() - 7.0f), 120, 14,
+                    (int) (textX - 60.0f), (int) (ty - 7.0f), 120, 14,
                     juce::Justification::centred);
     }
 
-    // --- HEIGHT: into the page here, so it is stated, not drawn. -----------
-    // Below the depth callout, not above the cabinet: the unit's name already
-    // sits there and the two ran into each other.
-    g.setColour (thin);
-    g.setFont (Brand::tech (juce::jmax (8.0f, 9.5f * Brand::UI::scale)));
-    g.drawText ("H " + Units::dim (cab.heightM * 1000.0) + "  (vertical)",
-                (int) (box.getCentreX() - 70.0f), (int) (box.getBottom() + off + 16.0f), 140, 13,
-                juce::Justification::centred);
+    // No HEIGHT callout here. This is a top-down plan: height goes into the
+    // page, so it could only ever be stated rather than drawn, and it cluttered
+    // the view without showing anything. The 3D view carries it instead.
+}
+
+void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
+                                                 juce::Rectangle<int> plotBounds)
+{
+    // Long enough to leave the plot from anywhere inside it, so the rays end
+    // at the edge of the canvas rather than stopping somewhere in the field.
+    // The caller has already clipped to the plot area.
+    const float reach = 2.0f * (float) juce::jmax (plotBounds.getWidth(),
+                                                   plotBounds.getHeight());
+    const float dashes[] = { 5.0f, 4.0f };
+
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& spk = speakers_[(size_t) i];
+        if (! spk.enabled || ! rayVisibleFor (i)) continue;
+
+        const auto c = worldToScreen (spk.x, spk.y);
+        // Degrees counter-clockwise from +x, and screen y runs the other way.
+        const float th = juce::degreesToRadians (
+            spk.rotationDeg + (spk.reverseOrientation ? 180.0f : 0.0f));
+        const juce::Point<float> end { c.x + std::cos (th) * reach,
+                                       c.y - std::sin (th) * reach };
+
+        // The ray you are holding, or have selected, is the accent colour, so
+        // it is obvious which one a drag is about to swing. Locked, nothing is
+        // grabbable, so nothing wears the accent and the whole set draws back
+        // a little - the cabinet's own border still shows what is selected.
+        const bool live = ! lockRays_
+                       && ((drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
+                           || (i == selected_) || isSpeakerSelected (i));
+        g.setColour (live ? Brand::accent().withAlpha (0.95f)
+                          : Brand::white().withAlpha (lockRays_ ? 0.40f : 0.60f));
+        g.drawDashedLine ({ c, end }, dashes, 2, live ? 1.8f : 1.4f);
+    }
+}
+
+bool RadiationPatternComponent::rayVisibleFor (int i) const noexcept
+{
+    return showRays_ || (i == selected_) || isSpeakerSelected (i);
+}
+
+int RadiationPatternComponent::rayHitTest (juce::Point<float> p) const
+{
+    if (lockRays_) return -1;
+
+    int   best  = -1;
+    float bestD = 7.0f;          // grab tolerance either side of the line, px
+
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& spk = speakers_[(size_t) i];
+        if (! spk.enabled || ! rayVisibleFor (i)) continue;
+
+        const auto c = worldToScreen (spk.x, spk.y);
+        const float th = juce::degreesToRadians (
+            spk.rotationDeg + (spk.reverseOrientation ? 180.0f : 0.0f));
+        const juce::Point<float> dir { std::cos (th), -std::sin (th) };
+
+        const auto v = p - c;
+        const float along = v.x * dir.x + v.y * dir.y;
+
+        // Only out along the ray, and clear of the cabinet, so the marker
+        // keeps its own click - dragging a speaker must still move it.
+        const auto box = speakerFootprintScreen (spk);
+        const float start = 0.5f * juce::jmax (box.getWidth(), box.getHeight()) + 12.0f;
+        if (along < start) continue;
+
+        const float perp = std::abs (v.x * -dir.y + v.y * dir.x);
+        if (perp < bestD) { bestD = perp; best = i; }
+    }
+    return best;
 }
 
 juce::Point<float> RadiationPatternComponent::speakerRotateHandle (const Speaker& spk) const
 {
-    // Off the FRONT face, so dragging it aims the cabinet instead of spinning
-    // an abstract grip - the knob ends up where the sound goes.
+    // No longer a grip - the ray took that job. This is just where the angle
+    // readout is pinned while a rotation drag is running: off the FRONT face,
+    // so the number sits where the cabinet is pointing.
     const auto c = worldToScreen (spk.x, spk.y);
     const auto box = speakerFootprintScreen (spk);
     const float reach = 0.5f * juce::jmax (box.getWidth(), box.getHeight()) + 18.0f;
@@ -4442,25 +5021,16 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
             drawSpeakerDimensions (g, box, spk, alpha);
     }
 
-    // Rotation handles last, unrotated, so they sit on top of every cabinet.
-    // Only the selected units carry one: a thin stalk and a small knob on all
-    // eight at once would be clutter, and you cannot rotate what is not
-    // selected anyway.
+    // The angle readout, last and unrotated so it sits on top of every
+    // cabinet. There is no longer a stalk and knob to go with it: the ray IS
+    // the aiming handle now, and drawing a second one beside it was the same
+    // control twice.
     for (int i = 0; i < (int) speakers_.size(); ++i)
     {
         const auto& spk = speakers_[i];
         if (! ((i == selected_) || isSpeakerSelected (i))) continue;
 
-        const auto c = worldToScreen (spk.x, spk.y);
         const auto h = speakerRotateHandle (spk);
-        const float alpha = spk.enabled ? 1.0f : 0.42f;
-
-        g.setColour (Brand::charcoal().withAlpha (0.55f * alpha));
-        g.drawLine (c.x, c.y, h.x, h.y, 1.0f);
-        g.setColour (juce::Colour (0xffff3d6e).withAlpha (0.95f * alpha));
-        g.fillEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f);
-        g.setColour (Brand::white().withAlpha (0.9f * alpha));
-        g.drawEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f, 1.0f);
 
         // While turning, say the angle - the snap is invisible otherwise.
         if (drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
@@ -4480,7 +5050,9 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 
 void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
 {
-    if (! ortho_ || selectedSpeakers_.size() < 2)
+    // Ortho's own read-out, and only that: the gap it reports is the gap
+    // Ortho is linking, so with Ortho off there is nothing to report.
+    if (! ortho_ || ! showInterdistance_)
         return;
 
     std::vector<int> idxs = selectedSpeakers_;
@@ -4489,6 +5061,7 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
     idxs.erase (std::remove_if (idxs.begin(), idxs.end(),
                                 [&] (int i) { return i < 0 || i >= (int) speakers_.size(); }),
                 idxs.end());
+
     if (idxs.size() < 2)
         return;
 
@@ -4511,6 +5084,7 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
         const auto sa = worldToScreen (a.x, a.y);
         const auto sb = worldToScreen (b.x, b.y);
         const auto mid = (sa + sb) * 0.5f;
+        // The axis Ortho aligns on, because that is the number it sets.
         const float d = (orthoAlign_ == OrthoAlign::Horizontal)
                             ? std::abs (b.x - a.x)
                             : std::abs (b.y - a.y);
@@ -4518,17 +5092,23 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
         g.setColour (glow.withAlpha (0.85f));
         g.drawLine (sa.x, sa.y, sb.x, sb.y, 1.4f);
 
-        // End ticks perpendicular to the gap line
-        const float tx = (orthoAlign_ == OrthoAlign::Horizontal) ? 0.0f : 6.0f;
-        const float ty = (orthoAlign_ == OrthoAlign::Horizontal) ? 6.0f : 0.0f;
-        g.drawLine (sa.x - tx, sa.y - ty, sa.x + tx, sa.y + ty, 1.4f);
-        g.drawLine (sb.x - tx, sb.y - ty, sb.x + tx, sb.y + ty, 1.4f);
+        // End ticks square to the line itself, so they read as ticks on any
+        // bearing rather than only on the two ortho axes.
+        const auto vv = sb - sa;
+        const float vlen = juce::jmax (0.001f, vv.getDistanceFromOrigin());
+        const juce::Point<float> nn { -vv.y / vlen, vv.x / vlen };
+        const float tk = 6.0f;
+        g.drawLine (sa.x - nn.x * tk, sa.y - nn.y * tk, sa.x + nn.x * tk, sa.y + nn.y * tk, 1.4f);
+        g.drawLine (sb.x - nn.x * tk, sb.y - nn.y * tk, sb.x + nn.x * tk, sb.y + nn.y * tk, 1.4f);
 
         const juce::String lab = Units::metres ((double) d, 2);
         const float tw = (float) lab.length() * 7.0f + 14.0f;
         const float th = 18.0f;
         auto box = juce::Rectangle<float> (mid.x - tw * 0.5f, mid.y - th * 0.5f - 10.0f, tw, th);
-        g.setColour (Brand::panelDark().withAlpha (0.92f));
+        // Charcoal, not panelDark: this pill sits on the canvas, which is
+        // always dark, while panelDark follows the THEME and is plain white in
+        // the light one - so the white label below was drawn white on white.
+        g.setColour (Brand::charcoal().withAlpha (0.94f));
         g.fillRoundedRectangle (box, 4.0f);
         g.setColour (glow.withAlpha (0.9f));
         g.drawRoundedRectangle (box, 4.0f, 1.2f);
@@ -5043,9 +5623,18 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
         for (size_t i = 1; i < a.pts.size(); ++i)
             path.lineTo (annotateToScreen (a, a.pts[i]));
         g.setColour (a.colour.withMultipliedAlpha (alpha));
-        g.strokePath (path, juce::PathStrokeType (a.thicknessPx,
-                                                   juce::PathStrokeType::curved,
-                                                   juce::PathStrokeType::rounded));
+        const juce::PathStrokeType stroke (planeStrokeW (a),
+                                           juce::PathStrokeType::curved,
+                                           juce::PathStrokeType::rounded);
+        if (planeIsDashed (a))
+        {
+            const float dl[] = { 8.0f, 6.0f };
+            juce::Path dashed;
+            stroke.createDashedStroke (dashed, path, dl, 2);
+            g.fillPath (dashed);
+            return;
+        }
+        g.strokePath (path, stroke);
     };
 
     auto formatDim = [&] (float dist) -> juce::String
@@ -5263,6 +5852,12 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
             drawPendingDimLabel (g, (s0 + s1) * 0.5f, dim);
         }
     }
+
+    // Plane tags last, over every shape: a plane's own fill would otherwise
+    // paint across the reading that belongs to it.
+    for (const auto& a : annotations_)
+        if (a.space == space)
+            drawPlaneTag (g, a);
 }
 
 // ---------------------------------------------------------------------------
@@ -5579,17 +6174,30 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
     // Select: Windows-style multi-select (click / Ctrl+click / marquee) + group move.
     if (tool_ == Tool::Select)
     {
-        // Rotation knob first: it sits outside the cabinet, so if the normal
-        // selection test ran first a click on the knob would land on empty
-        // field and drop the selection instead of turning anything.
-        for (int i = 0; i < (int) speakers_.size(); ++i)
+        // A ray is the rotation knob with a target you cannot miss: clicking
+        // anywhere along it takes that speaker and starts swinging it. Tested
+        // before the normal selection, which would otherwise read the click as
+        // empty field and drop the selection instead.
+        if (const int rayIdx = rayHitTest (e.position); rayIdx >= 0)
         {
-            if (! ((i == selected_) || isSpeakerSelected (i))) continue;
-            if (speakerRotateHandle (speakers_[(size_t) i]).getDistanceFrom (e.position) > 9.0f)
-                continue;
             if (onWillEdit) onWillEdit();
+
+            // Only reduce the selection when the ray grabbed is OUTSIDE it.
+            // Grabbing one of several selected speakers has to keep the group,
+            // or aiming a whole array would collapse to aiming one box.
+            if (! isSpeakerSelected (rayIdx) && selected_ != rayIdx)
+            {
+                selectedAnnots_.clear();
+                selectedMics_.clear();
+                selectedSpeakers_.clear();
+                selectedSpeakers_.push_back (rayIdx);
+                syncPrimarySelectionFromSets();
+                if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+                if (onSpeakerSelected) onSpeakerSelected (rayIdx);
+            }
+
             drag_ = Drag::SpeakerRotate;
-            rotatingSpeaker_ = i;
+            rotatingSpeaker_ = rayIdx;
             lastMouse_ = e.position;
             repaint();
             return;
@@ -6102,8 +6710,26 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
         if (std::abs (deg - spk.rotationDeg) > 0.01f)
         {
+            // The ray under the cursor lands exactly where you point; everything
+            // else selected turns by the SAME amount rather than snapping to the
+            // same bearing, so a fan keeps its shape instead of collapsing flat.
+            const float delta = deg - spk.rotationDeg;
             spk.rotationDeg = deg;
             if (onSpeakerRotated) onSpeakerRotated (rotatingSpeaker_, deg);
+
+            for (int idx : selectedSpeakers_)
+            {
+                if (idx == rotatingSpeaker_
+                    || idx < 0 || idx >= (int) speakers_.size())
+                    continue;
+
+                auto& other = speakers_[(size_t) idx];
+                float nd = other.rotationDeg + delta;
+                while (nd < 0.0f)     nd += 360.0f;
+                while (nd >= 360.0f)  nd -= 360.0f;
+                other.rotationDeg = nd;
+                if (onSpeakerRotated) onSpeakerRotated (idx, nd);
+            }
         }
         repaint();
     }

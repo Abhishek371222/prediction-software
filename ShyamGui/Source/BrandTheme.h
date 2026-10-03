@@ -880,6 +880,13 @@ namespace Brand
                 return techSemi (UI::scaledFont (Type::dashActionButton));
             if (id == "dashRecent")
                 return tech (UI::scaledFont (Type::dashRecentItem));
+            if (id == "ribbonStyle")
+                // The ribbon toggles were falling through to the generic cap
+                // below, which at a 21 px button height left them near 10 px -
+                // half the size of the combo sitting right beside them. Match
+                // the combo ("Mapping Off"), which is Type::sidebarMainValue.
+                return techMed (juce::jmin (UI::scaledFont (Type::sidebarMainValue),
+                                            (float) buttonHeight * 0.80f));
             if (id == "plotFit")
                 return techMed (UI::scaledFont (Type::plotFitButton));
             if (id == "headerStats" || id == "headerNewProject")

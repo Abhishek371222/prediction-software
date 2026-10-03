@@ -286,7 +286,11 @@ namespace UiConfig
         // below is the Figma 1920x1080 pixel value divided by the 1.317 scale
         // factor the app derives at that window size, so at 1920x1080 they
         // render at exactly the documented Figma pixel sizes.
-        constexpr int plotHeaderHeight        = 56;   // -> 74px (Figma row 2)
+        // Was 56 (Figma row 2 alone). The ribbon now carries a tab strip
+        // above the controls, Word-style, so the band is taller by exactly
+        // ribbonTabStripH and the cluster row below it is unchanged.
+        constexpr int plotHeaderHeight        = 80;
+        constexpr int ribbonTabStripH         = 24;   // -> ~28px tab row
         constexpr int ribbonIconSize          = 18;   // -> 24px icon buttons
         constexpr int ribbonIconGap           = 5;    // -> 6px  (30px pitch)
         constexpr int ribbonIconTop           = 8;    // -> 11px below row top

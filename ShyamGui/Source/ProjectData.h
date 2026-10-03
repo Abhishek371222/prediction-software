@@ -45,6 +45,12 @@ struct ProjectData
     bool   octaveSmoothing     = true;
     bool   useMeasuredDirectivity = true;
 
+    // Drawings (shapes, rulers, text boxes) as an opaque blob. The component
+    // owns their shape, so it owns their JSON too - ProjectData just carries
+    // it. Before this they lived only in the undo snapshot and were lost on
+    // every save.
+    juce::var drawings;
+
     juce::File file;   // backing file on disk (empty until first save)
 
     // -----------------------------------------------------------------------
@@ -123,6 +129,8 @@ struct ProjectData
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
+        if (drawings.isArray() && drawings.size() > 0)
+            root->setProperty ("drawings", drawings);
         root->setProperty ("format", "atmk-1");
 
         return juce::var (root);
@@ -133,6 +141,10 @@ struct ProjectData
         ProjectData p;
         if (auto* root = v.getDynamicObject())
         {
+            // Absent in projects saved before drawings were persisted, which
+            // simply leaves them empty - an old file still opens.
+            p.drawings = root->getProperty ("drawings");
+
             if (auto mv = root->getProperty ("meta"); auto* m = mv.getDynamicObject())
             {
                 p.meta.projectName  = m->getProperty ("projectName").toString();

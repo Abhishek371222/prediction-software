@@ -12,6 +12,7 @@
 #include "UiChrome.h"
 #include "MicReceiver.h"
 #include "FrequencyResponseComponent.h"
+#include "MicListenPanel.h"
 #include "MicRefLockDialog.h"
 #include "CommandTerminal.h"
 
@@ -131,6 +132,8 @@ private:
     PlotHeaderBar             plotHeader_;
     RadiationPatternComponent patternComp_;
     std::unique_ptr<MicFrequencyResponseWindow> frWindow_;
+    std::unique_ptr<MicListenWindow>            listenWindow_;
+    void showMicListener (int micIndex);
     int                       frRefMic_ = 0;
 
     void showMicPlaceOnRingDialog();
@@ -218,6 +221,7 @@ private:
     void         setMeasurementSource (int src);
     void         setMeasurementDistance (float distanceM);
     void         syncTextControls();   // ribbon Text cluster <- plot state
+    void         syncPlaneControls();  // ribbon Plane cluster <- plot state
     void         reloadAllMeasurements();      // (re)loads both models + their directivity tables
     MeasuredSet  referenceSetFor (int source) const;
 

@@ -390,6 +390,46 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setTextItalic (on);
         commitEdit();
     };
+    plotHeader_.onMappingType = [this] (int mode)
+    {
+        // Paint only - the solve is left alone, so switching back shows the
+        // same map rather than recomputing one.
+        patternComp_.setShowField (mode == 1);
+    };
+    plotHeader_.onLockRays = [this] (bool on)
+    {
+        patternComp_.setLockRays (on);
+    };
+    plotHeader_.onShowInterdistance = [this] (bool on)
+    {
+        patternComp_.setShowInterdistance (on);
+    };
+    plotHeader_.onUsePlane = [this] (bool on)
+    {
+        willEdit();
+        patternComp_.setPlaneOn (on);
+        commitEdit();
+        syncPlaneControls();
+    };
+    plotHeader_.onPlaneType = [this] (int type)
+    {
+        willEdit();
+        patternComp_.setPlaneType (type);
+        commitEdit();
+        syncPlaneControls();
+    };
+    plotHeader_.onShowRays = [this] (bool on)
+    {
+        // Pure overlay - nothing is re-solved, so this never disturbs the map.
+        patternComp_.setShowRays (on);
+    };
+    plotHeader_.onTextLineHeight = [this] (float mult)
+    {
+        willEdit();
+        patternComp_.setTextLineHeight (mult);
+        commitEdit();
+    };
+    patternComp_.onListenAtMic = [this] (int idx) { showMicListener (idx); };
     patternComp_.onAnnotSelectionChanged = [this]
     {
         // Swatch + opacity follow the selected shape (or the draw brush if none).
@@ -675,6 +715,8 @@ MainComponent::MainComponent (ProjectData project)
 
     // Load the project's scene (may be empty - clean slate for new projects).
     controlPanel_.applyProject (project_);
+    patternComp_.setAnnotations (
+        RadiationPatternComponent::annotationsFromVar (project_.drawings));
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
@@ -735,6 +777,7 @@ MainComponent::~MainComponent()
         addChildComponent (commandTerminal_);
     }
     frWindow_.reset();
+    listenWindow_.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -800,6 +843,9 @@ ProjectData MainComponent::currentProject() const
     p.bandedSPL             = sp.bandedSPL;
     p.octaveSmoothing       = sp.octaveSmoothing;
     p.useMeasuredDirectivity = sp.useMeasuredDirectivity;
+    // Drawings travel with the project now. They used to exist only in the
+    // undo snapshot, so every shape, ruler and text box was lost on save.
+    p.drawings = RadiationPatternComponent::annotationsToVar (patternComp_.getAnnotations());
     return p;
 }
 
@@ -2326,16 +2372,26 @@ void MainComponent::updatePlotChrome()
     refreshCaptionColour();
 }
 
+void MainComponent::syncPlaneControls()
+{
+    // One place that answers "what should the Plane cluster show", so the
+    // ribbon cannot drift from the selection.
+    plotHeader_.setPlaneControlsEnabled (patternComp_.hasPlaneTarget());
+    plotHeader_.setPlaneState (patternComp_.getPlaneOn(), patternComp_.getPlaneType());
+}
+
 void MainComponent::syncTextControls()
 {
     // One place that answers "what should the Text cluster show", so the
     // ribbon cannot drift from the selection.
+    syncPlaneControls();
     plotHeader_.setTextControlsEnabled (patternComp_.hasTextTarget());
     plotHeader_.setTextAlignState (patternComp_.getActiveTextAlign());
     plotHeader_.setTextVAlignState (patternComp_.getActiveTextVAlign());
     plotHeader_.setTextStyleState (patternComp_.getActiveTextBold(),
                                    patternComp_.getActiveTextItalic());
     plotHeader_.setTextSizeState (patternComp_.getActiveTextSize());
+    plotHeader_.setTextLineHeightState (patternComp_.getActiveTextLineHeight());
 }
 
 void MainComponent::refreshCaptionColour()
@@ -2814,6 +2870,52 @@ void MainComponent::refreshFrequencyResponse()
     frWindow_->content.setCurves (mics, curves, frRefMic_);
 }
 
+void MainComponent::showMicListener (int micIndex)
+{
+    const auto mics = patternComp_.getMics();
+    if (micIndex < 0 || micIndex >= (int) mics.size()) return;
+
+    // The SAME probe the Frequency Response window uses, so what you hear and
+    // what that graph draws cannot drift apart - and both come off the engine
+    // that drew the heatmap.
+    SimParams base = controlPanel_.getParams();
+    const int browsedModel = controlPanel_.getBrowsedModel();
+
+    std::vector<MicListener::Point> curve;
+    curve.reserve ((size_t) kNumSupportedFrequencies);
+    for (int hi = 0; hi < kNumSupportedFrequencies; ++hi)
+    {
+        SimParams p = base;
+        p.frequency = kSupportedFrequencies[hi];
+        if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
+        else                                         p.frequencyQ21S     = p.frequency;
+
+        float intensityDb = 0.0f, absDb = 0.0f;
+        if (AcousticEngine::sampleIntensityAt (p, mics[(size_t) micIndex].x,
+                                               mics[(size_t) micIndex].y,
+                                               intensityDb, absDb))
+            curve.push_back ({ p.frequency, intensityDb });
+    }
+    if (curve.empty())
+    {
+        reportStatus ("Nothing to listen to here - run a simulation first.", false);
+        return;
+    }
+
+    // Full scale is the loudest band at this mic, so the shape is what you
+    // hear and nothing is ever driven above unity.
+    float refDb = curve.front().db;
+    for (const auto& c : curve) refDb = juce::jmax (refDb, c.db);
+
+    if (listenWindow_ == nullptr)
+        listenWindow_ = std::make_unique<MicListenWindow>();
+    listenWindow_->content.setMic ("Mic " + juce::String (micIndex + 1),
+                                   std::move (curve), refDb,
+                                   patternComp_.resultHasAbsoluteSpl());
+    listenWindow_->setVisible (true);
+    listenWindow_->toFront (true);
+}
+
 void MainComponent::showProjectMenu()
 {
     juce::PopupMenu m;
@@ -2916,7 +3018,8 @@ void MainComponent::loadProjectFile (const juce::File& f)
 
     project_ = std::move (loaded);
     controlPanel_.applyProject (project_);
-    patternComp_.clearAnnotations();
+    patternComp_.setAnnotations (
+        RadiationPatternComponent::annotationsFromVar (project_.drawings));
     patternComp_.clearMics();
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());

@@ -3,6 +3,8 @@
 #include "BrandTheme.h"
 #include <functional>
 #include <utility>
+#include <algorithm>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // SectionHeader - collapsible sidebar section title with chevron.
@@ -164,6 +166,114 @@ public:
 private:
     int  align_;
     bool vertical_;
+};
+
+/** Word's line-spacing glyph: a stack of rules with a two-headed arrow
+    beside them, and a caret to say it opens a list. Drawn rather than shipped
+    as an SVG for the same reason as TextAlignButton - crisp at any scale, no
+    asset to embed. The current value is NOT on the face: like a word
+    processor, the button says what it controls and the menu ticks the value. */
+class LineSpacingButton : public juce::Button
+{
+public:
+    LineSpacingButton() : juce::Button ("lineSpacing")
+    {
+        setClickingTogglesState (false);
+    }
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto full = getLocalBounds().toFloat();
+        if (over || down)
+        {
+            g.setColour (Brand::border().withAlpha (down ? 0.45f : 0.28f));
+            g.fillRoundedRectangle (full.reduced (1.0f), 3.0f);
+        }
+
+        g.setColour (isEnabled() ? Brand::heading() : Brand::muted().withAlpha (0.5f));
+
+        auto b     = full.reduced (full.getWidth() * 0.10f, full.getHeight() * 0.22f);
+        auto caret = b.removeFromRight (b.getWidth() * 0.30f);
+        auto arrowCol = b.removeFromLeft (b.getWidth() * 0.38f);
+        auto rules = b.withTrimmedLeft (b.getWidth() * 0.12f)
+                      .withTrimmedRight (b.getWidth() * 0.14f);   // air before the caret
+
+        // Four rules, the thing whose spacing is being set.
+        const float lh = juce::jmax (1.0f, rules.getHeight() / 9.0f);
+        for (int i = 0; i < 4; ++i)
+            g.fillRoundedRectangle (rules.getX(),
+                                    rules.getY() + (float) i * (rules.getHeight() - lh) / 3.0f,
+                                    rules.getWidth(), lh, lh * 0.5f);
+
+        // A double-headed arrow spanning them: "this gap".
+        const float cx   = arrowCol.getCentreX();
+        const float head = juce::jmax (2.0f, arrowCol.getWidth() * 0.45f);
+        const float stem = juce::jmax (1.0f, lh * 0.9f);
+        g.fillRect (cx - stem * 0.5f, arrowCol.getY() + head,
+                    stem, arrowCol.getHeight() - head * 2.0f);
+        juce::Path up, dn;
+        up.addTriangle (cx, arrowCol.getY(),
+                        cx - head, arrowCol.getY() + head,
+                        cx + head, arrowCol.getY() + head);
+        dn.addTriangle (cx, arrowCol.getBottom(),
+                        cx - head, arrowCol.getBottom() - head,
+                        cx + head, arrowCol.getBottom() - head);
+        g.fillPath (up);
+        g.fillPath (dn);
+
+        // Caret, same weight as the combo boxes beside it.
+        const float cw = juce::jmax (3.0f, caret.getWidth() * 0.55f);
+        const float ch = cw * 0.55f;
+        juce::Path v;
+        v.addTriangle (caret.getCentreX() - cw * 0.5f, caret.getCentreY() - ch * 0.5f,
+                       caret.getCentreX() + cw * 0.5f, caret.getCentreY() - ch * 0.5f,
+                       caret.getCentreX(),             caret.getCentreY() + ch * 0.5f);
+        g.fillPath (v);
+    }
+};
+
+/** A ribbon tab, drawn the way Word draws one: a plain word that takes an
+    accent rule along the bottom of the strip when it is the live tab. No pill
+    and no box - the rule, and the fact that the tab joins the row of controls
+    below it, is the whole affordance. */
+class RibbonTabButton : public juce::Button
+{
+public:
+    explicit RibbonTabButton (const juce::String& label)
+        : juce::Button (label), label_ (label)
+    {
+        setClickingTogglesState (false);
+    }
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const bool on = getToggleState();
+        auto r = getLocalBounds().toFloat();
+
+        if (on || over || down)
+        {
+            g.setColour (on ? Brand::accent().withAlpha (0.08f)
+                            : Brand::border().withAlpha (down ? 0.40f : 0.22f));
+            g.fillRoundedRectangle (r.reduced (1.0f, 1.5f), 3.0f);
+        }
+
+        g.setColour (on ? Brand::accent() : Brand::muted());
+        // Same reference as the ribbon's controls, so a tab is never smaller
+        // than the buttons it switches to.
+        g.setFont (Brand::tech (juce::jmin (Brand::UI::scaledFont (Brand::Type::sidebarMainValue),
+                                            r.getHeight() * 0.62f), on));
+        g.drawText (label_, getLocalBounds(), juce::Justification::centred);
+
+        if (on)
+        {
+            g.setColour (Brand::accent());
+            g.fillRect (r.getX() + 2.0f, r.getBottom() - 2.0f,
+                        r.getWidth() - 4.0f, 2.0f);
+        }
+    }
+
+private:
+    juce::String label_;
 };
 
 class PlotHeaderBar : public juce::Component
@@ -352,6 +462,132 @@ public:
             onTextSize (t == "Auto" ? 0.0f : (float) t.getIntValue());
         };
         addAndMakeVisible (fontSizeBox_);
+
+        lineHeightBtn_.setTooltip ("Line spacing - the gap between lines, as a "
+                                   "multiple of the text size.");
+        lineHeightBtn_.onClick = [this] { showLineSpacingMenu(); };
+        addAndMakeVisible (lineHeightBtn_);
+
+        // --- tabs ---------------------------------------------------------
+        // Only the text cluster is listed. Home is "everything else", worked
+        // out live in resized() rather than snapshotted here: several clusters
+        // (help icons, shapes, colours, opacity) are added by setters AFTER
+        // this constructor runs, so a snapshot taken now would miss them.
+        textChildren_ = { (juce::Component*) &lblText_,
+                          (juce::Component*) &btnAlignL_,  (juce::Component*) &btnAlignC_,
+                          (juce::Component*) &btnAlignR_,  (juce::Component*) &btnVAlignT_,
+                          (juce::Component*) &btnVAlignM_, (juce::Component*) &btnVAlignB_,
+                          (juce::Component*) &btnBold_,    (juce::Component*) &btnItalic_,
+                          (juce::Component*) &fontSizeBox_,
+                          (juce::Component*) &lineHeightBtn_ };
+
+        btnTabHome_.setToggleState (true, juce::dontSendNotification);
+        btnTabHome_.onClick    = [this] { setRibbonTab (0); };
+        btnTabMapping_.onClick = [this] { setRibbonTab (1); };
+        addAndMakeVisible (btnTabHome_);
+        addAndMakeVisible (btnTabMapping_);
+
+        // --- Mapping tab --------------------------------------------------
+        styleClusterLabel (lblMapping_, "Rays");
+        addAndMakeVisible (lblMapping_);
+
+        btnShowRays_.setButtonText ("Show Rays");
+        btnShowRays_.setTooltip ("Draw a fan of aiming rays out of every speaker.");
+        btnShowRays_.setClickingTogglesState (true);
+        btnShowRays_.setComponentID ("ribbonStyle");
+        btnShowRays_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btnShowRays_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+        btnShowRays_.setColour (juce::TextButton::textColourOffId, Brand::heading());
+        btnShowRays_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+        btnShowRays_.onClick = [this]
+        {
+            if (onShowRays) onShowRays (btnShowRays_.getToggleState());
+        };
+        addAndMakeVisible (btnShowRays_);
+
+        btnLockRays_.setButtonText ("Lock Rays");
+        btnLockRays_.setTooltip ("Lock the rays: they stay on screen but cannot be "
+                                 "grabbed, so a finished aim cannot be nudged.");
+        btnLockRays_.setClickingTogglesState (true);
+        btnLockRays_.setComponentID ("ribbonStyle");
+        btnLockRays_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btnLockRays_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+        btnLockRays_.setColour (juce::TextButton::textColourOffId, Brand::heading());
+        btnLockRays_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+        btnLockRays_.onClick = [this]
+        {
+            if (onLockRays) onLockRays (btnLockRays_.getToggleState());
+        };
+        addAndMakeVisible (btnLockRays_);
+
+        styleClusterLabel (lblMic_, "Mic");
+        addAndMakeVisible (lblMic_);
+
+        styleClusterLabel (lblPlane_, "Plane");
+        addAndMakeVisible (lblPlane_);
+
+        auto planeBtn = [this] (juce::TextButton& b, const juce::String& t,
+                                const juce::String& tip)
+        {
+            b.setButtonText (t);
+            b.setTooltip (tip);
+            b.setClickingTogglesState (true);
+            b.setComponentID ("ribbonStyle");
+            b.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            b.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+            b.setColour (juce::TextButton::textColourOffId, Brand::heading());
+            b.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+            addAndMakeVisible (b);
+        };
+        planeBtn (btnUsePlane_,    "Use as Plane",
+                  "Treat this shape as a surface in the venue rather than a note on it.");
+        planeBtn (btnPlaneListen_, "Listening",
+                  "Audience: the surface people are on.");
+        planeBtn (btnPlaneVirt_,   "Virtual",
+                  "A reference surface nobody occupies - a construction line.");
+        planeBtn (btnPlaneArch_,   "Architectural",
+                  "Structure: a wall, a balcony front, the stage edge.");
+
+        btnUsePlane_.onClick    = [this] { if (onUsePlane) onUsePlane (btnUsePlane_.getToggleState()); };
+        btnPlaneListen_.onClick = [this] { if (onPlaneType) onPlaneType (0); };
+        btnPlaneVirt_.onClick   = [this] { if (onPlaneType) onPlaneType (1); };
+        btnPlaneArch_.onClick   = [this] { if (onPlaneType) onPlaneType (2); };
+
+        styleClusterLabel (lblDistance_, "Distance");
+        addAndMakeVisible (lblDistance_);
+
+        btnInterdist_.setButtonText ("Show Interdistance");
+        btnInterdist_.setTooltip ("Show the gap Ortho is linking, between the "
+                                  "selected speakers. Needs Ortho on.");
+        btnInterdist_.setClickingTogglesState (true);
+        // On by default, so switching Ortho on reads exactly as it used to.
+        btnInterdist_.setToggleState (true, juce::dontSendNotification);
+        btnInterdist_.setComponentID ("ribbonStyle");
+        btnInterdist_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btnInterdist_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+        btnInterdist_.setColour (juce::TextButton::textColourOffId, Brand::heading());
+        btnInterdist_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+        btnInterdist_.onClick = [this]
+        {
+            if (onShowInterdistance) onShowInterdistance (btnInterdist_.getToggleState());
+        };
+        addAndMakeVisible (btnInterdist_);
+
+        styleClusterLabel (lblMappingType_, "Mapping Type");
+        addAndMakeVisible (lblMappingType_);
+
+        mappingTypeBox_.setComponentID ("ctrlCombo");
+        mappingTypeBox_.setTooltip ("What the canvas paints under the speakers.");
+        mappingTypeBox_.addItem ("Mapping Off", 1);
+        mappingTypeBox_.addItem ("SPL Mapping", 2);
+        // Off by default - the map is opt-in now.
+        mappingTypeBox_.setSelectedId (1, juce::dontSendNotification);
+        mappingTypeBox_.onChange = [this]
+        {
+            if (onMappingType) onMappingType (mappingTypeBox_.getSelectedId() - 1);
+        };
+        addAndMakeVisible (mappingTypeBox_);
+
         setTextControlsEnabled (false);
         styleClusterLabel (lblOptions_, "Options");
 
@@ -415,6 +651,11 @@ public:
                   "Snap: lock to " + juce::String (Units::snapStepLabel())
                       + " steps and to nearby edges/corners "
                         "(other shapes, mics, speakers). Turn on before drawing or moving.");
+        // These two were built for the old plot toolbar and never carried the
+        // ribbon's id, so they kept the generic (much smaller) button font
+        // while everything beside them grew. The id only picks the font.
+        btnSnap_.setComponentID ("ribbonStyle");
+        btnOrtho_.setComponentID ("ribbonStyle");
         styleMod (btnSplProbe_,
                   "SPL: show dB SPL under the cursor on the gradient plot "
                   "(Select tool). Turn off for a cleaner view.");
@@ -438,7 +679,7 @@ public:
         btnOrthoHoriz_.setToggleState (true, juce::dontSendNotification);
 
         orthoGapLabel_.setText ("Gap", juce::dontSendNotification);
-        orthoGapLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
+        orthoGapLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::sidebarMainValue)));
         orthoGapLabel_.setColour (juce::Label::textColourId, Brand::muted());
         orthoGapLabel_.setJustificationType (juce::Justification::centredRight);
         orthoGapLabel_.setBorderSize ({});
@@ -715,14 +956,10 @@ public:
         // The cluster is contextual, like Word's Table tools: with nothing to
         // act on it takes no room at all, so the rest of the ribbon keeps the
         // width the Figma mock gives it.
+        // Visibility is settled in one place now (resized), because the tab
+        // has a say too: these controls need Home AND a text target.
         const bool changed = (textTargetActive_ != on);
         textTargetActive_ = on;
-        for (auto* b : { (juce::Component*) &btnAlignL_,  (juce::Component*) &btnAlignC_,
-                         (juce::Component*) &btnAlignR_,  (juce::Component*) &btnVAlignT_,
-                         (juce::Component*) &btnVAlignM_, (juce::Component*) &btnVAlignB_,
-                         (juce::Component*) &btnBold_,    (juce::Component*) &btnItalic_,
-                         (juce::Component*) &fontSizeBox_, (juce::Component*) &lblText_ })
-            b->setVisible (on);
         if (changed) resized();
         repaint();
     }
@@ -741,6 +978,11 @@ public:
         btnVAlignM_.setToggleState (valign == 1, juce::dontSendNotification);
         btnVAlignB_.setToggleState (valign == 2, juce::dontSendNotification);
         repaint();
+    }
+
+    void setTextLineHeightState (float mult)
+    {
+        lineHeight_ = mult;
     }
 
     void setTextStyleState (bool bold, bool italic)
@@ -764,6 +1006,88 @@ public:
     std::function<void(float)> onTextSize;
     std::function<void(bool)>  onTextBold;
     std::function<void(bool)>  onTextItalic;
+    std::function<void(float)> onTextLineHeight;
+    std::function<void(bool)>  onShowRays;
+    std::function<void(bool)>  onUsePlane;
+    std::function<void(int)>   onPlaneType;
+
+    /** The Plane cluster shares the Text Box slot: a text box can never be a
+        plane, so the two are mutually exclusive and only one can ever want
+        the space. */
+    void setPlaneControlsEnabled (bool on)
+    {
+        // The cluster stays put and greys out instead of appearing and
+        // vanishing: a control that disappears is one you have to go looking
+        // for, and the row jumping width as you select things is worse than a
+        // few dim buttons.
+        planeTargetActive_ = on;
+        btnUsePlane_.setEnabled (on);
+        lblPlane_.setAlpha (on ? 1.0f : 0.45f);
+        repaint();
+    }
+
+    void setPlaneState (bool isPlane, int type)
+    {
+        btnUsePlane_.setToggleState (isPlane, juce::dontSendNotification);
+        btnPlaneListen_.setToggleState (isPlane && type == 0, juce::dontSendNotification);
+        btnPlaneVirt_.setToggleState   (isPlane && type == 1, juce::dontSendNotification);
+        btnPlaneArch_.setToggleState   (isPlane && type == 2, juce::dontSendNotification);
+        // A type needs something to apply to AND that something has to be a
+        // plane already.
+        for (auto* b : { &btnPlaneListen_, &btnPlaneVirt_, &btnPlaneArch_ })
+            b->setEnabled (planeTargetActive_ && isPlane);
+        repaint();
+    }
+    /** 0 = Mapping Off, 1 = SPL Mapping. */
+    std::function<void(int)>   onMappingType;
+    std::function<void(bool)>  onShowInterdistance;
+    std::function<void(bool)>  onLockRays;
+
+    /** Home / Mapping, the way Word switches Home / Insert. Each tab owns its
+        own controls; nothing is shared but the Ready pill. */
+    void setRibbonTab (int tab)
+    {
+        if (ribbonTab_ == tab) return;
+        ribbonTab_ = tab;
+        btnTabHome_.setToggleState (tab == 0, juce::dontSendNotification);
+        btnTabMapping_.setToggleState (tab == 1, juce::dontSendNotification);
+        resized();
+        repaint();
+    }
+
+    void setShowRaysState (bool on)
+    {
+        btnShowRays_.setToggleState (on, juce::dontSendNotification);
+    }
+    /** The steps the glyph button offers. The current one is ticked, which is
+        where the value lives now that the face carries an icon. */
+    void showLineSpacingMenu()
+    {
+        static constexpr float steps[] = { 1.0f, 1.15f, 1.25f, 1.5f, 1.75f, 2.0f };
+        juce::PopupMenu m;
+        for (int i = 0; i < 6; ++i)
+        {
+            // Nearest step wins the tick, so a value loaded from a file still
+            // shows as something rather than nothing.
+            bool on = true;
+            for (int j = 0; j < 6; ++j)
+                if (std::abs (steps[j] - lineHeight_) < std::abs (steps[i] - lineHeight_))
+                    on = false;
+            // Spelled out rather than formatted: trimming trailing zeros gave
+            // "1x" and "2x" next to "1.5x", which read as a different kind of
+            // number.
+            static const char* label[] = { "1.0x", "1.15x", "1.25x",
+                                           "1.5x", "1.75x", "2.0x" };
+            m.addItem (i + 1, label[i], true, on);
+        }
+        m.showMenuAsync (juce::PopupMenu::Options()
+                             .withTargetComponent (&lineHeightBtn_),
+                         [this] (int r)
+        {
+            if (r >= 1 && r <= 6 && onTextLineHeight)
+                onTextLineHeight (steps[r - 1]);
+        });
+    }
 
     /** Re-applies the ribbon's edge indent to the adopted Help glyphs.
         MainComponent::refreshHeaderIcons() restyles them from scratch and
@@ -781,12 +1105,9 @@ public:
 
     void setOrthoExtrasVisible (bool on)
     {
-        // H / V / Gap only ever show alongside the cluster they belong to.
-        const bool show = on && kShowOptionsCluster;
-        btnOrthoHoriz_.setVisible (show);
-        btnOrthoVert_.setVisible (show);
-        orthoGapLabel_.setVisible (show);
-        orthoGapSlider_.setVisible (show);
+        // H / V / Gap want Ortho on AND the Mapping tab open, so the decision
+        // is made in resized() where the tab is known.
+        orthoExtras_ = on;
         resized();
     }
 
@@ -877,6 +1198,26 @@ public:
     juce::TextButton btnBold_, btnItalic_;
     bool             textTargetActive_ = false;
     juce::ComboBox   fontSizeBox_;
+    LineSpacingButton lineHeightBtn_;
+    RibbonTabButton  btnTabHome_ { "Home" }, btnTabMapping_ { "Mapping" };
+    int              ribbonTab_  = 0;        // 0 Home, 1 Mapping
+    int              tabStripH_  = 0;        // resolved in resized(), read by paint()
+    juce::TextButton btnShowRays_;
+    juce::Label      lblMapping_;
+    juce::ComboBox   mappingTypeBox_;
+    juce::Label      lblMappingType_;
+    juce::TextButton btnInterdist_;
+    juce::TextButton btnLockRays_;
+    juce::TextButton btnUsePlane_, btnPlaneListen_, btnPlaneVirt_, btnPlaneArch_;
+    juce::Label      lblPlane_;
+    juce::Label      lblMic_;
+    bool             planeTargetActive_ = false;
+    juce::Label      lblDistance_;
+    bool             orthoExtras_ = false;   // Ortho is on: show H / V / Gap
+    // The text cluster only: it is contextual on top of the tab, so it needs
+    // its own rule. Home is every other child, decided in resized().
+    std::vector<juce::Component*> textChildren_;
+    float             lineHeight_ = 1.0f;
     juce::Label      lblText_;
     bool             textUpdating_ = false;
 
@@ -965,11 +1306,19 @@ private:
     {
         g.fillAll (Brand::panelDark());
 
+        // The tab strip is its own band, closed by a hairline so the live
+        // tab's accent rule has an edge to sit on.
+        if (tabStripH_ > 0)
+        {
+            g.setColour (Brand::border().withAlpha (0.35f));
+            g.drawHorizontalLine (tabStripH_ - 1, 0.0f, (float) getWidth());
+        }
+
         // Figma: cluster rules run the full height of the row, and the row is
         // closed by a hairline along its bottom edge.
         g.setColour (Brand::border().withAlpha (UiConfig::Ribbon::dividerAlpha));
         for (int x : dividerX_)
-            g.drawVerticalLine (x, 0.0f, (float) getHeight());
+            g.drawVerticalLine (x, (float) tabStripH_, (float) getHeight());
         // The row's closing edge keeps its own weight - it separates the
         // ribbon from the canvas, not one cluster from the next.
         g.setColour (Brand::border().withAlpha (0.45f));
@@ -990,13 +1339,78 @@ private:
     {
         namespace L = UiConfig::Layout;
 
+        // The tab decides what exists at all; the Figma hide-list below then
+        // takes its usual bite out of Home.
+        const bool homeTab = (ribbonTab_ == 0);
+        for (auto* c : getChildren())
+        {
+            // The strip itself and the other tab's controls are not Home's to
+            // hide; title_ is reparented onto the canvas by MainComponent.
+            if (c == (juce::Component*) &btnTabHome_
+                || c == (juce::Component*) &btnTabMapping_
+                || c == (juce::Component*) &btnShowRays_
+                || c == (juce::Component*) &lblMapping_
+                || c == (juce::Component*) &mappingTypeBox_
+                || c == (juce::Component*) &lblMappingType_
+                || c == (juce::Component*) &btnInterdist_
+                || c == (juce::Component*) &btnLockRays_
+                || c == (juce::Component*) &lblDistance_
+                || c == (juce::Component*) &btnSnap_
+                || c == (juce::Component*) &btnOrtho_
+                || c == (juce::Component*) &btnOrthoHoriz_
+                || c == (juce::Component*) &btnOrthoVert_
+                || c == (juce::Component*) &orthoGapLabel_
+                || c == (juce::Component*) &orthoGapSlider_
+                || c == (juce::Component*) &lblOptions_
+                || c == (juce::Component*) &title_
+                || c == readyPill_)     // solver status, not a Home control
+                continue;
+
+            const bool isText = std::find (textChildren_.begin(), textChildren_.end(), c)
+                                    != textChildren_.end();
+            if (c == (juce::Component*) &btnMic_ || c == (juce::Component*) &lblMic_)
+            {
+                c->setVisible (! homeTab);
+                continue;
+            }
+
+            const bool isPlaneCtl = (c == (juce::Component*) &btnUsePlane_
+                                  || c == (juce::Component*) &btnPlaneListen_
+                                  || c == (juce::Component*) &btnPlaneVirt_
+                                  || c == (juce::Component*) &btnPlaneArch_
+                                  || c == (juce::Component*) &lblPlane_);
+            if (isPlaneCtl)      c->setVisible (! homeTab);
+            else if (isText)     c->setVisible (homeTab && textTargetActive_);
+            else                 c->setVisible (homeTab);
+        }
+        btnShowRays_.setVisible     (! homeTab);
+        btnLockRays_.setVisible     (! homeTab);
+        lblMapping_.setVisible      (! homeTab);
+        mappingTypeBox_.setVisible  (! homeTab);
+        lblMappingType_.setVisible  (! homeTab);
+        btnInterdist_.setVisible    (! homeTab);
+        // Nothing to show without Ortho, and a live-looking button that does
+        // nothing is worse than a greyed one that explains itself.
+        btnInterdist_.setEnabled    (orthoExtras_);
+        lblDistance_.setVisible     (! homeTab);
+        btnSnap_.setVisible         (! homeTab);
+        btnOrtho_.setVisible        (! homeTab);
+        // The extras take the caption's place, so only one of them is up.
+        const bool orthoOpen = (! homeTab) && orthoExtras_;
+        btnOrthoHoriz_.setVisible  (orthoOpen);
+        btnOrthoVert_.setVisible   (orthoOpen);
+        orthoGapLabel_.setVisible  (orthoOpen);
+        orthoGapSlider_.setVisible (orthoOpen);
+        lblOptions_.setVisible     ((! homeTab) && ! orthoExtras_);
+
         // Anything the Figma ribbon has no slot for is hidden (code/logic
         // untouched - flip setVisible back on to restore). The red
         // "SPL Heatmap | ..." caption belongs on the canvas, not here, so
         // MainComponent reparents title_ via getTitleLabel().
         for (juce::Component* c : { (juce::Component*) &btnSplProbe_,
                                      (juce::Component*) &rangeBtn_,
-                                     (juce::Component*) &btnMic_,
+                                     // btnMic_ is NOT here any more - it has a
+                                     // home in the Mapping tab (see below).
                                      // superseded by their Figma-shaped equivalents
                                      (juce::Component*) &btnShape_,      // -> 6 shape icons
                                      (juce::Component*) &fitBtn_,        // -> btnFitView_ icon
@@ -1055,7 +1469,12 @@ private:
         static constexpr int kPlateLeft = 15;             // Figma  20
         static constexpr int kPitch     = 23;             // Figma  30 icon pitch
 
-        const int lastDividerX = textTargetActive_ ? kText.dividerX : kHelp.dividerX;
+        // Mapping carries more clusters than Home, so the row it has to fit in
+        // is wider - working `shrink` out from Home's last rule would let the
+        // Mapping row run past the Ready pill on a narrow window.
+        const int lastDividerX = (ribbonTab_ != 0)
+            ? 1210
+            : (textTargetActive_ ? kText.dividerX : kHelp.dividerX);
         const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
@@ -1063,8 +1482,12 @@ private:
 
         const int tool       = juce::jmax (12, px2 (L::ribbonIconSize));
         const int pitch      = juce::jmax (tool + 1, px2 (kPitch));
-        const int iconTop    = juce::jmax (2, px2 (L::ribbonIconTop));
-        const int labelTop   = juce::jmax (tool + 2, px2 (L::ribbonLabelTop));
+        // The controls keep their Figma geometry; the whole row just starts
+        // below the tab strip instead of at the top of the band.
+        const int tabStrip   = px2 (L::ribbonTabStripH);
+        tabStripH_ = tabStrip;
+        const int iconTop    = tabStrip + juce::jmax (2, px2 (L::ribbonIconTop));
+        const int labelTop   = tabStrip + juce::jmax (tool + 2, px2 (L::ribbonLabelTop));
         const int labelH     = juce::jmax (8, px2 (L::ribbonLabelH));
         // Colours palette: 14px dots on a 20x16 grid in the Figma mock.
         const int swatch     = juce::jmax (6, px2 (L::ribbonSwatch));
@@ -1090,13 +1513,28 @@ private:
 
         dividerX_.clear();
 
+        // Tab strip, left-aligned on the same margin the clusters start from.
+        {
+            int tx = px2 (kPlateLeft);
+            const int th = juce::jmax (12, tabStrip - px2 (2));
+            struct TabSlot { RibbonTabButton* b; int w; };
+            const TabSlot slots[] = { { &btnTabHome_, 58 }, { &btnTabMapping_, 86 } };
+            for (const auto& sl : slots)
+            {
+                const int w = px2 (sl.w);
+                sl.b->setBounds (tx, px2 (1), w, th);
+                tx += w + px2 (4);
+            }
+        }
+
         // Captions are sized here, not in the constructor: at construction time
         // Brand::UI::scale is still 1.0, so a font set there stays at its base
         // size and renders roughly half as large as the design calls for.
         {
             const auto capFont = Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel));
-            for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_,
-                             &lblShapes_, &lblColours_, &lblHelp_, &lblOptions_ })
+            for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
+                             &lblColours_, &lblHelp_, &lblOptions_, &lblMapping_,
+                             &lblMappingType_, &lblDistance_, &lblPlane_, &lblMic_ })
                 l->setFont (capFont);
         }
 
@@ -1219,11 +1657,12 @@ private:
             dividerX_.push_back (plateRight);
             plateLeft = plateRight;
         }
-        else
+        else if (homeTab)
         {
-            // Hidden, never removed: the Figma ribbon has no Options slot, but
-            // Snap / Ortho stay fully functional through the keyboard and the
-            // terminal (see kShowOptionsCluster).
+            // Home has no Options slot in the Figma ribbon, so the pills stay
+            // parked here. They are NOT parked on the Mapping tab - that tab
+            // lays them out for real further down, and zeroing them here would
+            // undo it.
             for (juce::Component* c : { (juce::Component*) &btnSnap_,  (juce::Component*) &btnOrtho_,
                                         (juce::Component*) &btnOrthoHoriz_, (juce::Component*) &btnOrthoVert_,
                                         (juce::Component*) &orthoGapLabel_, (juce::Component*) &orthoGapSlider_,
@@ -1258,13 +1697,137 @@ private:
             btnBold_.setBounds   (tx, iconTop, tool, tool); tx += pitch;
             btnItalic_.setBounds (tx, iconTop, tool, tool); tx += pitch;
 
+            // Two fixed lists rather than one stretching to the rule, so
+            // neither collapses when the ribbon is shrunk.
             const int plateRight = px2 (kText.dividerX);
-            const int boxW = juce::jmax (px2 (34), plateRight - tx - grp - px2 (8));
-            fontSizeBox_.setBounds (tx + grp, iconTop, boxW, tool);
+            tx += grp;
+            fontSizeBox_.setBounds (tx, iconTop, px2 (50), tool);
+            tx += px2 (50) + grp;
+            lineHeightBtn_.setBounds (tx, iconTop, px2 (32), tool);
             lblText_.setBounds (plateLeft, labelTop,
                                 juce::jmax (10, plateRight - plateLeft), labelH);
             dividerX_.push_back (plateRight);
             plateLeft = plateRight;
+        }
+
+        // Mapping tab. The Home clusters above have already run and set bounds
+        // on components that are now hidden, which costs nothing and keeps that
+        // block in one piece - but their dividers would still be painted, so
+        // the list is rebuilt here for this tab alone.
+        if (! homeTab)
+        {
+            dividerX_.clear();
+            const int bw = px2 (92);
+            const int lw = px2 (86);
+            const int mx = px2 (kPlateLeft);
+            btnShowRays_.setBounds (mx, iconTop, bw, tool);
+            btnLockRays_.setBounds (mx + bw + px2 (6), iconTop, lw, tool);
+            const int plateRight = mx + bw + px2 (6) + lw + px2 (14);
+            lblMapping_.setBounds (mx, labelTop, juce::jmax (10, plateRight - mx), labelH);
+            dividerX_.push_back (plateRight);
+
+            // Mapping Type: its own cluster, because it governs the canvas
+            // rather than the rays.
+            const int mx2 = plateRight + px2 (14);
+            const int cw  = px2 (116);
+            mappingTypeBox_.setBounds (mx2, iconTop, cw, tool);
+            const int plateRight2 = mx2 + cw + px2 (14);
+            lblMappingType_.setBounds (mx2, labelTop,
+                                       juce::jmax (10, plateRight2 - mx2), labelH);
+            dividerX_.push_back (plateRight2);
+
+            // Distance: its own read-out, independent of Ortho.
+            const int dx0 = plateRight2 + px2 (14);
+            const int dw  = px2 (142);
+            btnInterdist_.setBounds (dx0, iconTop, dw, tool);
+            const int plateRightD = dx0 + dw + px2 (14);
+            lblDistance_.setBounds (dx0, labelTop, juce::jmax (10, plateRightD - dx0), labelH);
+            dividerX_.push_back (plateRightD);
+
+            // Options: the Snap and Ortho pills that were built for the Figma
+            // "Options" slot and never had a home. Ortho's H / V / Gap drop
+            // onto the caption row once it is on, exactly as that slot did,
+            // so the cluster keeps its width either way.
+            const int pillW   = juce::jmax (24, px2 (kOptionPillW));
+            const int pillGap = juce::jmax (2,  px2 (kOptionPillGap));
+            const int ox0 = plateRightD + px2 (14);
+
+            // Sizes for BOTH states are worked out first, and the plate is cut
+            // to whichever is wider. The cluster then keeps one width whether
+            // Ortho is on or off, so switching it cannot shove the rest of the
+            // row sideways - and the closing rule can never land inside the
+            // extras, which is what happened when the width was decided inside
+            // the "extras are showing" branch.
+            const int sq = juce::jmax (12, juce::jmin (labelH,
+                                       getHeight() - labelTop - px2 (3)));
+            const int gapLblW = juce::jmax (12, px2 (20));
+            // The read-out box is sized HERE, not in the constructor: at
+            // construction Brand::UI::scale is still 1.0, so the 44x18 set
+            // there stayed at its base size and ate most of the slot, leaving
+            // a stub of a track that jumped to its end on the first click.
+            const int tbW = juce::jmax (34, px2 (44));
+            const int sliderW = juce::jmax (px2 (160), tbW + px2 (60));
+
+            const int pillsW  = pillW * 2 + pillGap;
+            const int extrasW = sq * 2 + gapLblW + sliderW + pillGap * 3;
+            const int plateRight3 = ox0 + juce::jmax (pillsW, extrasW) + px2 (14);
+
+            int ox = ox0;
+            btnSnap_.setBounds  (ox, iconTop, pillW, tool); ox += pillW + pillGap;
+            btnOrtho_.setBounds (ox, iconTop, pillW, tool);
+
+            if (orthoExtras_)
+            {
+                if (orthoGapSlider_.getTextBoxWidth() != tbW
+                    || orthoGapSlider_.getTextBoxHeight() != sq)
+                    orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight,
+                                                     false, tbW, sq);
+                int ex = ox0;
+                btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
+                btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
+                orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
+                orthoGapSlider_.setBounds (ex, labelTop, sliderW, sq);
+                lblOptions_.setBounds (0, 0, 0, 0);
+            }
+            else
+            {
+                lblOptions_.setBounds (ox0, labelTop,
+                                       juce::jmax (10, plateRight3 - ox0), labelH);
+            }
+            dividerX_.push_back (plateRight3);
+            plateLeft = plateRight3;
+
+            // Plane: always present on this tab, greyed until the selection is
+            // a shape that could be a surface.
+            {
+                const int gapP = juce::jmax (2, px2 (5));
+                int px0 = plateRight3 + px2 (14);
+                const int clusterLeft = px0;
+                struct Slot { juce::TextButton* b; int w; };
+                const Slot slots[] = { { &btnUsePlane_, 78 }, { &btnPlaneListen_, 74 },
+                                       { &btnPlaneVirt_, 62 }, { &btnPlaneArch_, 96 } };
+                for (const auto& sl : slots)
+                {
+                    const int w = px2 (sl.w);
+                    sl.b->setBounds (px0, iconTop, w, tool);
+                    px0 += w + gapP;
+                }
+                const int plateRightP = px0 - gapP + px2 (14);
+                lblPlane_.setBounds (clusterLeft, labelTop,
+                                     juce::jmax (10, plateRightP - clusterLeft), labelH);
+                dividerX_.push_back (plateRightP);
+                plateLeft = plateRightP;
+
+                // Mic: virtual receivers. A measurement tool, so it belongs
+                // with the mapping controls rather than the drawing ones.
+                const int mx0 = plateRightP + px2 (14);
+                btnMic_.setBounds (mx0, iconTop, tool, tool);
+                const int plateRightM = mx0 + tool + px2 (14);
+                lblMic_.setBounds (mx0 - px2 (6), labelTop,
+                                   juce::jmax (10, plateRightM - mx0 + px2 (6)), labelH);
+                dividerX_.push_back (plateRightM);
+                plateLeft = plateRightM;
+            }
         }
 
         // "Ready" pill - far right of this same ribbon row (Figma puts it
@@ -1280,8 +1843,11 @@ private:
             // Vertically centred in the row, which is also where Figma puts it
             // (y=87 inside the 58..132 band). Sharing the icons' top edge left
             // it riding high with the whole caption row empty beneath it.
+            // Centred in the CONTROL row, not the whole band - the tab strip
+            // above is not part of the row it belongs to.
             readyPill_->setBounds (juce::jmax (plateLeft, getWidth() - fullReadyPad - readyW),
-                                   juce::jmax (0, (getHeight() - tool) / 2), readyW, tool);
+                                   tabStrip + juce::jmax (0, (getHeight() - tabStrip - tool) / 2),
+                                   readyW, tool);
         }
 
         // Draw prompts share the caption row, to the right of the clusters.
@@ -1316,7 +1882,9 @@ private:
         colourSwatch_.setColour (juce::TextButton::buttonColourId, drawColour_);
         promptLabel_.setColour (juce::Label::textColourId, Brand::accent());
         promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
-        for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_, &lblColours_, &lblHelp_, &lblOptions_ })
+        for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
+                         &lblColours_, &lblHelp_, &lblOptions_, &lblMapping_,
+                         &lblMappingType_, &lblDistance_, &lblPlane_, &lblMic_ })
         {
             l->setColour (juce::Label::textColourId, Brand::text());
             l->setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel)));

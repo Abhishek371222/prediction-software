@@ -1201,7 +1201,8 @@ void ControlPanel::updateScaledChrome()
     const float labelSz  = Brand::UI::scaledFont (Brand::Type::sidebarFieldLabel);
     const float chevron  = UiConfig::Control::sidebarChevronScale * Brand::UI::scale;
 
-    for (auto* h : { &freqHdr_, &speakersHdr_, &editHdr_, &globalHdr_, &workspaceHdr_, &presetHdr_ })
+    for (auto* h : { &freqHdr_, &speakersHdr_, &editHdr_, &globalHdr_,
+                     &workspaceHdr_, &presetHdr_ })
     {
         h->setTitleFontSize (secTitle);
         h->setChevronScale (chevron);

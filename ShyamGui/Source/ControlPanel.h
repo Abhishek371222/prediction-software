@@ -91,6 +91,7 @@ public:
     bool layoutSnap() const;
 
     int  getContentHeight() const { return contentHeight_; }
+    /** Fired whenever a plane is added, removed or edited. */
 
     SimParams getParams() const;
     /** Model whose catalogue the Frequency dropdown currently shows (0=Q21S, 2=BEM2inch). */
