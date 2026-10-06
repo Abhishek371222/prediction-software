@@ -21,6 +21,24 @@ static void styleActionBtn (juce::TextButton& b, const juce::String& txt,
     b.setColour (juce::TextButton::textColourOnId,   Brand::onAccent());
 }
 
+// Range rings travel with the project: a reference distance you set up for a
+// venue is part of that venue, not of this run of the app.
+static juce::var rangeRingsToVar (const std::vector<float>& m)
+{
+    juce::Array<juce::var> a;
+    for (float v : m) a.add ((double) v);
+    return a;
+}
+
+static std::vector<float> rangeRingsFromVar (const juce::var& v)
+{
+    std::vector<float> out;
+    if (const auto* arr = v.getArray())
+        for (const auto& e : *arr) out.push_back ((float) (double) e);
+    return out;
+}
+
+
 // ---------------------------------------------------------------------------
 MainComponent::MainComponent (ProjectData project)
     : juce::Thread ("AcousticWorker"), project_ (std::move (project))
@@ -39,7 +57,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.0.7", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.0.9", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -313,6 +331,24 @@ MainComponent::MainComponent (ProjectData project)
     patternComp_.onMicsChanged = [this]
     {
         refreshFrequencyResponse();
+        // Moving the mic is meant to be something you HEAR. Re-predicting on
+        // every mouse move would run the probe hundreds of times a second, so
+        // it is coalesced onto a short timer - still well inside the time it
+        // takes to drag anywhere worth hearing.
+        if (listenWindow_ != nullptr && listenWindow_->isVisible())
+        {
+            // Checked whether or not Follow is on: a mic that has gone has to
+            // stop the sound either way.
+            if (micIndexForId (listenMicId_) < 0)
+                closeMicListener();
+            else if (listenWindow_->content.isFollowing())
+                listenFollow_.startTimer (60);
+        }
+    };
+    listenFollow_.fn = [this]
+    {
+        listenFollow_.stopTimer();
+        refreshMicListener();
     };
     plotHeader_.btnOrtho_.onClick = [this]
     {
@@ -403,6 +439,26 @@ MainComponent::MainComponent (ProjectData project)
     plotHeader_.onShowInterdistance = [this] (bool on)
     {
         patternComp_.setShowInterdistance (on);
+    };
+    plotHeader_.onShowSplValues = [this] (bool on)
+    {
+        patternComp_.setShowSplValues (on);
+    };
+    plotHeader_.onAddRange = [this] { promptForRange(); };
+    plotHeader_.onDeleteRange = [this] (float m)
+    {
+        willEdit();
+        patternComp_.removeRangeRing (m);
+        commitEdit();
+    };
+    patternComp_.onRangeRingsChanged = [this] { syncRangeChips(); };
+
+    plotHeader_.onPlaneListenHeight = [this] (int which)
+    {
+        willEdit();
+        patternComp_.setPlaneListenHeight (which);
+        commitEdit();
+        syncPlaneControls();
     };
     plotHeader_.onUsePlane = [this] (bool on)
     {
@@ -717,6 +773,7 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.applyProject (project_);
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
+    patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
@@ -846,6 +903,7 @@ ProjectData MainComponent::currentProject() const
     // Drawings travel with the project now. They used to exist only in the
     // undo snapshot, so every shape, ruler and text box was lost on save.
     p.drawings = RadiationPatternComponent::annotationsToVar (patternComp_.getAnnotations());
+    p.rangeRings = rangeRingsToVar (patternComp_.rangeRings());
     return p;
 }
 
@@ -2377,7 +2435,8 @@ void MainComponent::syncPlaneControls()
     // One place that answers "what should the Plane cluster show", so the
     // ribbon cannot drift from the selection.
     plotHeader_.setPlaneControlsEnabled (patternComp_.hasPlaneTarget());
-    plotHeader_.setPlaneState (patternComp_.getPlaneOn(), patternComp_.getPlaneType());
+    plotHeader_.setPlaneState (patternComp_.getPlaneOn(), patternComp_.getPlaneType(),
+                               patternComp_.getPlaneListenHeight());
 }
 
 void MainComponent::syncTextControls()
@@ -2870,10 +2929,13 @@ void MainComponent::refreshFrequencyResponse()
     frWindow_->content.setCurves (mics, curves, frRefMic_);
 }
 
-void MainComponent::showMicListener (int micIndex)
+bool MainComponent::buildMicCurve (int micIndex,
+                                   std::vector<MicListener::Point>& curve,
+                                   float& refDb)
 {
+    curve.clear();
     const auto mics = patternComp_.getMics();
-    if (micIndex < 0 || micIndex >= (int) mics.size()) return;
+    if (micIndex < 0 || micIndex >= (int) mics.size()) return false;
 
     // The SAME probe the Frequency Response window uses, so what you hear and
     // what that graph draws cannot drift apart - and both come off the engine
@@ -2881,7 +2943,6 @@ void MainComponent::showMicListener (int micIndex)
     SimParams base = controlPanel_.getParams();
     const int browsedModel = controlPanel_.getBrowsedModel();
 
-    std::vector<MicListener::Point> curve;
     curve.reserve ((size_t) kNumSupportedFrequencies);
     for (int hi = 0; hi < kNumSupportedFrequencies; ++hi)
     {
@@ -2896,20 +2957,156 @@ void MainComponent::showMicListener (int micIndex)
                                                intensityDb, absDb))
             curve.push_back ({ p.frequency, intensityDb });
     }
-    if (curve.empty())
+    if (curve.empty()) return false;
+
+    // Full scale is the loudest band at this mic, so the shape is what you
+    // hear and nothing is ever driven above unity.
+    refDb = curve.front().db;
+    for (const auto& c : curve) refDb = juce::jmax (refDb, c.db);
+    return true;
+}
+
+int MainComponent::micIndexForId (int micId) const
+{
+    const auto mics = patternComp_.getMics();
+    for (int i = 0; i < (int) mics.size(); ++i)
+        if (mics[(size_t) i].id == micId) return i;
+    return -1;
+}
+
+void MainComponent::closeMicListener()
+{
+    if (listenWindow_ == nullptr) return;
+    listenWindow_->content.stopPlayback();
+    listenWindow_->setVisible (false);
+    listenMicId_ = -1;
+}
+
+void MainComponent::refreshMicListener()
+{
+    if (listenWindow_ == nullptr || ! listenWindow_->isVisible()) return;
+
+    // The mic it was listening at may have been deleted. Carrying on would
+    // play a position that no longer exists, with nothing on the map to say
+    // where the sound is coming from.
+    const int idx = micIndexForId (listenMicId_);
+    if (idx < 0) { closeMicListener(); return; }
+
+    std::vector<MicListener::Point> curve;
+    float refDb = 0.0f;
+    if (! buildMicCurve (idx, curve, refDb)) return;
+    listenWindow_->content.updateCurve (std::move (curve), refDb);
+}
+
+
+void MainComponent::syncRangeChips()
+{
+    plotHeader_.setRanges (patternComp_.rangeRings(),
+                           [] (float m) { return RadiationPatternComponent::rangeRingLabel (m); });
+}
+
+float MainComponent::parseLength (const juce::String& raw)
+{
+    // Accepts what a person would actually type: 2, 2m, 2 m, 2.5 metres,
+    // 6ft, 6 ft, 6', 6 feet, 18in, 18". A bare number means whatever unit the
+    // app is currently showing, so nobody has to think about it.
+    auto t = raw.trim().toLowerCase().replace(",", ".");
+    if (t.isEmpty()) return -1.0f;
+
+    double mult = Units::imperial() ? (1.0 / 3.280839895) : 1.0;   // bare number
+    auto endsAny = [&t] (std::initializer_list<const char*> ss)
+    {
+        for (auto* x : ss) if (t.endsWith (x)) return juce::String (x);
+        return juce::String();
+    };
+    if (const auto u = endsAny ({ "millimetres", "millimeters", "mm" }); u.isNotEmpty())
+    { mult = 0.001; t = t.dropLastCharacters (u.length()); }
+    else if (const auto u2 = endsAny ({ "centimetres", "centimeters", "cm" }); u2.isNotEmpty())
+    { mult = 0.01; t = t.dropLastCharacters (u2.length()); }
+    else if (const auto u3 = endsAny ({ "metres", "meters", "metre", "meter", "m" }); u3.isNotEmpty())
+    { mult = 1.0; t = t.dropLastCharacters (u3.length()); }
+    else if (const auto u4 = endsAny ({ "inches", "inch", "in", "\"" }); u4.isNotEmpty())
+    { mult = 0.0254; t = t.dropLastCharacters (u4.length()); }
+    else if (const auto u5 = endsAny ({ "feet", "foot", "ft", "'" }); u5.isNotEmpty())
+    { mult = 1.0 / 3.280839895; t = t.dropLastCharacters (u5.length()); }
+
+    t = t.trim();
+    if (t.isEmpty() || ! t.containsOnly ("0123456789.-+")) return -1.0f;
+    const double v = t.getDoubleValue();
+    if (v <= 0.0) return -1.0f;
+    return (float) (v * mult);
+}
+
+void MainComponent::promptForRange()
+{
+    auto* w = new juce::AlertWindow ("Add range ring",
+                                     "Distance from each speaker. Metres or feet - "
+                                     "type 2, 2 m, 6 ft, 18 in.",
+                                     juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("dist", "", "Distance");
+    w->addButton ("Add",    1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    // Put the caret in the box. Without this the window takes focus but the
+    // editor does not, so you type into nothing and Add reads an empty field.
+    if (auto* ed = w->getTextEditor ("dist"))
+        juce::MessageManager::callAsync ([ed]
+        {
+            if (ed != nullptr) ed->grabKeyboardFocus();
+        });
+
+    w->enterModalState (true, juce::ModalCallbackFunction::create (
+        [this, w] (int res)
+        {
+            const auto typed = w->getTextEditorContents ("dist");
+            std::unique_ptr<juce::AlertWindow> owner (w);
+            if (res != 1) return;
+
+            const float m = parseLength (typed);
+            if (m <= 0.0f)
+            {
+                reportStatus ("Could not read \"" + typed + "\" as a distance.", false);
+                return;
+            }
+            willEdit();
+            const bool added = patternComp_.addRangeRing (m);
+            commitEdit();
+            if (! added)
+                reportStatus ("There is already a range at "
+                              + RadiationPatternComponent::rangeRingLabel (m) + ".", false);
+        }), false);
+}
+
+void MainComponent::showMicListener (int micIndex)
+{
+    std::vector<MicListener::Point> curve;
+    float refDb = 0.0f;
+    if (! buildMicCurve (micIndex, curve, refDb))
     {
         reportStatus ("Nothing to listen to here - run a simulation first.", false);
         return;
     }
 
-    // Full scale is the loudest band at this mic, so the shape is what you
-    // hear and nothing is ever driven above unity.
-    float refDb = curve.front().db;
-    for (const auto& c : curve) refDb = juce::jmax (refDb, c.db);
+    const int micId = patternComp_.getMics()[(size_t) micIndex].id;
 
+    // Asking to listen at the mic you are ALREADY listening at must not change
+    // what you hear. setMic re-anchors the level to wherever the mic is now,
+    // so a second Listen here - after dragging the mic somewhere louder -
+    // quietly re-zeroed the yardstick and the sound jumped back down. Bring
+    // the window forward, refresh the curve, and leave the anchor alone.
+    if (listenWindow_ != nullptr && listenWindow_->isVisible() && listenMicId_ == micId)
+    {
+        refreshMicListener();
+        listenWindow_->toFront (true);
+        return;
+    }
+
+    listenMicId_ = micId;
     if (listenWindow_ == nullptr)
+    {
         listenWindow_ = std::make_unique<MicListenWindow>();
-    listenWindow_->content.setMic ("Mic " + juce::String (micIndex + 1),
+        listenWindow_->content.onRecalculate = [this] { refreshMicListener(); };
+    }
+    listenWindow_->content.setMic (micDisplayName (patternComp_.getMics()[(size_t) micIndex]),
                                    std::move (curve), refDb,
                                    patternComp_.resultHasAbsoluteSpl());
     listenWindow_->setVisible (true);
@@ -3020,6 +3217,7 @@ void MainComponent::loadProjectFile (const juce::File& f)
     controlPanel_.applyProject (project_);
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
+    patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
     patternComp_.clearMics();
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
@@ -3349,7 +3547,7 @@ void MainComponent::exportCSV()
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Simulation Engine v1.4.0.7");
+            line ("# Atomik Simulation Engine v1.4.0.9");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

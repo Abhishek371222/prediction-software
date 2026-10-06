@@ -31,6 +31,23 @@ public:
     void setShowDistanceRings (bool b) { showDistanceRings_ = b; repaint(); }
     bool showDistanceRings() const noexcept { return showDistanceRings_; }
 
+    // --- range rings -----------------------------------------------------
+    /** Distances, in metres, to draw a reference ring at around every speaker.
+        The set is the user's: nothing is here unless they asked for it. */
+    const std::vector<float>& rangeRings() const noexcept { return rangeRings_; }
+    /** Adds one, keeping the list sorted and refusing a duplicate. Returns
+        false when that distance is already there or is not a usable one. */
+    bool addRangeRing (float metres);
+    void removeRangeRing (float metres);
+    void clearRangeRings();
+    void setRangeRings (std::vector<float> metres);
+    /** The ring nearest @p screenPos, within grab distance - what a right
+        click is pointing at. Returns a negative number when nothing is near. */
+    float rangeRingAtScreen (juce::Point<float> screenPos) const;
+    /** "2 m" / "6.5 ft" - the distance as the user would write it. */
+    static juce::String rangeRingLabel (float metres);
+    std::function<void()> onRangeRingsChanged;
+
     /** Re-format length prompts / overlays after SI ↔ Imperial toggle. */
     void refreshUnits() { updateDrawPrompt(); repaint(); }
     void setShowMicDegrees (bool b) { showMicDegrees_ = b; repaint(); }
@@ -57,6 +74,10 @@ public:
         nothing to show. On by default, so Ortho reads as it always did. */
     void setShowInterdistance (bool b) { showInterdistance_ = b; repaint(); }
     bool showInterdistance() const noexcept { return showInterdistance_; }
+    /** Print the predicted level, in numbers, across the map - the thing a
+        colour tells you only roughly. */
+    void setShowSplValues (bool b) { showSplValues_ = b; repaint(); }
+    bool showSplValues() const noexcept { return showSplValues_; }
 
     void setLayoutLayer (LayoutLayer* layer) { layout_ = layer; repaint(); }
     void setLayoutEditMode (bool b) { layoutEditMode_ = b; repaint(); }
@@ -177,7 +198,7 @@ public:
         bool closed = false;                          // polyline
         std::vector<juce::Point<float>> pts;          // world m or polar-normalised
         juce::String text;                            // TextBox label
-        float rotationDeg = 0.0f;                     // TextBox rotation (CCW degrees)
+        float rotationDeg = 0.0f;                     // rotation of a box-shaped annotation (CCW degrees)
         // TextBox type. fontPx is the height at the default fit (zoom 1), so
         // the text scales with the plan like the box around it does; 0 keeps
         // the old behaviour of sizing itself from the box.
@@ -191,18 +212,38 @@ public:
         // --- plane ---------------------------------------------------------
         // A shape can be marked as a PLANE: a surface in the venue rather than
         // a note drawn on top of it. Only the type changes how it draws.
-        // listenHgt is stored but carries no control yet - with no vertical
-        // directivity in the engine it cannot change a prediction, and a
-        // control that changes nothing reads as a bug.
+        // listenHgt DOCUMENTS the plane: it says what height the ears are at,
+        // which is what a listening plane is for. It deliberately does NOT
+        // feed the prediction - the engine has no vertical directivity, so a
+        // number that silently changed the map would be a lie. It is printed
+        // on the tag, and the tooltip says so.
         enum class PlaneType    { Listening = 0, Virtual = 1, Architectural = 2 };
         enum class ListenHeight { Seated = 0, Standing = 1 };
+
+        /** Ear height, in metres, for each listening posture. */
+        static float listenHeightM (ListenHeight h) noexcept
+        {
+            return h == ListenHeight::Standing ? 1.7f : 1.2f;
+        }
         bool         isPlane   = false;
         PlaneType    planeType = PlaneType::Listening;
         ListenHeight listenHgt = ListenHeight::Seated;
+        /** The floating label above a plane. On by default - it is what says
+            "this is a surface" - but it sits over the drawing underneath, so
+            it can be switched off per plane from the right-click menu. */
+        bool         showTag   = true;
 
         /** Which shapes can be a plane: the ones that span or enclose ground.
             A text box is a label and a ruler is a measurement, so neither
             qualifies, and freehand makes too poor a boundary to offer. */
+        /** Shapes that carry a rotation: ones described by a rectangle, so
+            there is a box to turn. A circle is the same at every angle, and a
+            line or polyline is already shaped by where its points are. */
+        static bool isRotatable (Kind k) noexcept
+        {
+            return k == Kind::Rectangle || k == Kind::Square || k == Kind::TextBox;
+        }
+
         static bool canBePlane (Kind k) noexcept
         {
             return k == Kind::Line || k == Kind::Polyline || k == Kind::Rectangle
@@ -229,6 +270,10 @@ public:
     int   getPlaneType()      const noexcept;   // 0 Listening, 1 Virtual, 2 Architectural
     void  setPlaneOn   (bool on);
     void  setPlaneType (int type);
+    /** Ear height on the selected Listening plane(s): 0 seated, 1 standing.
+        Documentation only - see the note on ListenHeight. */
+    void  setPlaneListenHeight (int which);
+    int   getPlaneListenHeight() const noexcept;
 
     bool  hasTextTarget()     const noexcept;
     int   getActiveTextAlign() const noexcept;
@@ -309,7 +354,7 @@ private:
         back to the auto fit. Shared by the painter and the in-place editor so
         the text does not change size the moment you stop typing. */
     float textBoxFontScreenPx (const Annotation&, float boxHeightPx) const;
-    static juce::Justification textBoxJustification (int align);
+    static juce::Justification textBoxJustification (int align, int valign = 0);
     /** CAD-style dimensioning on one plan marker: extension lines, arrowed
         dimension lines and their values, so it is obvious WHICH edge is the
         width and which is the depth. */
@@ -379,6 +424,7 @@ private:
     static double niceStep (double rawMetres);
     struct GridMetrics { double minor = 1.0; double major = 10.0; };
     GridMetrics currentGridMetrics() const;
+    void drawSplValues (juce::Graphics& g, juce::Rectangle<int> plotBounds);
     static juce::String formatGridLabel (double metres);
     void drawSpeakers  (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawOrthoSpacingOverlay (juce::Graphics&);
@@ -420,6 +466,11 @@ private:
                                     float radius) noexcept;
     static bool isFilledShapeKind (Annotation::Kind k) noexcept;
     int  annotationHitTest (juce::Point<float> annotPt, float radius) const;
+    /** Every drawing under a point, topmost first - including the ones the
+        eye cannot get at because something is sitting on top of them. */
+    std::vector<int> annotationsUnder (juce::Point<float> annotPt, float radius) const;
+    bool annotationHitsPoint (const Annotation& a, juce::Point<float> annotPt,
+                              float radius) const;
     int  annotationBorderHitTest (juce::Point<float> annotPt, float radius) const;
     int  annotationFillHitTest (juce::Point<float> annotPt, float radius) const;
     void setSelectedAnnotation (int index);
@@ -461,19 +512,48 @@ private:
 
     // How a plane differs from the same shape drawn as a note.
     static bool  planeIsDashed  (const Annotation&) noexcept;
+    /** The stroke pattern that tells the three plane types apart at a glance.
+        Fills @p dl and returns how many entries it used; 0 means solid. */
+    static int   planeDashPattern (const Annotation&, float strokeW,
+                                   float (&dl)[2]) noexcept;
+    /** Whether a plane stops a ray. A listening plane is where the sound is
+        meant to land and an architectural one is built out of something, so
+        both end the ray; a virtual plane is a construction line and does not. */
+    static bool  planeBlocksRays (const Annotation&) noexcept;
+    /** The audience area, in screen pixels: the region covered by the
+        Listening planes. False when there are none, which means "no audience
+        was marked out, so show the whole field". */
+    bool listeningClipPath (juce::Path& out) const;
+    /** @p from, heading towards @p to, both in screen pixels, cut short at the
+        nearest blocking plane. Returns @p to when nothing is in the way. */
+    juce::Point<float> clipRayAtPlanes (juce::Point<float> from,
+                                        juce::Point<float> to) const;
     static float planeStrokeW   (const Annotation&) noexcept;
     static float planeFillAlpha (const Annotation&, float base) noexcept;
     void         drawPlaneTag   (juce::Graphics&, const Annotation&);
+    /** The two lines a plane tag carries. False when this is not a plane. */
+    bool         planeTagStrings (const Annotation&, juce::String& name,
+                                  juce::String& stats) const;
+    /** Where that tag sits on screen, so a click can find it. */
+    juce::Rectangle<int> planeTagBounds (const Annotation&) const;
+    /** The plane whose tag is under @p p, or failing that whose body is.
+        -1 when the point is over neither. */
+    int          planeAtScreen (juce::Point<float> p) const;
     void drawArcAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
     void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a,
                                 float alphaMul = 1.0f, bool showBorder = false);
-    void beginTextBoxEdit (int index);
+    /** @param clickInComponent where the pointer was, in this component's
+               coordinates, when the edit was asked for - the caret goes
+               there. Null means the box was just created, so select all. */
+    void beginTextBoxEdit (int index,
+                           const juce::Point<float>* clickInComponent = nullptr);
     void endTextBoxEdit (bool commit);
     void layoutTextBoxEditor();
     bool isEditingTextBox() const noexcept { return textEdit_ != nullptr && textEditIndex_ >= 0; }
-    juce::Rectangle<int> textBoxEditorScreenBounds (const Annotation& a) const;
     static juce::Point<float> rotateAround (juce::Point<float> p, juce::Point<float> c, float deg) noexcept;
     static juce::Rectangle<float> textBoxLocalRect (const Annotation& a) noexcept;
+    /** The unrotated box a rotatable shape is described by. */
+    static juce::Rectangle<float> rotatableLocalRect (const Annotation&) noexcept;
     /** Small circular triple-arrow rotate glyph (screen space). */
     static void drawTextBoxRotateIcon (juce::Graphics& g, juce::Point<float> centre, float radius);
     bool pointHitsTextBox (juce::Point<float> pt, const Annotation& a, float radius) const noexcept;
@@ -496,6 +576,7 @@ private:
     float               measuredDistanceM_ = 0.5f;
     bool                showGrid_ = true;
     bool                showDistanceRings_ = false;
+    std::vector<float>  rangeRings_;        // metres, sorted, user-chosen
     bool                showMicDegrees_ = false;
     bool                showSpeakerDims_ = false;
     bool                showRays_ = false;
@@ -504,6 +585,7 @@ private:
     // Mapping tab, not the thing the canvas always shows.
     bool                showField_ = false;
     bool                showInterdistance_ = true;
+    bool                showSplValues_     = false;
 
     /** One dashed ray out of every enabled speaker, along the axis it is
         aimed down, running off the edge of the plot so it reads as infinite.
@@ -534,6 +616,9 @@ private:
         slant is therefore synthesised at draw time, the way a word processor
         fakes an oblique when a family has no true italic. tan 12 degrees. */
     static constexpr float kItalicShear = 0.21f;
+    /** Inset from the box edge to the text, shared by the painter and the
+        in-place editor so nothing shifts when you click in or out. */
+    static constexpr float kTextBoxPad = 6.0f;
     /** Extra pixels between baselines for a given font, from a.lineHeight. */
     static float textBoxLeading (const Annotation&, const juce::Font&) noexcept;
 
@@ -608,6 +693,14 @@ private:
     std::vector<int>        selectedAnnots_;
     std::vector<int>        selectedMics_;
     std::vector<int>        selectedSpeakers_;
+
+    // Clicking again on a drawing you already had selected steps to whatever
+    // is underneath it, so a shape covered by another is still reachable.
+    // Decided on mouse-UP: a click that turned into a drag was a move, not a
+    // request to look deeper.
+    int                cycleCandidate_ = -1;
+    juce::Point<float> cycleAnnotPt_;
+    float              cycleRadius_ = 0.0f;
     juce::Colour            drawColour_ { 0xffffcc00 };
     float                   drawFillAlpha_ = 0.35f;
 

@@ -133,6 +133,18 @@ private:
     RadiationPatternComponent patternComp_;
     std::unique_ptr<MicFrequencyResponseWindow> frWindow_;
     std::unique_ptr<MicListenWindow>            listenWindow_;
+    // WHICH mic that window is listening at, held by id rather than by index:
+    // deleting an earlier mic shuffles every index after it, and the window
+    // would have carried on listening at whatever slid into the slot.
+    int                                         listenMicId_ = -1;
+    bool buildMicCurve (int micIndex, std::vector<MicListener::Point>& curve,
+                        float& refDb);
+    void refreshMicListener();
+    void  syncRangeChips();
+    void  promptForRange();
+    static float parseLength (const juce::String& raw);
+    void closeMicListener();
+    int  micIndexForId (int micId) const;
     void showMicListener (int micIndex);
     int                       frRefMic_ = 0;
 
@@ -240,6 +252,8 @@ private:
         void timerCallback() override { if (fn) fn(); }
     };
     LambdaTimer measPoll_;
+    // Coalesces a mic drag into one re-prediction for the Listen window.
+    LambdaTimer listenFollow_;
     // Autosave cadence. The tick is how often a dirty project is checked; the
     // gap is the floor between two writes so a continuous drag cannot write on
     // every tick. Keep the gap <= the tick, or the two fight each other and

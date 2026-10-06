@@ -547,13 +547,34 @@ public:
                   "A reference surface nobody occupies - a construction line.");
         planeBtn (btnPlaneArch_,   "Architectural",
                   "Structure: a wall, a balcony front, the stage edge.");
+        planeBtn (btnRangeAdd_, "+ Range",
+                  "Draw a reference ring at a distance you choose, around every "
+                  "speaker. Type it in metres or feet - 2m, 6ft, 2.5.");
+        btnRangeAdd_.setClickingTogglesState (false);
+        btnRangeAdd_.onClick = [this] { if (onAddRange) onAddRange(); };
+
+        styleClusterLabel (lblRange_, "Range");
+        addAndMakeVisible (lblRange_);
+
+        planeBtn (btnPlaneSeated_,   "Seated",
+                  "Ears at 1.2 m. Records the listening height on this plane - "
+                  "the engine has no vertical directivity, so it does not "
+                  "change the predicted levels.");
+        planeBtn (btnPlaneStanding_, "Standing",
+                  "Ears at 1.7 m. Records the listening height on this plane - "
+                  "the engine has no vertical directivity, so it does not "
+                  "change the predicted levels.");
 
         btnUsePlane_.onClick    = [this] { if (onUsePlane) onUsePlane (btnUsePlane_.getToggleState()); };
         btnPlaneListen_.onClick = [this] { if (onPlaneType) onPlaneType (0); };
         btnPlaneVirt_.onClick   = [this] { if (onPlaneType) onPlaneType (1); };
         btnPlaneArch_.onClick   = [this] { if (onPlaneType) onPlaneType (2); };
+        btnPlaneSeated_.onClick   = [this] { if (onPlaneListenHeight) onPlaneListenHeight (0); };
+        btnPlaneStanding_.onClick = [this] { if (onPlaneListenHeight) onPlaneListenHeight (1); };
 
-        styleClusterLabel (lblDistance_, "Distance");
+        // One cluster, not two: Distance held a single button and Options
+        // the pills it is always used with.
+        styleClusterLabel (lblDistance_, "Options");
         addAndMakeVisible (lblDistance_);
 
         btnInterdist_.setButtonText ("Show Interdistance");
@@ -572,6 +593,22 @@ public:
             if (onShowInterdistance) onShowInterdistance (btnInterdist_.getToggleState());
         };
         addAndMakeVisible (btnInterdist_);
+
+        btnShowValues_.setButtonText ("Show Values");
+        btnShowValues_.setTooltip ("Print the predicted level, in dB, across "
+                                   "the map. A colour tells you roughly; a "
+                                   "number tells you.");
+        btnShowValues_.setClickingTogglesState (true);
+        btnShowValues_.setComponentID ("ribbonStyle");
+        btnShowValues_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btnShowValues_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
+        btnShowValues_.setColour (juce::TextButton::textColourOffId, Brand::heading());
+        btnShowValues_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
+        btnShowValues_.onClick = [this]
+        {
+            if (onShowSplValues) onShowSplValues (btnShowValues_.getToggleState());
+        };
+        addAndMakeVisible (btnShowValues_);
 
         styleClusterLabel (lblMappingType_, "Mapping Type");
         addAndMakeVisible (lblMappingType_);
@@ -1010,10 +1047,36 @@ public:
     std::function<void(bool)>  onShowRays;
     std::function<void(bool)>  onUsePlane;
     std::function<void(int)>   onPlaneType;
+    std::function<void(int)>   onPlaneListenHeight;
+    std::function<void()>      onAddRange;
+    std::function<void(float)> onDeleteRange;
 
     /** The Plane cluster shares the Text Box slot: a text box can never be a
         plane, so the two are mutually exclusive and only one can ever want
         the space. */
+    /** The ranges that exist now, each shown as a chip you can delete. */
+    void setRanges (const std::vector<float>& metres,
+                    const std::function<juce::String(float)>& label)
+    {
+        rangeValues_ = metres;
+        rangeChips_.clear (true);
+        for (float m : rangeValues_)
+        {
+            auto* b = new juce::TextButton();
+            b->setButtonText (label (m) + "   X");
+            b->setTooltip ("Delete the " + label (m) + " range ring");
+            b->setComponentID ("ribbonStyle");
+            b->setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            b->setColour (juce::TextButton::textColourOffId, Brand::heading());
+            const float v = m;
+            b->onClick = [this, v] { if (onDeleteRange) onDeleteRange (v); };
+            addAndMakeVisible (b);
+            rangeChips_.add (b);
+        }
+        resized();
+        repaint();
+    }
+
     void setPlaneControlsEnabled (bool on)
     {
         // The cluster stays put and greys out instead of appearing and
@@ -1026,7 +1089,7 @@ public:
         repaint();
     }
 
-    void setPlaneState (bool isPlane, int type)
+    void setPlaneState (bool isPlane, int type, int listenHeight = 0)
     {
         btnUsePlane_.setToggleState (isPlane, juce::dontSendNotification);
         btnPlaneListen_.setToggleState (isPlane && type == 0, juce::dontSendNotification);
@@ -1036,11 +1099,22 @@ public:
         // plane already.
         for (auto* b : { &btnPlaneListen_, &btnPlaneVirt_, &btnPlaneArch_ })
             b->setEnabled (planeTargetActive_ && isPlane);
+
+        // Only a listening plane has ears on it, so the heights follow that
+        // type rather than the cluster as a whole.
+        const bool listening = isPlane && type == 0;
+        btnPlaneSeated_.setToggleState   (listening && listenHeight == 0,
+                                          juce::dontSendNotification);
+        btnPlaneStanding_.setToggleState (listening && listenHeight == 1,
+                                          juce::dontSendNotification);
+        btnPlaneSeated_.setEnabled   (planeTargetActive_ && listening);
+        btnPlaneStanding_.setEnabled (planeTargetActive_ && listening);
         repaint();
     }
     /** 0 = Mapping Off, 1 = SPL Mapping. */
     std::function<void(int)>   onMappingType;
     std::function<void(bool)>  onShowInterdistance;
+    std::function<void(bool)>  onShowSplValues;
     std::function<void(bool)>  onLockRays;
 
     /** Home / Mapping, the way Word switches Home / Insert. Each tab owns its
@@ -1207,8 +1281,15 @@ public:
     juce::ComboBox   mappingTypeBox_;
     juce::Label      lblMappingType_;
     juce::TextButton btnInterdist_;
+    juce::TextButton btnShowValues_;
     juce::TextButton btnLockRays_;
     juce::TextButton btnUsePlane_, btnPlaneListen_, btnPlaneVirt_, btnPlaneArch_;
+    juce::TextButton btnPlaneSeated_, btnPlaneStanding_;
+    juce::TextButton btnRangeAdd_;
+    juce::Label      lblRange_;
+    // One chip per range the user has added, each with its own delete.
+    juce::OwnedArray<juce::TextButton> rangeChips_;
+    std::vector<float>                 rangeValues_;
     juce::Label      lblPlane_;
     juce::Label      lblMic_;
     bool             planeTargetActive_ = false;
@@ -1374,7 +1455,9 @@ private:
                 continue;
             }
 
-            const bool isPlaneCtl = (c == (juce::Component*) &btnUsePlane_
+            const bool isPlaneCtl = (c == (juce::Component*) &btnPlaneSeated_
+                                  || c == (juce::Component*) &btnPlaneStanding_
+                                  || c == (juce::Component*) &btnUsePlane_
                                   || c == (juce::Component*) &btnPlaneListen_
                                   || c == (juce::Component*) &btnPlaneVirt_
                                   || c == (juce::Component*) &btnPlaneArch_
@@ -1392,16 +1475,27 @@ private:
         // Nothing to show without Ortho, and a live-looking button that does
         // nothing is worse than a greyed one that explains itself.
         btnInterdist_.setEnabled    (orthoExtras_);
+        btnShowValues_.setVisible   (! homeTab);
         lblDistance_.setVisible     (! homeTab);
         btnSnap_.setVisible         (! homeTab);
         btnOrtho_.setVisible        (! homeTab);
-        // The extras take the caption's place, so only one of them is up.
-        const bool orthoOpen = (! homeTab) && orthoExtras_;
-        btnOrthoHoriz_.setVisible  (orthoOpen);
-        btnOrthoVert_.setVisible   (orthoOpen);
-        orthoGapLabel_.setVisible  (orthoOpen);
-        orthoGapSlider_.setVisible (orthoOpen);
-        lblOptions_.setVisible     ((! homeTab) && ! orthoExtras_);
+        // The H / V / Gap row stays where it is and greys out instead of
+        // vanishing: controls that appear and disappear move everything
+        // around them, and you cannot learn a control you have never seen.
+        btnOrthoHoriz_.setVisible  (! homeTab);
+        btnOrthoVert_.setVisible   (! homeTab);
+        orthoGapLabel_.setVisible  (! homeTab);
+        orthoGapSlider_.setVisible (! homeTab);
+        btnOrthoHoriz_.setEnabled  (orthoExtras_);
+        btnOrthoVert_.setEnabled   (orthoExtras_);
+        orthoGapSlider_.setEnabled (orthoExtras_);
+        orthoGapLabel_.setColour (juce::Label::textColourId,
+                                  orthoExtras_ ? Brand::muted()
+                                               : Brand::muted().withAlpha (0.45f));
+        lblOptions_.setVisible     (false);   // merged into the Options cluster
+        btnRangeAdd_.setVisible (! homeTab);
+        lblRange_.setVisible    (! homeTab);
+        for (auto* c : rangeChips_) c->setVisible (! homeTab);
 
         // Anything the Figma ribbon has no slot for is hidden (code/logic
         // untouched - flip setVisible back on to restore). The red
@@ -1472,8 +1566,34 @@ private:
         // Mapping carries more clusters than Home, so the row it has to fit in
         // is wider - working `shrink` out from Home's last rule would let the
         // Mapping row run past the Ready pill on a narrow window.
+        //
+        // This is SUMMED from the same numbers the Mapping layout uses below
+        // rather than written down as one figure. A hard-coded width goes
+        // stale the moment a cluster is added - which is exactly what happened
+        // when Range arrived and the pill got squeezed down to its dot.
+        constexpr int kMapGap   = 14;                                   // air each side of a rule
+        constexpr int kMapRays  = 92 + 6 + 86;                          // Show Rays | Lock Rays
+        constexpr int kMapType  = 116;                                  // Mapping Type combo
+        constexpr int kMapOpts  = 142 + 6 + 96 + 12                     // interdist | values
+                                + kOptionPillW * 2 + kOptionPillGap;    // Snap | Ortho
+        constexpr int kMapPlane = 72 + 70 + 58 + 86 + 54 + 66 + 5 * 5;  // the six plane buttons
+        constexpr int kMapMic   = kPitch + 8 + 72;                      // mic icon + "+ Range"
+        // The range chips share the cluster, so the row grows as ranges are
+        // added and has to shrink to match - otherwise adding a third range
+        // walks the row back over the pill.
+        const int chipsW = rangeChips_.isEmpty()
+            ? 0 : (int) rangeChips_.size() * 54 + ((int) rangeChips_.size() - 1) * 4;
+        const int kMapMicRange = juce::jmax (kMapMic, chipsW);
+
+        const int mappingDividerX =
+              kPlateLeft + kMapRays + kMapGap
+            + kMapGap + kMapType      + kMapGap
+            + kMapGap + kMapOpts      + kMapGap
+            + kMapGap + kMapPlane     + kMapGap
+            + kMapGap + kMapMicRange  + kMapGap;
+
         const int lastDividerX = (ribbonTab_ != 0)
-            ? 1210
+            ? mappingDividerX
             : (textTargetActive_ ? kText.dividerX : kHelp.dividerX);
         const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
         const float shrink = juce::jlimit (0.45f, 1.0f,
@@ -1736,28 +1856,20 @@ private:
                                        juce::jmax (10, plateRight2 - mx2), labelH);
             dividerX_.push_back (plateRight2);
 
-            // Distance: its own read-out, independent of Ortho.
-            const int dx0 = plateRight2 + px2 (14);
-            const int dw  = px2 (142);
-            btnInterdist_.setBounds (dx0, iconTop, dw, tool);
-            const int plateRightD = dx0 + dw + px2 (14);
-            lblDistance_.setBounds (dx0, labelTop, juce::jmax (10, plateRightD - dx0), labelH);
-            dividerX_.push_back (plateRightD);
-
-            // Options: the Snap and Ortho pills that were built for the Figma
-            // "Options" slot and never had a home. Ortho's H / V / Gap drop
-            // onto the caption row once it is on, exactly as that slot did,
-            // so the cluster keeps its width either way.
+            // Options: one cluster. "Distance" held a single button and was
+            // only ever used with the pills beside it, so the rule between
+            // them bought nothing but width.
+            //
+            // Top row  : Show Interdistance | Show Values | Snap | Ortho
+            // Caption  : "Options", then Ortho's H / V / Gap to its right.
+            // The H / V / Gap row is always laid out, greyed when Ortho is
+            // off, so nothing shifts when you switch Ortho on.
             const int pillW   = juce::jmax (24, px2 (kOptionPillW));
             const int pillGap = juce::jmax (2,  px2 (kOptionPillGap));
-            const int ox0 = plateRightD + px2 (14);
+            const int ox0 = plateRight2 + px2 (14);
+            const int dw  = px2 (142);        // Show Interdistance
+            const int vw  = px2 (96);         // Show Values
 
-            // Sizes for BOTH states are worked out first, and the plate is cut
-            // to whichever is wider. The cluster then keeps one width whether
-            // Ortho is on or off, so switching it cannot shove the rest of the
-            // row sideways - and the closing rule can never land inside the
-            // extras, which is what happened when the width was decided inside
-            // the "extras are showing" branch.
             const int sq = juce::jmax (12, juce::jmin (labelH,
                                        getHeight() - labelTop - px2 (3)));
             const int gapLblW = juce::jmax (12, px2 (20));
@@ -1766,34 +1878,34 @@ private:
             // there stayed at its base size and ate most of the slot, leaving
             // a stub of a track that jumped to its end on the first click.
             const int tbW = juce::jmax (34, px2 (44));
-            const int sliderW = juce::jmax (px2 (160), tbW + px2 (60));
+            const int sliderW = juce::jmax (px2 (150), tbW + px2 (56));
 
-            const int pillsW  = pillW * 2 + pillGap;
-            const int extrasW = sq * 2 + gapLblW + sliderW + pillGap * 3;
-            const int plateRight3 = ox0 + juce::jmax (pillsW, extrasW) + px2 (14);
+            // The caption shares its row with the Ortho extras, so the cluster
+            // is cut to whichever row is wider and the closing rule can never
+            // land inside a control.
+            const int capW    = px2 (54);     // room for the word "Options"
+            const int topRowW = dw + px2 (6) + vw + px2 (12) + pillW * 2 + pillGap;
+            const int capRowW = capW + px2 (8) + sq * 2 + gapLblW + sliderW + pillGap * 3;
+            const int plateRight3 = ox0 + juce::jmax (topRowW, capRowW) + px2 (14);
 
             int ox = ox0;
+            btnInterdist_.setBounds  (ox, iconTop, dw, tool); ox += dw + px2 (6);
+            btnShowValues_.setBounds (ox, iconTop, vw, tool); ox += vw + px2 (12);
             btnSnap_.setBounds  (ox, iconTop, pillW, tool); ox += pillW + pillGap;
             btnOrtho_.setBounds (ox, iconTop, pillW, tool);
 
-            if (orthoExtras_)
-            {
-                if (orthoGapSlider_.getTextBoxWidth() != tbW
-                    || orthoGapSlider_.getTextBoxHeight() != sq)
-                    orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight,
-                                                     false, tbW, sq);
-                int ex = ox0;
-                btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
-                btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
-                orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
-                orthoGapSlider_.setBounds (ex, labelTop, sliderW, sq);
-                lblOptions_.setBounds (0, 0, 0, 0);
-            }
-            else
-            {
-                lblOptions_.setBounds (ox0, labelTop,
-                                       juce::jmax (10, plateRight3 - ox0), labelH);
-            }
+            if (orthoGapSlider_.getTextBoxWidth() != tbW
+                || orthoGapSlider_.getTextBoxHeight() != sq)
+                orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight,
+                                                 false, tbW, sq);
+
+            lblDistance_.setBounds (ox0, labelTop, capW, labelH);
+            int ex = ox0 + capW + px2 (8);
+            btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
+            btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
+            orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
+            orthoGapSlider_.setBounds (ex, labelTop, sliderW, sq);
+
             dividerX_.push_back (plateRight3);
             plateLeft = plateRight3;
 
@@ -1804,8 +1916,9 @@ private:
                 int px0 = plateRight3 + px2 (14);
                 const int clusterLeft = px0;
                 struct Slot { juce::TextButton* b; int w; };
-                const Slot slots[] = { { &btnUsePlane_, 78 }, { &btnPlaneListen_, 74 },
-                                       { &btnPlaneVirt_, 62 }, { &btnPlaneArch_, 96 } };
+                const Slot slots[] = { { &btnUsePlane_, 72 }, { &btnPlaneListen_, 70 },
+                                       { &btnPlaneVirt_, 58 }, { &btnPlaneArch_, 86 },
+                                       { &btnPlaneSeated_, 54 }, { &btnPlaneStanding_, 66 } };
                 for (const auto& sl : slots)
                 {
                     const int w = px2 (sl.w);
@@ -1820,11 +1933,41 @@ private:
 
                 // Mic: virtual receivers. A measurement tool, so it belongs
                 // with the mapping controls rather than the drawing ones.
+                // Mic and Range share a cluster: both are measurement tools
+                // rather than drawing ones, and giving each its own rule cost
+                // more width than the row has.
                 const int mx0 = plateRightP + px2 (14);
                 btnMic_.setBounds (mx0, iconTop, tool, tool);
-                const int plateRightM = mx0 + tool + px2 (14);
-                lblMic_.setBounds (mx0 - px2 (6), labelTop,
-                                   juce::jmax (10, plateRightM - mx0 + px2 (6)), labelH);
+
+                const int addW = px2 (72);
+                const int rx0 = mx0 + tool + px2 (8);
+                btnRangeAdd_.setBounds (rx0, iconTop, addW, tool);
+
+                // The ranges already added sit on the caption row, each one
+                // carrying its own delete, so you can see and remove them
+                // without going looking.
+                const int chipW = px2 (54);     // kMapMicRange assumes this
+                const int chipGap = juce::jmax (2, px2 (4));
+                int cx = mx0;
+                for (auto* c : rangeChips_)
+                {
+                    c->setBounds (cx, labelTop, chipW, juce::jmax (12, labelH));
+                    cx += chipW + chipGap;
+                }
+                const int iconRowRight = rx0 + addW;
+                const int chipRowRight = rangeChips_.isEmpty() ? mx0 : (cx - chipGap);
+                const int plateRightM = juce::jmax (iconRowRight, chipRowRight) + px2 (14);
+                if (rangeChips_.isEmpty())
+                {
+                    lblMic_.setBounds (mx0 - px2 (6), labelTop,
+                                       juce::jmax (10, plateRightM - mx0 + px2 (6)), labelH);
+                    lblRange_.setBounds (0, 0, 0, 0);
+                }
+                else
+                {
+                    lblMic_.setBounds (0, 0, 0, 0);
+                    lblRange_.setBounds (0, 0, 0, 0);
+                }
                 dividerX_.push_back (plateRightM);
                 plateLeft = plateRightM;
             }

@@ -24,9 +24,148 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.5** | 2026-09-25 | BEM 2inch as a second speaker model; per-model unit naming |
 | **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves; per-model cabinet size |
 | **1.4.0.7** | 2026-09-28 | 5-degree rotation handle; sketch plan sizes; Show sizes dimensioning; 3D cabinet view; mojibake purge |
+| **1.4.0.9** | 2026-10-06 | Home / Mapping ribbon; aiming rays; planes that act on rays and own the map; listen at a mic as you move it; range rings; shape rotation; text box rebuild |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.0.9] - 2026-10-06
+
+**Atomik Simulation Engine v1.4.0.9** - the ribbon splits into Home and Mapping,
+shapes become surfaces that rays and the heatmap respect, and a mic is something
+you can listen at and walk around while the sound follows you.
+
+There is no 1.4.0.8. The work below accumulated past 1.4.0.7 without a cut and
+ships here as one release.
+
+### Added
+
+- **Home / Mapping ribbon tabs**, Word-style. Home keeps every existing cluster;
+  Mapping carries Rays, Mapping Type, Options, Plane, and Mic / Range.
+- **Aiming rays** out of every speaker, grabbable anywhere along their length to
+  turn it. One ray per speaker, Lock Rays freezes them, and grabbing a ray inside
+  a multi-selection turns the whole selection by the same delta, so a fan keeps
+  its shape instead of collapsing to one bearing.
+- **Mapping Type** switches the heatmap off; the canvas then paints the colour
+  map's own floor so overlays keep the contrast they were designed for.
+- **Planes.** Any shape can be marked as a surface - Listening, Virtual or
+  Architectural - each with its own stroke so they tell apart at a glance:
+  Listening dotted, Virtual long-dashed, Architectural solid and heavy. Before
+  this, Listening and Architectural were both plain solid lines, and on an open
+  plane there was nothing to tell them apart by.
+- **Planes act on rays.** A Listening or Architectural plane ends a ray where it
+  arrives; a Virtual plane is a construction line and the ray carries straight on.
+- **Listening planes own the SPL map.** Mark out an audience and the heatmap
+  paints only there - on the audience side of an open plane, inside a closed one -
+  rather than into empty air. No Listening plane means the whole field shows, as
+  before.
+- **Listening height** on a Listening plane: Seated (1.2 m) or Standing (1.7 m),
+  printed on the plane tag. It documents the plane and deliberately does not feed
+  the prediction - the engine has no vertical directivity, and a number that
+  silently changed the map would be a lie. Both tooltips say so.
+- **Per-plane coverage** sampled from the solved grid, on the plane's tag:
+  average (of energy, not decibels), min, max, spread, and the frequency, because
+  the map is one frequency. The tag hides per plane from its right-click menu and
+  comes back by right-clicking the plane itself.
+- **Show Values** prints the predicted level in dB across the map, on a plate dark
+  enough to read over both the floor shade and the peaks. It follows the major
+  grid and thins out as you zoom away instead of smearing.
+- **Range rings.** `+ Range` draws a reference ring at a distance you type, around
+  every speaker. Metric or imperial, however you would write it - `2`, `2m`,
+  `9 m`, `50 ft`, `6'`, `18 in`, `250mm`; a bare number means the unit on show.
+  Each range gets a chip beside the button to delete it, or right-click the ring
+  on the map and take "Delete range 9 m". Ranges save with the project.
+- **Listen at a mic.** Double-click a mic, or right-click it and choose Listen
+  here, to hear what the engine predicts there: a track or pink noise through one
+  peaking filter per measured frequency, at the level predicted at that point.
+  Following mic re-predicts as you drag, so moving the mic is something you hear;
+  Recalculate does it on demand when following is off.
+- **Shape rotation.** Rectangles and squares rotate from the same grip text boxes
+  have always had, with Shift snapping to 15 degrees. Bounds, handles, resizing,
+  hit-testing, drawing and the selection outline all follow the turn.
+- **Click again to reach what is underneath.** A second click on a selected
+  drawing steps to whatever is beneath it, wrapping at the bottom, so a shape
+  covered by another is still reachable. Decided on mouse-up, so dragging a
+  selected shape still moves it.
+
+### Changed
+
+- **Distance and Options are one cluster.** Distance held a single button that
+  was only ever used with the pills beside it; the rule between them bought
+  nothing but width.
+- **Ortho's H / V / Gap stay put and grey out** instead of appearing and
+  vanishing. Controls that come and go move everything around them, and you
+  cannot learn a control you have never seen.
+- **Mic and Range share a cluster** - both are measurement tools, and a separate
+  rule for each pushed the row past the window edge.
+- **Playback level is anchored** where listening started and held as the mic
+  moves, so a null is genuinely quieter than a hot spot. Re-normalising at every
+  position made every seat sound equally loud, which is the opposite of what a
+  listening tool is for.
+- **The filter bank is re-tuned in place** as the mic moves, and the master gain
+  glides over about 20 ms. Dragging changes the levels, never the catalogue, so a
+  rebuild would restart the filters from silence and click on every mouse move; a
+  20 dB step without the glide is a bang, not a quieter signal.
+- **The listening filters are cuts only**, referred to the position's peak rather
+  than its mean, so the bank can never add gain. Worth about 3 dB more output, and
+  it puts all the loudness in one place.
+- **A mic wins over a ray.** A ray runs the whole width of the field and will
+  sooner or later lie across something you placed deliberately; dragging a mic
+  under one used to aim the speaker instead.
+
+### Fixed
+
+- **Text in a box went dark and changed size the moment you clicked into it.**
+  `TextEditor::setFont` and `setColour` only govern text added afterwards, and
+  `setText` ran before both, so the words already there kept the look-and-feel's
+  default face. They are applied to the existing text now, selection colour
+  included.
+- **Editing a rotated text box dropped the rotation** - the editor appeared
+  upright and axis-aligned, so the words jumped and the caret landed nowhere near
+  the pointer. The editor is laid out in the box's own frame and turned with it.
+- **Vertical alignment was half a pad out.** JUCE subtracts the top indent from
+  the height it centres in but still draws from it. The editor now takes exactly
+  the painter's rectangle with no indents of its own; horizontal is pixel-exact.
+- **The painter centred the ink, not the line boxes**, so a line with no descender
+  sat differently from one with. It is measured in line boxes now, as a text
+  engine does it.
+- **Font size never grew the box**, and the box-fitting measurement came up a line
+  short because it put the first baseline at zero, leaving the top line's
+  ascenders above the origin. A 24 pt box now grows to hold every wrapped line.
+- **Double-clicking into text** places the caret where you clicked and selects the
+  word under it, instead of selecting everything.
+- **Frequency Response showed a flat line with one mic.** Every curve was drawn
+  relative to the reference mic, and with one mic that mic is the reference, so it
+  plotted the curve minus itself. Alone, a mic now shows its own shape against its
+  band average. The dB grid has numbers, the axis says which zero you are reading,
+  and failed probes break the line instead of being drawn at the floor.
+- **Deleting a mic left the track playing** with nothing on screen to stop it, and
+  so did closing the Listen window, despite a comment saying it must not. The
+  window also tracked its mic by index, so deleting an earlier mic left it
+  listening at a different one; it tracks the mic's id now.
+- **Listening again at the mic you are already listening at** re-anchored the
+  level, so after dragging somewhere louder the sound dropped straight back.
+- **The ribbon ran over the Ready pill.** The row's design width was written down
+  as a single number and went stale as clusters were added. It is summed from the
+  same constants the layout uses - the range chips included - so the row shrinks
+  as content grows.
+- **White text on white.** Ortho pills and mic labels used a colour that follows
+  the theme and is white in the light one.
+- **MP3 would not load.** `JUCE_USE_MP3AUDIOFORMAT` was defined to 0 unguarded,
+  defeating the later `#ifndef` default. WASAPI and DirectSound the same: this
+  build had no audio backends compiled in at all, and `initialise` returns an
+  empty error with no device, which is not proof of one.
+
+### Packaging
+
+- Version strings, file version resource (string and numeric `FILEVERSION`) and
+  installer -> **v1.4.0.9**.
+- **Windows Release** `Atomik Simulation Engine v1.4.0.9.exe`
+  (Q21S + BEM 2inch + UI assets embedded).
+- `juce_audio_formats` added alongside basics and devices; ASIO stays off (vendor
+  SDK we do not ship).
 
 ---
 

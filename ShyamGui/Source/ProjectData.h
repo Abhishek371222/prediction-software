@@ -50,6 +50,7 @@ struct ProjectData
     // it. Before this they lived only in the undo snapshot and were lost on
     // every save.
     juce::var drawings;
+    juce::var rangeRings;      // metres, the reference rings the user added
 
     juce::File file;   // backing file on disk (empty until first save)
 
@@ -131,6 +132,8 @@ struct ProjectData
         root->setProperty ("speakers", spk);
         if (drawings.isArray() && drawings.size() > 0)
             root->setProperty ("drawings", drawings);
+        if (rangeRings.isArray() && rangeRings.size() > 0)
+            root->setProperty ("rangeRings", rangeRings);
         root->setProperty ("format", "atmk-1");
 
         return juce::var (root);
@@ -144,6 +147,7 @@ struct ProjectData
             // Absent in projects saved before drawings were persisted, which
             // simply leaves them empty - an old file still opens.
             p.drawings = root->getProperty ("drawings");
+            p.rangeRings = root->getProperty ("rangeRings");
 
             if (auto mv = root->getProperty ("meta"); auto* m = mv.getDynamicObject())
             {

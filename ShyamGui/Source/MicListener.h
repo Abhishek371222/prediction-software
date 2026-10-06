@@ -26,15 +26,62 @@ public:
     /** One measured point: frequency and the predicted level there. */
     struct Point { double hz = 0.0; float db = 0.0f; };
 
-    MicListener() = default;
-    ~MicListener() override { stop(); }
+    MicListener()
+    {
+        formats_.registerBasicFormats();          // WAV / AIFF / MP3 / Ogg
+        readAhead_.startThread (juce::Thread::Priority::normal);
+    }
 
-    /** @param curve      predicted level per catalogue frequency at this mic
-        @param referenceDb level that should play at full scale (the map's peak) */
+    ~MicListener() override
+    {
+        stop();
+        transport_.setSource (nullptr);
+        readAhead_.stopThread (2000);
+    }
+
+    /** Stream a track instead of noise. Music is the honest check - noise
+        shows you the response, music tells you whether you would sit there. */
+    bool loadTrack (const juce::File& f)
+    {
+        std::unique_ptr<juce::AudioFormatReader> r (formats_.createReaderFor (f));
+        if (r == nullptr) return false;
+
+        auto src = std::make_unique<juce::AudioFormatReaderSource> (r.release(), true);
+        src->setLooping (true);
+        {
+            const juce::SpinLock::ScopedLockType lock (lock_);
+            transport_.setSource (src.get(), 32768, &readAhead_,
+                                  0.0, 2);
+            reader_ = std::move (src);
+            trackName_ = f.getFileNameWithoutExtension();
+        }
+        transport_.setPosition (0.0);
+        return true;
+    }
+
+    bool hasTrack() const noexcept { return reader_ != nullptr; }
+    juce::String trackName() const { return trackName_; }
+    void setUseTrack (bool on) noexcept { useTrack_ = on && reader_ != nullptr; }
+    bool usingTrack() const noexcept { return useTrack_; }
+
+    /** Start listening somewhere: this position becomes the level everything
+        afterwards is judged against.
+        @param curve      predicted level per catalogue frequency at this mic
+        @param referenceDb the level that plays at full scale */
     void setResponse (std::vector<Point> curve, float referenceDb)
     {
         curve_ = std::move (curve);
         reference_ = referenceDb;
+        rebuild();
+    }
+
+    /** The mic MOVED: new numbers, same yardstick. Keeping the reference is
+        the whole point - renormalising to each new position would make a null
+        sound exactly as loud as a hot spot, which is the opposite of what a
+        listening tool is for. */
+    void updateResponse (std::vector<Point> curve)
+    {
+        curve_ = std::move (curve);
         rebuild();
     }
 
@@ -45,13 +92,24 @@ public:
         // make Windows prompt for microphone permission for no reason.
         const auto err = devices_.initialiseWithDefaultDevices (0, 2);
         if (err.isNotEmpty()) { lastError_ = err; return; }
+        // An empty error is not proof of a device: with no backends compiled
+        // in, initialise succeeds and leaves you with nothing playing. Ask for
+        // the device itself.
+        if (devices_.getCurrentAudioDevice() == nullptr)
+        {
+            lastError_ = "no output device available";
+            return;
+        }
+        lastError_.clear();
         devices_.addAudioCallback (this);
         running_ = true;
+        if (useTrack_ && reader_ != nullptr) transport_.start();
     }
 
     void stop()
     {
         if (! running_) return;
+        transport_.stop();
         devices_.removeAudioCallback (this);
         devices_.closeAudioDevice();
         running_ = false;
@@ -64,10 +122,18 @@ public:
     /** Overall offset applied, in dB - what the window reports to the user. */
     float levelOffsetDb() const noexcept { return offsetDb_; }
 
+    /** The response being applied, for the plot: you should be able to SEE
+        what you are hearing. */
+    const std::vector<Point>& response() const noexcept { return curve_; }
+    float referenceDb() const noexcept { return reference_; }
+
     // --- AudioIODeviceCallback --------------------------------------------
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
         sampleRate_ = d != nullptr ? d->getCurrentSampleRate() : 48000.0;
+        const int block = d != nullptr ? d->getCurrentBufferSizeSamples() : 512;
+        transport_.prepareToPlay (block, sampleRate_);
+        scratch_.setSize (2, juce::jmax (block, 1024));
         rebuild();
     }
 
@@ -86,18 +152,37 @@ public:
             return;
         }
 
+        // Pull the track once per block; its own sample rate is resampled by
+        // the transport, so a 44.1k file on a 48k device still plays in tune.
+        if (useTrack_ && reader_ != nullptr)
+        {
+            if (scratch_.getNumSamples() < numSamples) scratch_.setSize (2, numSamples, false, false, true);
+            juce::AudioBuffer<float> view (scratch_.getArrayOfWritePointers(), 2, numSamples);
+            juce::AudioSourceChannelInfo info (&view, 0, numSamples);
+            transport_.getNextAudioBlock (info);
+        }
+
         for (int i = 0; i < numSamples; ++i)
         {
-            float s = pink();
+            // Mono sum: the prediction is one point in space, so there is only
+            // one thing to hear at it.
+            float s = (useTrack_ && reader_ != nullptr)
+                        ? 0.5f * (scratch_.getSample (0, i) + scratch_.getSample (1, i))
+                        : pink();
             if (! bypass_)
             {
                 for (auto& f : filters_) s = f.process (s);
-                s *= gain_;
+                // Glide to the new level rather than stepping to it: moving a
+                // mic from a hot spot into a null is a 20 dB change, and a
+                // step that size is a bang, not a quieter signal.
+                gainNow_ += (gain_ - gainNow_) * kGainGlide;
+                s *= gainNow_;
             }
             else
             {
                 s *= 0.25f;   // same ballpark as the shaped path, for a fair A/B
             }
+            if (useTrack_) s *= 2.0f;   // music is quieter than full-scale noise
             s = juce::jlimit (-1.0f, 1.0f, s);
             for (int ch = 0; ch < numOut; ++ch)
                 if (out[ch] != nullptr) out[ch][i] = s;
@@ -111,7 +196,12 @@ private:
         float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
         float x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 
-        void set (double fs, double f0, double gainDb, double q)
+        /** @param keepState true while the mic is being dragged: the filter
+                   keeps the samples already inside it, so new coefficients
+                   slide in instead of the bank restarting from silence with
+                   an audible click on every mouse move. */
+        void set (double fs, double f0, double gainDb, double q,
+                  bool keepState = false)
         {
             const double A = std::pow (10.0, gainDb / 40.0);
             const double w = 2.0 * juce::MathConstants<double>::pi * f0 / fs;
@@ -123,7 +213,7 @@ private:
             b2 = (float) ((1 - alpha * A) / a0);
             a1 = (float) ((-2 * cosw)     / a0);
             a2 = (float) ((1 - alpha / A) / a0);
-            x1 = x2 = y1 = y2 = 0;
+            if (! keepState) x1 = x2 = y1 = y2 = 0;
         }
 
         float process (float x) noexcept
@@ -137,29 +227,57 @@ private:
     void rebuild()
     {
         const juce::SpinLock::ScopedLockType lock (lock_);
-        filters_.clear();
         gain_ = 0.0f;
         offsetDb_ = 0.0f;
-        if (curve_.empty() || sampleRate_ < 8000.0) return;
+        if (curve_.empty() || sampleRate_ < 8000.0) { filters_.clear(); return; }
 
         // The shape goes in the filters and the overall level goes in one gain.
-        // Folding a large common offset into every bell would stack it.
-        double mean = 0.0;
-        for (const auto& p : curve_) mean += p.db;
-        mean /= (double) curve_.size();
+        //
+        // The shape is referred to the curve's PEAK, not its mean, so every
+        // filter is a cut and the bank can only ever take away. Referred to
+        // the mean, every band above it was a boost; a dozen boosting bells in
+        // series multiplied the signal into the limiter and pinned it there,
+        // and once you are clipping, dropping the level 7 dB sounds like
+        // nothing at all. That is why moving the mic changed the graph but not
+        // the sound. All the loudness now lives in the one gain below, which
+        // is the thing that actually tracks where the mic is.
+        double peak = -1.0e9;
+        for (const auto& p : curve_) peak = juce::jmax (peak, (double) p.db);
 
+        // Which bands this curve needs. Dragging a mic around changes the
+        // LEVELS but never the catalogue, so the bank is almost always the
+        // one already running - and re-tuning it in place is what makes a
+        // move audible as a move rather than as a series of clicks.
+        std::vector<double> wanted;
+        wanted.reserve (curve_.size());
+        for (const auto& p : curve_)
+            if (p.hz >= 20.0 && p.hz <= sampleRate_ * 0.45)
+                wanted.push_back (p.hz);
+
+        const bool sameBank = (wanted == filterHz_ && filters_.size() == wanted.size());
+        if (! sameBank)
+        {
+            filters_.assign (wanted.size(), Peak());
+            filterHz_ = wanted;
+        }
+
+        size_t fi = 0;
         for (const auto& p : curve_)
         {
             if (p.hz < 20.0 || p.hz > sampleRate_ * 0.45) continue;
-            Peak f;
+            if (fi >= filters_.size()) break;
             // Wide-ish bells so neighbouring bands join up instead of ringing.
-            f.set (sampleRate_, p.hz, juce::jlimit (-24.0, 24.0, (double) p.db - mean), 1.2);
-            filters_.push_back (f);
+            filters_[fi++].set (sampleRate_, p.hz,
+                                juce::jlimit (-24.0, 0.0, (double) p.db - peak),
+                                1.2, sameBank);
         }
 
-        // Never louder than the loudest point on the map, so moving the mic
-        // somewhere quieter actually sounds quieter.
-        offsetDb_ = juce::jlimit (-60.0f, 0.0f, (float) mean - reference_);
+        // Measured against where listening STARTED, so moving the mic
+        // somewhere quieter actually sounds quieter - and somewhere louder,
+        // louder. The headroom above the anchor is limited to +6 dB, which
+        // with the 0.25 base keeps the peak at half scale and makes clipping
+        // impossible however hot a spot you drag into.
+        offsetDb_ = juce::jlimit (-60.0f, 6.0f, (float) peak - reference_);
         gain_ = 0.25f * std::pow (10.0f, offsetDb_ / 20.0f);
     }
 
@@ -180,13 +298,24 @@ private:
     }
 
     juce::AudioDeviceManager devices_;
+    juce::AudioFormatManager  formats_;
+    juce::TimeSliceThread     readAhead_ { "listen-readahead" };
+    juce::AudioTransportSource transport_;
+    std::unique_ptr<juce::AudioFormatReaderSource> reader_;
+    juce::AudioBuffer<float>  scratch_;
+    juce::String              trackName_;
+    bool   useTrack_   = false;
     std::vector<Point>  curve_;
     std::vector<Peak>   filters_;
+    std::vector<double> filterHz_;      // what the bank is tuned to right now
     juce::SpinLock      lock_;
     juce::Random        rng_;
     double sampleRate_ = 48000.0;
     float  reference_  = 0.0f;
-    float  gain_       = 0.0f;
+    float  gain_       = 0.0f;   // where the level is heading
+    float  gainNow_    = 0.0f;   // where it has got to
+    // ~20 ms at 48k: fast enough to feel like the move, slow enough not to click.
+    static constexpr float kGainGlide = 0.001f;
     float  offsetDb_   = 0.0f;
     bool   running_    = false;
     bool   bypass_     = false;

@@ -5,6 +5,7 @@
 //==============================================================================
 #define JUCE_MODULE_AVAILABLE_juce_audio_basics     1
 #define JUCE_MODULE_AVAILABLE_juce_audio_devices    1
+#define JUCE_MODULE_AVAILABLE_juce_audio_formats    1
 #define JUCE_MODULE_AVAILABLE_juce_core             1
 #define JUCE_MODULE_AVAILABLE_juce_data_structures  1
 #define JUCE_MODULE_AVAILABLE_juce_events           1
@@ -26,27 +27,13 @@
 #define JUCE_STRICT_REFCOUNTEDPOINTER               1
 #define JUCE_VST3_CAN_REPLACE_VST2                  0
 #define JUCE_USE_DIRECTWRITE                        1
-#define JUCE_WASAPI                                 0
-#define JUCE_DIRECTSOUND                            0
+#define JUCE_WASAPI                                 1
+#define JUCE_DIRECTSOUND                            1
 #define JUCE_ASIO                                   0
 #define JUCE_USE_FLAC                               0
 #define JUCE_USE_OGGVORBIS                          0
-#define JUCE_USE_MP3AUDIOFORMAT                     0
+#define JUCE_USE_MP3AUDIOFORMAT                     1
 #define JUCE_USE_WINDOWS_MEDIA_FORMAT               0
 #define JUCE_PLUGINHOST_VST3                        0
 #define JUCE_PLUGINHOST_AU                          0
 
-// Audio backends for the mic listening tool. ASIO needs a vendor SDK
-// we do not ship, so it stays off; WASAPI + DirectSound cover Windows.
-#ifndef JUCE_ASIO
- #define JUCE_ASIO 0
-#endif
-#ifndef JUCE_WASAPI
- #define JUCE_WASAPI 1
-#endif
-#ifndef JUCE_DIRECTSOUND
- #define JUCE_DIRECTSOUND 1
-#endif
-#ifndef JUCE_USE_WINRT_MIDI
- #define JUCE_USE_WINRT_MIDI 0
-#endif

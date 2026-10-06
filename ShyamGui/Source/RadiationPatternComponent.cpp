@@ -304,6 +304,27 @@ int RadiationPatternComponent::getPlaneType() const noexcept
     return (int) annotations_[(size_t) selectedAnnot_].planeType;
 }
 
+int RadiationPatternComponent::getPlaneListenHeight() const noexcept
+{
+    if (! hasPlaneTarget()) return 0;
+    return (int) annotations_[(size_t) selectedAnnot_].listenHgt;
+}
+
+void RadiationPatternComponent::setPlaneListenHeight (int which)
+{
+    const auto hgt = (Annotation::ListenHeight)
+        juce::jlimit (0, (int) Annotation::ListenHeight::Standing, which);
+    for (int idx : selectedAnnots_)
+    {
+        if (idx < 0 || idx >= (int) annotations_.size()) continue;
+        auto& a = annotations_[(size_t) idx];
+        // Only a listening plane has ears on it.
+        if (a.isPlane && a.planeType == Annotation::PlaneType::Listening)
+            a.listenHgt = hgt;
+    }
+    repaint();
+}
+
 void RadiationPatternComponent::setPlaneOn (bool on)
 {
     for (int idx : selectedAnnots_)
@@ -375,9 +396,9 @@ void RadiationPatternComponent::setTextAlign (int align)
             a.align = drawTextAlign_;
     }
     // A box being edited has to follow too, or the change only appears once
-    // you click away.
-    if (isEditingTextBox() && textEdit_ != nullptr)
-        textEdit_->setJustification (textBoxJustification (drawTextAlign_));
+    // you click away. Relaying out reads the box's own alignment, so the
+    // vertical setting is not dropped on the way through.
+    if (isEditingTextBox()) layoutTextBoxEditor();
     repaint();
 }
 
@@ -447,6 +468,7 @@ void RadiationPatternComponent::setTextVAlign (int valign)
         auto& a = annotations_[(size_t) idx];
         if (a.kind == Annotation::Kind::TextBox) a.valign = drawTextVAlign_;
     }
+    if (isEditingTextBox()) layoutTextBoxEditor();
     repaint();
 }
 
@@ -498,10 +520,13 @@ void RadiationPatternComponent::growTextBoxToFit (int index)
             ? textEdit_->getText() : a.text;
     if (label.isEmpty()) return;
 
-    const float pad = 6.0f;
+    const float pad = kTextBoxPad;
     juce::GlyphArrangement ga;
     const auto font = textBoxFont (a, hPx);
-    ga.addJustifiedText (font, label, 0.0f, 0.0f,
+    // Baseline at the ascent, exactly as the painter lays it out. Starting at
+    // zero put the first line's ascenders ABOVE the origin, so the height came
+    // back one line short and the last line was clipped.
+    ga.addJustifiedText (font, label, 0.0f, font.getAscent(),
                          juce::jmax (10.0f, wPx - pad * 2.0f),
                          juce::Justification::topLeft,
                          textBoxLeading (a, font));
@@ -531,7 +556,10 @@ void RadiationPatternComponent::setTextSize (float px)
         if (idx < 0 || idx >= (int) annotations_.size()) continue;
         auto& a = annotations_[(size_t) idx];
         if (a.kind == Annotation::Kind::TextBox)
+        {
             a.fontPx = drawTextSize_;
+            growTextBoxToFit (idx);       // bigger letters need a bigger box
+        }
     }
     if (isEditingTextBox() && textEdit_ != nullptr)
         layoutTextBoxEditor();
@@ -1059,18 +1087,25 @@ float RadiationPatternComponent::snapScalar (float v, const std::vector<float>& 
     return best;
 }
 
+juce::Rectangle<float> RadiationPatternComponent::rotatableLocalRect (const Annotation& a) noexcept
+{
+    if (a.pts.size() < 2) return {};
+    return a.kind == Annotation::Kind::TextBox
+             ? textBoxLocalRect (a)
+             : normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+}
+
 juce::Rectangle<float> RadiationPatternComponent::annotationAnnotBounds (
     const Annotation& a) const
 {
     if (a.pts.empty()) return {};
 
-    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
-         || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+    if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
         return normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
 
-    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    if (Annotation::isRotatable (a.kind) && a.pts.size() >= 2)
     {
-        const auto local = textBoxLocalRect (a);
+        const auto local = rotatableLocalRect (a);
         const auto c = local.getCentre();
         const juce::Point<float> corners[4] = {
             rotateAround ({ local.getX(), local.getY() }, c, a.rotationDeg),
@@ -1881,6 +1916,48 @@ int RadiationPatternComponent::annotationFillHitTest (juce::Point<float> annotPt
     return -1;
 }
 
+bool RadiationPatternComponent::annotationHitsPoint (const Annotation& a,
+                                                     juce::Point<float> annotPt,
+                                                     float radius) const
+{
+    if (a.kind == Annotation::Kind::TextBox)
+        return pointHitsTextBox (annotPt, a, radius);
+
+    if (a.kind == Annotation::Kind::Rectangle
+        || a.kind == Annotation::Kind::Square
+        || a.kind == Annotation::Kind::Circle)
+        return pointHitsShapeBorder (annotPt, a, radius)
+            || pointHitsShapeFill (annotPt, a, radius);
+
+    if (a.kind == Annotation::Kind::Arc
+        || a.kind == Annotation::Kind::Polyline)
+        return pointHitsShapeBorder (annotPt, a, radius);
+
+    if (a.pts.empty()) return false;
+    if (a.pts.size() == 1)
+        return annotPt.getDistanceFrom (a.pts.front()) <= radius;
+
+    for (size_t j = 1; j < a.pts.size(); ++j)
+        if (distPointToSegment (annotPt, a.pts[j - 1], a.pts[j]) <= radius)
+            return true;
+    return false;
+}
+
+std::vector<int> RadiationPatternComponent::annotationsUnder (juce::Point<float> annotPt,
+                                                              float radius) const
+{
+    std::vector<int> out;
+    const auto space = currentAnnotSpace();
+    for (int i = (int) annotations_.size() - 1; i >= 0; --i)
+    {
+        const auto& a = annotations_[(size_t) i];
+        if (a.space != space) continue;
+        if (annotationHitsPoint (a, annotPt, radius))
+            out.push_back (i);
+    }
+    return out;
+}
+
 int RadiationPatternComponent::annotationHitTest (juce::Point<float> annotPt,
                                                   float radius) const
 {
@@ -1971,20 +2048,9 @@ std::vector<juce::Point<float>> RadiationPatternComponent::resizeHandlesFor (
     const Annotation& a)
 {
     std::vector<juce::Point<float>> h;
-    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
-        && a.pts.size() >= 2)
+    if (Annotation::isRotatable (a.kind) && a.pts.size() >= 2)
     {
-        const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
-        h.push_back ({ r.getX(),      r.getY() });
-        h.push_back ({ r.getRight(),  r.getY() });
-        h.push_back ({ r.getRight(),  r.getBottom() });
-        h.push_back ({ r.getX(),      r.getBottom() });
-        return h;
-    }
-
-    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
-    {
-        const auto r = textBoxLocalRect (a);
+        const auto r = rotatableLocalRect (a);
         const auto c = r.getCentre();
         // 0–3: corners (rotated). 4: rotate grip above top-centre.
         h.push_back (rotateAround ({ r.getX(), r.getY() }, c, a.rotationDeg));
@@ -2054,9 +2120,9 @@ void RadiationPatternComponent::applyAnnotationResize (Annotation& a, int handle
         return;
     }
 
-    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2 && handleIndex < 4)
+    if (Annotation::isRotatable (a.kind) && a.pts.size() >= 2 && handleIndex < 4)
     {
-        const auto r = textBoxLocalRect (a);
+        const auto r = rotatableLocalRect (a);
         const auto c = r.getCentre();
         const auto localPt = rotateAround (pt, c, -a.rotationDeg);
         const juce::Point<float> corners[4] = {
@@ -2118,21 +2184,10 @@ void RadiationPatternComponent::drawSelectionOverlay (juce::Graphics& g, const A
         }
         g.drawEllipse (sc.x - rx, sc.y - ry, rx * 2.0f, ry * 2.0f, 1.5f);
     }
-    else if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square)
-             && a.pts.size() >= 2)
-    {
-        const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
-        auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
-        auto s1 = annotateToScreen (a, { wr.getRight(), wr.getBottom() });
-        auto sr = juce::Rectangle<float>::leftTopRightBottom (
-            juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
-            juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
-        g.drawRect (sr, 1.5f);
-    }
-    else if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    else if (Annotation::isRotatable (a.kind) && a.pts.size() >= 2)
     {
         // Selection: outline + corner resize grips + rotate arrows.
-        const auto local = textBoxLocalRect (a);
+        const auto local = rotatableLocalRect (a);
         const auto c = local.getCentre();
         const juce::Point<float> corners[4] = {
             rotateAround ({ local.getX(), local.getY() }, c, a.rotationDeg),
@@ -2156,7 +2211,7 @@ void RadiationPatternComponent::drawSelectionOverlay (juce::Graphics& g, const A
         for (size_t hi = 0; hi < handles.size(); ++hi)
         {
             auto s = annotateToScreen (a, handles[hi]);
-            if (a.kind == Annotation::Kind::TextBox && hi == 4)
+            if (hi == 4)
             {
                 if (showGrips)
                     drawTextBoxRotateIcon (g, s, 9.0f);
@@ -2197,8 +2252,7 @@ juce::Rectangle<float> RadiationPatternComponent::annotationScreenBounds (
 {
     if (a.pts.empty()) return {};
 
-    if ((a.kind == Annotation::Kind::Rectangle || a.kind == Annotation::Kind::Square
-         || a.kind == Annotation::Kind::Circle) && a.pts.size() >= 2)
+    if (a.kind == Annotation::Kind::Circle && a.pts.size() >= 2)
     {
         const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
         auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
@@ -2208,7 +2262,7 @@ juce::Rectangle<float> RadiationPatternComponent::annotationScreenBounds (
             juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y)).expanded (3.0f);
     }
 
-    if (a.kind == Annotation::Kind::TextBox && a.pts.size() >= 2)
+    if (Annotation::isRotatable (a.kind) && a.pts.size() >= 2)
     {
         const auto ab = annotationAnnotBounds (a);
         auto s0 = annotateToScreen (a, { ab.getX(), ab.getY() });
@@ -2386,7 +2440,31 @@ bool RadiationPatternComponent::pointHitsTextBoxBorder (juce::Point<float> pt,
     return ! shrunk.contains (unrot);
 }
 
-void RadiationPatternComponent::beginTextBoxEdit (int index)
+/** The run of word characters surrounding @p caret - what a double click
+    selects. An empty range when the caret sits between two separators. */
+static juce::Range<int> wordAround (const juce::String& text, int caret)
+{
+    const int len = text.length();
+    caret = juce::jlimit (0, len, caret);
+    auto isWord = [&] (int i)
+    {
+        if (i < 0 || i >= len) return false;
+        const auto ch = text[i];
+        return juce::CharacterFunctions::isLetterOrDigit (ch) || ch == '_';
+    };
+    // Landing just past the end of a word counts as being in it, the way it
+    // does when you double click at the right edge of one.
+    int at = isWord (caret) ? caret : caret - 1;
+    if (! isWord (at)) return { caret, caret };
+
+    int start = at, end = at + 1;
+    while (isWord (start - 1)) --start;
+    while (isWord (end)) ++end;
+    return { start, end };
+}
+
+void RadiationPatternComponent::beginTextBoxEdit (int index,
+                                                  const juce::Point<float>* clickInComponent)
 {
     if (index < 0 || index >= (int) annotations_.size()) return;
     if (annotations_[(size_t) index].kind != Annotation::Kind::TextBox) return;
@@ -2415,8 +2493,15 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
     textEdit_->setScrollbarsShown (false);
     textEdit_->setCaretVisible (true);
     textEdit_->setPopupMenuEnabled (true);
-    textEdit_->setTextToShowWhenEmpty ("Type here", Brand::muted());
+    // Brand::muted() follows the theme and disappeared on the dark canvas;
+    // a faded copy of the text's own colour reads on either.
+    textEdit_->setTextToShowWhenEmpty ("Type here",
+        juce::Colour::fromFloatRGBA (a.colour.getFloatRed(), a.colour.getFloatGreen(),
+                                     a.colour.getFloatBlue(), 0.45f));
     textEdit_->setText (a.text == "Text" ? juce::String() : a.text, false);
+    // Set AFTER the text exists: a colour set beforehand only reaches text
+    // added later, which is why the words went dark the moment you clicked in.
+    // (The setColour calls below still matter - they catch what you type.)
 
     const auto base = juce::Colour::fromFloatRGBA (a.colour.getFloatRed(),
                                                    a.colour.getFloatGreen(),
@@ -2427,10 +2512,18 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
     textEdit_->setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     textEdit_->setColour (juce::TextEditor::textColourId, ink);
     textEdit_->setColour (juce::TextEditor::highlightColourId, Brand::accent().withAlpha (0.35f));
+    // Without this, selected text is redrawn in the look-and-feel's colour and
+    // a select-all turned the whole box a different colour.
+    textEdit_->setColour (juce::TextEditor::highlightedTextColourId, ink);
     textEdit_->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     textEdit_->setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     textEdit_->setColour (juce::CaretComponent::caretColourId, ink);
-    textEdit_->setBorder (juce::BorderSize<int> (4));
+    // The painter insets the text by `pad`. A TextEditor insets by its border
+    // PLUS its own indent, which defaults to 4 - set both, so the sum is the
+    // pad exactly and the words do not step sideways when you click in.
+    textEdit_->setBorder (juce::BorderSize<int> (0));
+    textEdit_->setIndents (0, 0);   // the pad lives in the bounds instead
+    textEdit_->applyColourToAllText (ink);
     textEdit_->setOpaque (false);
 
     textEdit_->onTextChange = [this]
@@ -2458,7 +2551,21 @@ void RadiationPatternComponent::beginTextBoxEdit (int index)
     addAndMakeVisible (*textEdit_);
     layoutTextBoxEditor();
     textEdit_->grabKeyboardFocus();
-    textEdit_->selectAll();
+
+    // Word puts the caret where you clicked and selects the word you landed
+    // on; it only selects everything on a box that has nothing in it yet.
+    const auto& typed = textEdit_->getText();
+    if (clickInComponent != nullptr && typed.isNotEmpty())
+    {
+        const auto lp = textEdit_->getLocalPoint (this, *clickInComponent);
+        const int caret = textEdit_->getTextIndexAt ((int) lp.x, (int) lp.y);
+        textEdit_->setCaretPosition (caret);
+        textEdit_->setHighlightedRegion (wordAround (typed, caret));
+    }
+    else
+    {
+        textEdit_->selectAll();
+    }
     repaint();
 }
 
@@ -2471,7 +2578,7 @@ void RadiationPatternComponent::endTextBoxEdit (bool commit)
     const int idx = textEditIndex_;
     juce::String next;
     if (textEdit_ != nullptr)
-        next = textEdit_->getText().trim();
+        next = textEdit_->getText();   // as typed - Word keeps your spaces
 
     textEdit_.reset();
     textEditIndex_ = -1;
@@ -2481,7 +2588,7 @@ void RadiationPatternComponent::endTextBoxEdit (bool commit)
         && annotations_[(size_t) idx].kind == Annotation::Kind::TextBox)
     {
         auto& a = annotations_[(size_t) idx];
-        const auto finalText = next.isNotEmpty() ? next : juce::String ("Text");
+        const auto finalText = next.trim().isNotEmpty() ? next : juce::String ("Text");
         if (a.text != finalText)
         {
             if (onWillEdit) onWillEdit();
@@ -2494,32 +2601,6 @@ void RadiationPatternComponent::endTextBoxEdit (bool commit)
     repaint();
 }
 
-juce::Rectangle<int> RadiationPatternComponent::textBoxEditorScreenBounds (const Annotation& a) const
-{
-    if (a.pts.size() < 2) return {};
-    const auto local = textBoxLocalRect (a);
-    const auto c = local.getCentre();
-    const juce::Point<float> corners[4] = {
-        rotateAround ({ local.getX(), local.getY() }, c, a.rotationDeg),
-        rotateAround ({ local.getRight(), local.getY() }, c, a.rotationDeg),
-        rotateAround ({ local.getRight(), local.getBottom() }, c, a.rotationDeg),
-        rotateAround ({ local.getX(), local.getBottom() }, c, a.rotationDeg)
-    };
-
-    float minX = 1.0e9f, minY = 1.0e9f, maxX = -1.0e9f, maxY = -1.0e9f;
-    for (auto& wp : corners)
-    {
-        auto s = annotateToScreen (a, wp);
-        minX = juce::jmin (minX, s.x);
-        minY = juce::jmin (minY, s.y);
-        maxX = juce::jmax (maxX, s.x);
-        maxY = juce::jmax (maxY, s.y);
-    }
-    return juce::Rectangle<float> (minX, minY, maxX - minX, maxY - minY)
-               .expanded (2.0f)
-               .getSmallestIntegerContainer();
-}
-
 void RadiationPatternComponent::layoutTextBoxEditor()
 {
     if (textEdit_ == nullptr || textEditIndex_ < 0
@@ -2527,16 +2608,51 @@ void RadiationPatternComponent::layoutTextBoxEditor()
         return;
 
     const auto& a = annotations_[(size_t) textEditIndex_];
-    auto bounds = textBoxEditorScreenBounds (a);
-    if (bounds.getWidth() < 40) bounds.setWidth (40);
-    if (bounds.getHeight() < 24) bounds.setHeight (24);
 
-    const float hPx = (float) bounds.getHeight();
+    // Lay the editor out in the box's OWN frame - an upright rectangle the
+    // size of the box - and turn it with a transform. Measured exactly as the
+    // painter measures it, so clicking into a box does not shift the words,
+    // and JUCE maps the mouse back through the transform, so the caret lands
+    // under the pointer on a turned box as readily as on a straight one.
+    const auto local = textBoxLocalRect (a);
+    const auto lc = local.getCentre();
+    const juce::Point<float> corners[4] = {
+        rotateAround ({ local.getX(), local.getY() }, lc, a.rotationDeg),
+        rotateAround ({ local.getRight(), local.getY() }, lc, a.rotationDeg),
+        rotateAround ({ local.getRight(), local.getBottom() }, lc, a.rotationDeg),
+        rotateAround ({ local.getX(), local.getBottom() }, lc, a.rotationDeg)
+    };
+    const auto sc = annotateToScreen (a, lc);
+    const auto sA = annotateToScreen (a, corners[0]);
+    const auto sB = annotateToScreen (a, corners[1]);
+    const auto sD = annotateToScreen (a, corners[3]);
+    const float boxW = juce::jmax (40.0f, sA.getDistanceFrom (sB));
+    const float boxH = juce::jmax (24.0f, sA.getDistanceFrom (sD));
+
+    // Give the editor exactly the rectangle the painter lays text into, and
+    // no indents of its own. JUCE takes the top indent off the height it
+    // centres in but still draws from it, so any indent at all left the words
+    // half a pad low; it also keeps 2px spare on the right, so the box is
+    // widened by that much for the two to centre on the same middle.
+    constexpr int kRightEdgeSpace = 2;              // juce::TextEditor's own
+    auto bounds = juce::Rectangle<float> (
+                      sc.x - boxW * 0.5f + kTextBoxPad,
+                      sc.y - boxH * 0.5f + kTextBoxPad,
+                      juce::jmax (1.0f, boxW - 2.0f * kTextBoxPad + kRightEdgeSpace),
+                      juce::jmax (1.0f, boxH - 2.0f * kTextBoxPad))
+                  .getSmallestIntegerContainer();
+
+    const float hPx = boxH;
     // Was 0.28 of the box height while the painter used 0.22, so the text
     // visibly jumped the moment you stopped editing. One helper now answers
     // for both.
-    textEdit_->setFont (textBoxFont (a, hPx));
-    textEdit_->setJustification (textBoxJustification (a.align));
+    //
+    // applyFontToAllText, NOT setFont: setFont only governs text typed from
+    // here on, so the words already in the box kept the look-and-feel's
+    // default face and the box changed size and colour the instant you
+    // clicked into it.
+    textEdit_->applyFontToAllText (textBoxFont (a, hPx));
+    textEdit_->setJustification (textBoxJustification (a.align, a.valign));
     textEdit_->setLineSpacing (juce::jlimit (1.0f, 3.0f, a.lineHeight));
     textEdit_->setBounds (bounds);
 
@@ -2545,17 +2661,26 @@ void RadiationPatternComponent::layoutTextBoxEditor()
     // space, so this pivots on the first baseline rather than per line - on a
     // multi-line box the later lines sit a couple of pixels off where they
     // land once committed.
+    juce::AffineTransform t;
     if (a.italic)
     {
-        const float anchor = (float) bounds.getY() + textEdit_->getFont().getAscent();
-        textEdit_->setTransform (juce::AffineTransform::translation (0.0f, -anchor)
-                                     .sheared (-kItalicShear, 0.0f)
-                                     .translated (0.0f, anchor));
+        // A component takes ONE transform, applied in the parent's space, while
+        // the painter leans each glyph about its own baseline. They can only
+        // agree on one line, so agree on the middle one: the error then splits
+        // either side of centre instead of piling up down the box.
+        const float th = (float) textEdit_->getTextHeight();
+        float blockTop = (float) bounds.getY();
+        if (a.valign == 1)      blockTop += ((float) bounds.getHeight() - th) * 0.5f;
+        else if (a.valign == 2) blockTop += (float) bounds.getHeight() - th;
+        const float anchor = blockTop + th * 0.5f;
+        t = juce::AffineTransform::translation (0.0f, -anchor)
+                .sheared (-kItalicShear, 0.0f)
+                .translated (0.0f, anchor);
     }
-    else
-    {
-        textEdit_->setTransform ({});
-    }
+    if (std::abs (a.rotationDeg) > 0.01f)
+        t = t.followedBy (juce::AffineTransform::rotation (
+                juce::degreesToRadians (-a.rotationDeg), sc.x, sc.y));
+    textEdit_->setTransform (t);
 
     textEdit_->toFront (false);
 }
@@ -2632,11 +2757,18 @@ float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
     return juce::jlimit (10.0f, 22.0f, boxHeightPx * 0.22f);
 }
 
-juce::Justification RadiationPatternComponent::textBoxJustification (int align)
+juce::Justification RadiationPatternComponent::textBoxJustification (int align, int valign)
 {
-    if (align == 1) return juce::Justification::centredTop;
-    if (align == 2) return juce::Justification::topRight;
-    return juce::Justification::topLeft;
+    const int h = (align == 1) ? juce::Justification::horizontallyCentred
+                : (align == 2) ? juce::Justification::right
+                               : juce::Justification::left;
+    // The painter shifts the whole block for vertical alignment; the editor
+    // can be told directly, and must be, or the words jump up to the top the
+    // moment you click into a middle- or bottom-aligned box.
+    const int v = (valign == 1) ? juce::Justification::verticallyCentred
+                : (valign == 2) ? juce::Justification::bottom
+                                : juce::Justification::top;
+    return juce::Justification (h | v);
 }
 
 void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
@@ -2696,7 +2828,7 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
     const float hPx = sA.getDistanceFrom (sD);
     if (wPx < 8.0f || hPx < 8.0f) return;
 
-    const float pad = 6.0f;
+    const float pad = kTextBoxPad;
     g.setFont (textBoxFont (a, hPx));
 
     // Fully opaque: opacity no longer applies to a text box (see
@@ -2727,15 +2859,28 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
                              box.getWidth(), juce::Justification (hJust),
                              textBoxLeading (a, font));
 
-        // Vertical alignment: shift the whole block, measured, so it lands the
-        // same way whatever the line height is.
-        if (a.valign != 0)
+        // Vertical alignment, measured in LINE BOXES rather than in ink.
+        // Centring the ink put a line with no descender in a different place
+        // from one with, and sat a few pixels off the in-place editor, which
+        // lays out the way every text engine does: by the lines, not by which
+        // letters happen to be in them.
+        if (a.valign != 0 && ga.getNumGlyphs() > 0)
         {
-            const auto bb = ga.getBoundingBox (0, -1, true);
-            const float slack = box.getHeight() - bb.getHeight();
-            const float dy = (box.getY() - bb.getY())
-                           + (a.valign == 1 ? slack * 0.5f : slack);
-            ga.moveRangeOfGlyphs (0, -1, 0.0f, dy);
+            int numLines = 0;
+            float prevBaseline = -1.0e9f;
+            for (int gi = 0; gi < ga.getNumGlyphs(); ++gi)
+            {
+                const float by = ga.getGlyph (gi).getBaselineY();
+                if (std::abs (by - prevBaseline) > 0.5f) { ++numLines; prevBaseline = by; }
+            }
+            const float pitch = font.getHeight() * juce::jlimit (1.0f, 3.0f, a.lineHeight);
+            // Last line carries no trailing leading - same block height the
+            // editor measures, so the text does not step when you click in.
+            const float blockH = (float) (numLines - 1) * pitch + font.getHeight();
+            const float slack = box.getHeight() - blockH;
+            const float wantTop = box.getY() + (a.valign == 1 ? slack * 0.5f : slack);
+            const float haveTop = ga.getGlyph (0).getBaselineY() - font.getAscent();
+            ga.moveRangeOfGlyphs (0, -1, 0.0f, wantTop - haveTop);
         }
 
         // Keep long text inside the box the user drew, as the old maxLines did.
@@ -3041,6 +3186,11 @@ bool RadiationPatternComponent::pointHitsShapeBorder (juce::Point<float> pt,
     if (r.getWidth() < 1.0e-6f || r.getHeight() < 1.0e-6f)
         return pt.getDistanceFrom (r.getCentre()) <= radius;
 
+    // Test in the shape's OWN frame: un-rotate the point rather than rotating
+    // four edges, so a turned rectangle is as clickable as a straight one.
+    if (std::abs (a.rotationDeg) > 0.01f)
+        pt = rotateAround (pt, r.getCentre(), -a.rotationDeg);
+
     const auto tl = r.getTopLeft();
     const auto tr = r.getTopRight();
     const auto bl = r.getBottomLeft();
@@ -3070,6 +3220,9 @@ bool RadiationPatternComponent::pointHitsShapeFill (juce::Point<float> pt,
     const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
     if (r.getWidth() < 1.0e-6f || r.getHeight() < 1.0e-6f)
         return pt.getDistanceFrom (r.getCentre()) <= radius;
+
+    if (std::abs (a.rotationDeg) > 0.01f)
+        pt = rotateAround (pt, r.getCentre(), -a.rotationDeg);
 
     return r.expanded (radius).contains (pt);
 }
@@ -3180,11 +3333,133 @@ RadiationPatternComponent::planeStatsFor (const Annotation& a) const
     return st;
 }
 
+int RadiationPatternComponent::planeDashPattern (const Annotation& a, float strokeW,
+                                                 float (&dl)[2]) noexcept
+{
+    if (! a.isPlane) return 0;
+
+    // Three types, three strokes. Listening and Architectural were both plain
+    // solid lines, so on an open plane - where there is no area to fill - they
+    // were impossible to tell apart.
+    const float w = juce::jmax (1.0f, strokeW);
+    switch (a.planeType)
+    {
+        case Annotation::PlaneType::Listening:
+            // Dots: a row of seats, not a barrier.
+            dl[0] = w * 0.9f; dl[1] = w * 2.6f; return 2;
+
+        case Annotation::PlaneType::Virtual:
+            // Long dashes: a construction line, the way a drawing marks one.
+            dl[0] = w * 5.0f; dl[1] = w * 3.4f; return 2;
+
+        case Annotation::PlaneType::Architectural:
+        default:
+            return 0;                         // solid, and already the heaviest
+    }
+}
+
 bool RadiationPatternComponent::planeIsDashed (const Annotation& a) noexcept
 {
     // Virtual is a reference surface nobody occupies, so it reads as a
     // construction line rather than as something solid.
     return a.isPlane && a.planeType == Annotation::PlaneType::Virtual;
+}
+
+bool RadiationPatternComponent::planeBlocksRays (const Annotation& a) noexcept
+{
+    // Listening is where the sound is meant to land and Architectural is built
+    // out of something, so a ray has arrived once it reaches either. Virtual
+    // is a construction line - it marks a position without occupying it, so
+    // the ray carries straight on through.
+    return a.isPlane && a.planeType != Annotation::PlaneType::Virtual;
+}
+
+juce::Point<float> RadiationPatternComponent::clipRayAtPlanes (juce::Point<float> from,
+                                                               juce::Point<float> to) const
+{
+    const auto dir = to - from;
+    const float len2 = dir.x * dir.x + dir.y * dir.y;
+    if (len2 < 1.0e-9f) return to;
+
+    float nearest = 1.0f;        // fraction along from -> to
+
+    // One segment of a plane's outline, in screen pixels. Standard 2D segment
+    // crossing: solve from + t*dir == p + u*(q - p) and keep the first hit
+    // that lies on both.
+    auto cross = [&] (juce::Point<float> p, juce::Point<float> q)
+    {
+        const auto e = q - p;
+        const float den = dir.x * e.y - dir.y * e.x;
+        if (std::abs (den) < 1.0e-9f) return;        // parallel
+        const auto w = p - from;
+        const float t = (w.x * e.y - w.y * e.x) / den;
+        const float u = (w.x * dir.y - w.y * dir.x) / den;
+        if (t > 1.0e-4f && t < nearest && u >= 0.0f && u <= 1.0f)
+            nearest = t;
+    };
+
+    for (const auto& a : annotations_)
+    {
+        if (! planeBlocksRays (a)) continue;
+        if (a.space != AnnotSpace::World) continue;   // rays live on the field
+        if (a.pts.size() < 2) continue;
+
+        switch (a.kind)
+        {
+            case Annotation::Kind::Rectangle:
+            case Annotation::Kind::Square:
+            {
+                const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+                const auto c = r.getCentre();
+                juce::Point<float> sc[4];
+                for (int i = 0; i < 4; ++i)
+                {
+                    const juce::Point<float> corner {
+                        (i == 0 || i == 3) ? r.getX() : r.getRight(),
+                        (i < 2)            ? r.getY() : r.getBottom()
+                    };
+                    sc[i] = annotateToScreen (a, rotateAround (corner, c, a.rotationDeg));
+                }
+                for (int i = 0; i < 4; ++i)
+                    cross (sc[i], sc[(i + 1) % 4]);
+                break;
+            }
+
+            case Annotation::Kind::Circle:
+            {
+                // Tessellated rather than solved: the two world axes can be
+                // scaled differently, so on screen this is an ellipse.
+                const auto& cw = a.pts[0];
+                const float rad = cw.getDistanceFrom (a.pts[1]);
+                if (rad < 1.0e-6f) break;
+                constexpr int kSteps = 72;
+                juce::Point<float> prev;
+                for (int i = 0; i <= kSteps; ++i)
+                {
+                    const float ang = (float) i / kSteps * 2.0f * (float) M_PI;
+                    const auto sp = annotateToScreen (a, { cw.x + rad * std::cos (ang),
+                                                           cw.y + rad * std::sin (ang) });
+                    if (i > 0) cross (prev, sp);
+                    prev = sp;
+                }
+                break;
+            }
+
+            default:   // Line, Polyline - the points are the surface
+            {
+                auto prev = annotateToScreen (a, a.pts[0]);
+                for (size_t j = 1; j < a.pts.size(); ++j)
+                {
+                    const auto cur = annotateToScreen (a, a.pts[j]);
+                    cross (prev, cur);
+                    prev = cur;
+                }
+                break;
+            }
+        }
+    }
+
+    return from + dir * nearest;
 }
 
 float RadiationPatternComponent::planeStrokeW (const Annotation& a) noexcept
@@ -3203,19 +3478,27 @@ float RadiationPatternComponent::planeFillAlpha (const Annotation& a, float base
              ? juce::jmax (base, 0.22f) : 0.0f;
 }
 
-void RadiationPatternComponent::drawPlaneTag (juce::Graphics& g, const Annotation& a)
+bool RadiationPatternComponent::planeTagStrings (const Annotation& a,
+                                                 juce::String& name,
+                                                 juce::String& stats) const
 {
-    if (! a.isPlane) return;
+    if (! a.isPlane) return false;
 
     // Without this a Listening plane and an ordinary filled rectangle look
     // identical. The tag is what says "this is a surface, not a note".
-    const char* name = a.planeType == Annotation::PlaneType::Listening ? "LISTENING"
-                     : a.planeType == Annotation::PlaneType::Virtual   ? "VIRTUAL"
-                                                                       : "ARCHITECTURAL";
+    name = a.planeType == Annotation::PlaneType::Listening ? "LISTENING"
+         : a.planeType == Annotation::PlaneType::Virtual   ? "VIRTUAL"
+                                                           : "ARCHITECTURAL";
+    // The ear height belongs on the drawing, not buried in a panel: it is the
+    // one thing that says WHICH listening plane this is.
+    if (a.planeType == Annotation::PlaneType::Listening)
+        name << "  -  "
+             << (a.listenHgt == Annotation::ListenHeight::Standing ? "STANDING" : "SEATED")
+             << " " << Units::metres ((double) Annotation::listenHeightM (a.listenHgt), 1);
 
     // Coverage, for the two types that are about measuring something. A wall
     // is not a measurement, so Architectural carries no numbers.
-    juce::String stats;
+    stats.clear();
     if (a.planeType != Annotation::PlaneType::Architectural)
     {
         const auto st = planeStatsFor (a);
@@ -3237,13 +3520,20 @@ void RadiationPatternComponent::drawPlaneTag (juce::Graphics& g, const Annotatio
                                           : juce::String (f, 1)) + " Hz";
         }
     }
+    return true;
+}
+
+juce::Rectangle<int> RadiationPatternComponent::planeTagBounds (const Annotation& a) const
+{
+    juce::String name, stats;
+    if (! planeTagStrings (a, name, stats)) return {};
 
     const auto box = annotationScreenBounds (a);
     const float h = juce::jmax (11.0f, 11.5f * Brand::UI::scale);
-    g.setFont (Brand::tech (h, true));
-    int w = g.getCurrentFont().getStringWidth (name) + (int) h;
+    const auto font = Brand::tech (h, true);
+    int w = font.getStringWidth (name) + (int) h;
     if (stats.isNotEmpty())
-        w = juce::jmax (w, g.getCurrentFont().getStringWidth (stats) + (int) h);
+        w = juce::jmax (w, font.getStringWidth (stats) + (int) h);
     w = juce::jmax (40, w);
 
     // Above the shape by preference, but tucked inside it when that would put
@@ -3257,8 +3547,42 @@ void RadiationPatternComponent::drawPlaneTag (juce::Graphics& g, const Annotatio
     // ...and the shape itself can be clipped by the plot edge, so the final
     // say belongs to the plot, not the shape.
     pillY = juce::jlimit (plot.getY() + 2, plot.getBottom() - pillH - 2, pillY);
-    const juce::Rectangle<int> pill (juce::jmax ((int) box.getX(), plot.getX() + 2),
-                                     pillY, w, pillH);
+    return { juce::jmax ((int) box.getX(), plot.getX() + 2), pillY, w, pillH };
+}
+
+int RadiationPatternComponent::planeAtScreen (juce::Point<float> p) const
+{
+    // Tags first and topmost-first: the label is what you are pointing at when
+    // it is sitting on top of a shape.
+    for (int i = (int) annotations_.size(); --i >= 0;)
+    {
+        const auto& a = annotations_[(size_t) i];
+        if (! a.isPlane || ! a.showTag) continue;
+        if (planeTagBounds (a).toFloat().contains (p)) return i;
+    }
+
+    // Then the plane itself, so a hidden tag can still be switched back on by
+    // right-clicking the shape it belongs to.
+    const auto annot = screenToAnnot (p.x, p.y);
+    const float radius = (currentAnnotSpace() == AnnotSpace::PolarPlot)
+        ? (10.0f / juce::jmax (1.0f, polarRadius_))
+        : (10.0f / juce::jmax (1.0f, worldScale()));
+    for (int idx : annotationsUnder (annot, radius))
+        if (annotations_[(size_t) idx].isPlane) return idx;
+
+    return -1;
+}
+
+void RadiationPatternComponent::drawPlaneTag (juce::Graphics& g, const Annotation& a)
+{
+    if (! a.isPlane || ! a.showTag) return;
+
+    juce::String name, stats;
+    if (! planeTagStrings (a, name, stats)) return;
+
+    const float h = juce::jmax (11.0f, 11.5f * Brand::UI::scale);
+    const auto pill = planeTagBounds (a);
+    g.setFont (Brand::tech (h, true));
     g.setColour (a.colour.withAlpha (0.92f));
     g.fillRoundedRectangle (pill.toFloat(), 3.0f);
     g.setColour (Brand::white());
@@ -3302,10 +3626,15 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
     auto strokeShape = [&] (const juce::Path& path)
     {
         g.setColour (base.withAlpha (strokeA));
-        if (! planeIsDashed (a)) { g.strokePath (path, juce::PathStrokeType (strokeW)); return; }
-        const float dl[] = { 8.0f, 6.0f };
+        float dl[2];
+        const int n = planeDashPattern (a, strokeW, dl);
+        // Round caps turn the short Listening segments into dots rather than
+        // stubby dashes.
+        const juce::PathStrokeType stroke (strokeW, juce::PathStrokeType::curved,
+                                           juce::PathStrokeType::rounded);
+        if (n == 0) { g.strokePath (path, stroke); return; }
         juce::Path dashed;
-        juce::PathStrokeType (strokeW).createDashedStroke (dashed, path, dl, 2);
+        stroke.createDashedStroke (dashed, path, dl, n);
         g.fillPath (dashed);
     };
 
@@ -3338,16 +3667,24 @@ void RadiationPatternComponent::drawShapeAnnotation (juce::Graphics& g,
     const auto wr = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
     if (wr.getWidth() < 1.0e-6f && wr.getHeight() < 1.0e-6f) return;
 
-    auto s0 = annotateToScreen (a, { wr.getX(), wr.getY() });
-    auto s1 = annotateToScreen (a, { wr.getRight(), wr.getBottom() });
-    auto sr = juce::Rectangle<float>::leftTopRightBottom (
-        juce::jmin (s0.x, s1.x), juce::jmin (s0.y, s1.y),
-        juce::jmax (s0.x, s1.x), juce::jmax (s0.y, s1.y));
+    // Turn the corners in annotation space, then map each one, so the shape
+    // still lands correctly when the two world axes are scaled differently.
+    const auto c = wr.getCentre();
+    juce::Path outline;
+    for (int i = 0; i < 4; ++i)
+    {
+        const juce::Point<float> corner {
+            (i == 0 || i == 3) ? wr.getX() : wr.getRight(),
+            (i < 2)            ? wr.getY() : wr.getBottom()
+        };
+        auto sp = annotateToScreen (a, rotateAround (corner, c, a.rotationDeg));
+        if (i == 0) outline.startNewSubPath (sp);
+        else        outline.lineTo (sp);
+    }
+    outline.closeSubPath();
 
     g.setColour (base.withAlpha (fillA));
-    g.fillRect (sr);
-    juce::Path outline;
-    outline.addRectangle (sr);
+    g.fillPath (outline);
     strokeShape (outline);
 }
 
@@ -3607,6 +3944,26 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
         m.addSeparator();
     }
 
+    // A ring is a thin line that can land anywhere, so deleting it from where
+    // you can see it beats hunting for it in a list.
+    const float ringHit = rangeRingAtScreen (getMouseXYRelative().toFloat());
+    if (ringHit > 0.0f)
+    {
+        m.addItem (8, "Delete range " + rangeRingLabel (ringHit));
+        m.addSeparator();
+    }
+
+    // The tag sits on top of the drawing, so it has to be possible to put it
+    // away - and to get it back, which is why the item is also offered when
+    // the pointer is over a plane whose tag is already hidden.
+    const int planeIdx = planeAtScreen (getMouseXYRelative().toFloat());
+    if (planeIdx >= 0)
+    {
+        m.addItem (7, annotations_[(size_t) planeIdx].showTag
+                        ? "Hide plane label" : "Show plane label");
+        m.addSeparator();
+    }
+
     if (hasSpeakerProps)
     {
         m.addItem (4, "Properties");
@@ -3620,12 +3977,31 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     m.showMenuAsync (juce::PopupMenu::Options()
                          .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
                      [safe = juce::Component::SafePointer<RadiationPatternComponent> (this),
-                      speakerUnderCursor, micIdx] (int result)
+                      speakerUnderCursor, micIdx, planeIdx, ringHit] (int result)
                      {
                          if (safe == nullptr || result <= 0) return;
                          if (result == 6)
                          {
                              if (safe->onListenAtMic) safe->onListenAtMic (micIdx);
+                             return;
+                         }
+                         if (result == 8)
+                         {
+                             if (safe->onWillEdit) safe->onWillEdit();
+                             safe->removeRangeRing (ringHit);
+                             if (safe->onEditCommitted) safe->onEditCommitted();
+                             return;
+                         }
+                         if (result == 7)
+                         {
+                             if (planeIdx >= 0 && planeIdx < (int) safe->annotations_.size())
+                             {
+                                 if (safe->onWillEdit) safe->onWillEdit();
+                                 auto& pa = safe->annotations_[(size_t) planeIdx];
+                                 pa.showTag = ! pa.showTag;
+                                 if (safe->onEditCommitted) safe->onEditCommitted();
+                                 safe->repaint();
+                             }
                              return;
                          }
                          if (result == 1)
@@ -4080,6 +4456,7 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
             g.fillAll (ColourMaps::sevenColor (0.0f));
         drawLayout   (g, pb);
         drawGrid     (g, pb);
+        drawSplValues (g, pb);     // over the map, under everything placed on it
         drawSpeakerRays (g, pb);   // under the markers, over the grid
         drawSpeakers (g, pb);
         drawAnnotations (g, pb);
@@ -4291,6 +4668,7 @@ juce::var RadiationPatternComponent::annotationsToVar (const std::vector<Annotat
         o->setProperty ("isPlane",      an.isPlane);
         o->setProperty ("planeType",    (int) an.planeType);
         o->setProperty ("listenHgt",    (int) an.listenHgt);
+        o->setProperty ("showTag",      an.showTag);
 
         // Points go in as a flat x,y,x,y list - half the JSON of an array of
         // objects, and the order is the only thing that carries meaning.
@@ -4350,6 +4728,9 @@ RadiationPatternComponent::annotationsFromVar (const juce::var& v)
         an.listenHgt    = (Annotation::ListenHeight) juce::jlimit (
                               0, (int) Annotation::ListenHeight::Standing,
                               geti ("listenHgt", 0));
+        // Older files have no such property, and a plane in one was drawn with
+        // its tag showing, so that is what they keep.
+        an.showTag      = getb ("showTag", true);
 
         if (const auto* pts = o->getProperty ("pts").getArray())
             for (int i = 0; i + 1 < pts->size(); i += 2)
@@ -4365,6 +4746,120 @@ RadiationPatternComponent::annotationsFromVar (const juce::var& v)
 }
 
 // ---------------------------------------------------------------------------
+bool RadiationPatternComponent::listeningClipPath (juce::Path& out) const
+{
+    const auto pb = plotArea();
+    // Long enough to run clear of the plot from anywhere inside it.
+    const float big = 2.0f * (float) juce::jmax (pb.getWidth(), pb.getHeight());
+
+    // Which side of an open plane the audience is on: the side the sound
+    // arrives from. With nothing enabled, up the screen - a stage faces the
+    // room, and that is how a section is drawn.
+    juce::Point<float> sourceCentre { (float) pb.getCentreX(), (float) pb.getY() };
+    {
+        double sx = 0.0, sy = 0.0; int n = 0;
+        for (const auto& spk : speakers_)
+        {
+            if (! spk.enabled) continue;
+            const auto sc = worldToScreen (spk.x, spk.y);
+            sx += sc.x; sy += sc.y; ++n;
+        }
+        if (n > 0) sourceCentre = { (float) (sx / n), (float) (sy / n) };
+    }
+
+    bool any = false;
+    for (const auto& a : annotations_)
+    {
+        if (! a.isPlane || a.planeType != Annotation::PlaneType::Listening) continue;
+        if (a.space != AnnotSpace::World || a.pts.size() < 2) continue;
+
+        switch (a.kind)
+        {
+            case Annotation::Kind::Rectangle:
+            case Annotation::Kind::Square:
+            {
+                // A closed plane IS the audience area: the seating is inside it.
+                const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+                const auto c = r.getCentre();
+                for (int i = 0; i < 4; ++i)
+                {
+                    const juce::Point<float> corner {
+                        (i == 0 || i == 3) ? r.getX() : r.getRight(),
+                        (i < 2)            ? r.getY() : r.getBottom()
+                    };
+                    const auto sp = annotateToScreen (a, rotateAround (corner, c, a.rotationDeg));
+                    if (i == 0) out.startNewSubPath (sp);
+                    else        out.lineTo (sp);
+                }
+                out.closeSubPath();
+                any = true;
+                break;
+            }
+
+            case Annotation::Kind::Circle:
+            {
+                const auto& cw = a.pts[0];
+                const float rad = cw.getDistanceFrom (a.pts[1]);
+                if (rad < 1.0e-6f) break;
+                constexpr int kSteps = 96;
+                for (int i = 0; i < kSteps; ++i)
+                {
+                    const float ang = (float) i / kSteps * 2.0f * (float) M_PI;
+                    const auto sp = annotateToScreen (a, { cw.x + rad * std::cos (ang),
+                                                           cw.y + rad * std::sin (ang) });
+                    if (i == 0) out.startNewSubPath (sp);
+                    else        out.lineTo (sp);
+                }
+                out.closeSubPath();
+                any = true;
+                break;
+            }
+
+            default:
+            {
+                // An open plane has no inside, so the audience is the ground it
+                // runs along: everything on the side the sound comes from. The
+                // band is swept off the plane far enough to leave the plot.
+                std::vector<juce::Point<float>> line;
+                line.reserve (a.pts.size());
+                for (const auto& wp : a.pts)
+                    line.push_back (annotateToScreen (a, wp));
+                if (line.size() < 2) break;
+
+                // Run the ends out past the edge, so the audience does not stop
+                // where the drawn line happens to stop.
+                auto extend = [big] (juce::Point<float> from, juce::Point<float> towards)
+                {
+                    auto d = towards - from;
+                    const float len = std::sqrt (d.x * d.x + d.y * d.y);
+                    if (len < 1.0e-6f) return towards;
+                    return towards + d * (big / len);
+                };
+                line.front() = extend (line[1], line.front());
+                line.back()  = extend (line[line.size() - 2], line.back());
+
+                auto axis = line.back() - line.front();
+                const float alen = std::sqrt (axis.x * axis.x + axis.y * axis.y);
+                if (alen < 1.0e-6f) break;
+                juce::Point<float> nrm { -axis.y / alen, axis.x / alen };
+                const auto toSource = sourceCentre - line.front();
+                if (nrm.x * toSource.x + nrm.y * toSource.y < 0.0f)
+                    nrm = { -nrm.x, -nrm.y };
+
+                out.startNewSubPath (line.front());
+                for (size_t i = 1; i < line.size(); ++i)
+                    out.lineTo (line[i]);
+                for (size_t i = line.size(); i-- > 0;)
+                    out.lineTo (line[i] + nrm * big);
+                out.closeSubPath();
+                any = true;
+                break;
+            }
+        }
+    }
+    return any;
+}
+
 void RadiationPatternComponent::drawField (juce::Graphics& g, juce::Rectangle<int>)
 {
     if (! fieldImage_.isValid()) return;
@@ -4377,12 +4872,83 @@ void RadiationPatternComponent::drawField (juce::Graphics& g, juce::Rectangle<in
     // Smooth gradient (EASE-style) interpolates; banded contours stay crisp.
     const bool banded = (params_.viewMode == ViewMode::SPL && params_.bandedSPL);
     juce::Graphics::ScopedSaveState ss (g);
+
+    // Mark out an audience and the map belongs to it: paint the level where
+    // people are, not into the air above them. No listening plane means
+    // nobody has said where the audience is, so the whole field shows.
+    juce::Path audience;
+    if (listeningClipPath (audience))
+    {
+        // Off the audience, the colour map's own floor - the shade a silent
+        // field would be. The bare component background is white in the light
+        // theme, which left a glaring slab where the map stopped.
+        g.fillAll (ColourMaps::sevenColor (0.0f));
+        g.reduceClipRegion (audience);
+    }
+
     g.setImageResamplingQuality (banded ? juce::Graphics::lowResamplingQuality
                                         : juce::Graphics::highResamplingQuality);
     g.setOpacity (1.0f);
     g.drawImage (fieldImage_,
                  juce::Rectangle<float> (tl.x, tl.y, w, h),
                  juce::RectanglePlacement::stretchToFit);
+}
+
+void RadiationPatternComponent::drawSplValues (juce::Graphics& g,
+                                               juce::Rectangle<int> plotBounds)
+{
+    if (! showSplValues_ || ! showField_ || ! hasData_) return;
+
+    // One number per major grid cell, doubled up until they are far enough
+    // apart on screen to read. Zoom out and the readout thins instead of
+    // turning into a smear of overlapping digits.
+    double stepM = currentGridMetrics().major;
+    const double pxPerM = (double) worldScaleX();
+    if (stepM <= 0.0 || pxPerM <= 1.0e-6) return;
+    while (stepM * pxPerM < 78.0) stepM *= 2.0;
+
+    juce::Graphics::ScopedSaveState ss (g);
+    // Where the map is painted is where the numbers belong, so they follow the
+    // audience in exactly the same way.
+    if (juce::Path audience; listeningClipPath (audience))
+        g.reduceClipRegion (audience);
+
+    const float fh = juce::jmax (9.0f, Brand::UI::scaledFont (10.0f));
+    g.setFont (Brand::techSemi (fh));
+    const float boxW = fh * 3.4f;
+    const float boxH = fh * 1.45f;
+
+    const double xEnd = result_.worldX0 + result_.worldW;
+    const double yEnd = result_.worldY0 + result_.worldH;
+    // Keep clear of the strips that already carry writing: the banner along
+    // the top, the axis numbers along the bottom and down the left. A reading
+    // printed over them helps nobody and hides both.
+    const auto pbF = plotBounds.toFloat()
+                         .withTrimmedTop    (boxH + 10.0f)
+                         .withTrimmedBottom (boxH + 12.0f)
+                         .withTrimmedLeft   (boxW * 0.75f);
+
+    for (double wy = std::ceil (result_.worldY0 / stepM) * stepM; wy <= yEnd; wy += stepM)
+    {
+        for (double wx = std::ceil (result_.worldX0 / stepM) * stepM; wx <= xEnd; wx += stepM)
+        {
+            const auto sc = worldToScreen ((float) wx, (float) wy);
+            if (! pbF.contains (sc)) continue;
+
+            float absDb = 0.0f, relDb = 0.0f;
+            if (! sampleSplAtWorld ((float) wx, (float) wy, absDb, relDb)) continue;
+            const float v = result_.hasAbsoluteSpl ? absDb : relDb;
+
+            // A plate behind each number, because the map runs from near-black
+            // to bright red and no single ink colour reads on both.
+            const juce::Rectangle<float> plate (sc.x - boxW * 0.5f, sc.y - boxH * 0.5f,
+                                                boxW, boxH);
+            g.setColour (Brand::charcoal().withAlpha (0.72f));
+            g.fillRoundedRectangle (plate, 3.0f);
+            g.setColour (Brand::white());
+            g.drawText (juce::String (v, 1), plate, juce::Justification::centred, false);
+        }
+    }
 }
 
 // Pick a "nice" 1 / 2 / 5 x 10^n step (in metres) closest to the requested
@@ -4815,8 +5381,12 @@ void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
         // Degrees counter-clockwise from +x, and screen y runs the other way.
         const float th = juce::degreesToRadians (
             spk.rotationDeg + (spk.reverseOrientation ? 180.0f : 0.0f));
-        const juce::Point<float> end { c.x + std::cos (th) * reach,
-                                       c.y - std::sin (th) * reach };
+        // Not `far`: windows.h still defines that as a keyword leftover.
+        const juce::Point<float> offPlot { c.x + std::cos (th) * reach,
+                                           c.y - std::sin (th) * reach };
+        // A listening or architectural plane is where the ray arrives, so the
+        // line ends there rather than running on across the field.
+        const auto end = clipRayAtPlanes (c, offPlot);
 
         // The ray you are holding, or have selected, is the accent colour, so
         // it is obvious which one a drag is about to swing. Locked, nothing is
@@ -4862,6 +5432,13 @@ int RadiationPatternComponent::rayHitTest (juce::Point<float> p) const
         const float start = 0.5f * juce::jmax (box.getWidth(), box.getHeight()) + 12.0f;
         if (along < start) continue;
 
+        // Only the drawn part is grabbable: past a plane the ray is not there
+        // to be taken hold of.
+        const float reach = 2.0f * (float) juce::jmax (plotArea().getWidth(),
+                                                       plotArea().getHeight());
+        const auto stop = clipRayAtPlanes (c, c + dir * reach);
+        if (along > c.getDistanceFrom (stop)) continue;
+
         const float perp = std::abs (v.x * -dir.y + v.y * dir.x);
         if (perp < bestD) { bestD = perp; best = i; }
     }
@@ -4897,17 +5474,104 @@ juce::Rectangle<float> RadiationPatternComponent::speakerFootprintScreen (const 
     return { x, y, juce::jmax (1.0f, w), juce::jmax (1.0f, h) };
 }
 
+juce::String RadiationPatternComponent::rangeRingLabel (float metres)
+{
+    // One decimal only when it says something: 2 m rather than 2.0 m.
+    const double d = Units::metresToDisplay ((double) metres);
+    const bool whole = std::abs (d - std::round (d)) < 0.05;
+    return juce::String (d, whole ? 0 : 1) + " " + Units::lengthUnit();
+}
+
+bool RadiationPatternComponent::addRangeRing (float metres)
+{
+    if (! std::isfinite (metres) || metres <= 0.0f || metres > 10000.0f)
+        return false;
+    // Two rings a centimetre apart would just be a thick line, and you could
+    // never hit the one you meant to delete.
+    for (float r : rangeRings_)
+        if (std::abs (r - metres) < 0.01f) return false;
+
+    rangeRings_.push_back (metres);
+    std::sort (rangeRings_.begin(), rangeRings_.end());
+    if (onRangeRingsChanged) onRangeRingsChanged();
+    repaint();
+    return true;
+}
+
+void RadiationPatternComponent::removeRangeRing (float metres)
+{
+    const auto before = rangeRings_.size();
+    rangeRings_.erase (std::remove_if (rangeRings_.begin(), rangeRings_.end(),
+                                       [metres] (float r)
+                                       { return std::abs (r - metres) < 0.01f; }),
+                       rangeRings_.end());
+    if (rangeRings_.size() != before)
+    {
+        if (onRangeRingsChanged) onRangeRingsChanged();
+        repaint();
+    }
+}
+
+void RadiationPatternComponent::setRangeRings (std::vector<float> metres)
+{
+    std::sort (metres.begin(), metres.end());
+    metres.erase (std::unique (metres.begin(), metres.end(),
+                               [] (float a, float b) { return std::abs (a - b) < 0.01f; }),
+                  metres.end());
+    rangeRings_ = std::move (metres);
+    if (onRangeRingsChanged) onRangeRingsChanged();
+    repaint();
+}
+
+void RadiationPatternComponent::clearRangeRings()
+{
+    if (rangeRings_.empty()) return;
+    rangeRings_.clear();
+    if (onRangeRingsChanged) onRangeRingsChanged();
+    repaint();
+}
+
+float RadiationPatternComponent::rangeRingAtScreen (juce::Point<float> p) const
+{
+    if (rangeRings_.empty()) return -1.0f;
+
+    // Rings are drawn round every enabled speaker, so the one you are pointing
+    // at is whichever ring of whichever speaker passes closest to the cursor.
+    float bestDist = 7.0f;          // grab tolerance, px
+    float bestRing = -1.0f;
+    for (const auto& spk : speakers_)
+    {
+        if (! spk.enabled) continue;
+        const auto c = worldToScreen (spk.x, spk.y);
+        for (float rm : rangeRings_)
+        {
+            const float rx = rm * worldScaleX();
+            const float ry = rm * worldScaleY();
+            if (rx < 1.0f || ry < 1.0f) continue;
+            // Distance to the ellipse, in the circle's own normalised frame.
+            const float nx = (p.x - c.x) / rx;
+            const float ny = (p.y - c.y) / ry;
+            const float n  = std::sqrt (nx * nx + ny * ny);
+            if (n < 1.0e-4f) continue;
+            const auto nearest = juce::Point<float> (c.x + nx / n * rx, c.y + ny / n * ry);
+            const float d = p.getDistanceFrom (nearest);
+            if (d < bestDist) { bestDist = d; bestRing = rm; }
+        }
+    }
+    return bestRing;
+}
+
 void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle<int>)
 {
-    // Distance reference rings (1 / 2 / 4 / 8 m) - toggleable from the plot toolbar.
-    if (showDistanceRings_)
+    // Range rings at the distances the user asked for - nothing is drawn
+    // until they add one.
+    if (! rangeRings_.empty())
     {
-        static constexpr float kRingM[] = { 1.0f, 2.0f, 4.0f, 8.0f };
         for (const auto& spk : speakers_)
         {
             if (! spk.enabled) continue;
             const auto c = worldToScreen (spk.x, spk.y);
-            for (float rm : kRingM)
+            for (float rm : rangeRings_)
             {
                 const float rx = rm * worldScaleX();
                 const float ry = rm * worldScaleY();
@@ -4915,7 +5579,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                 g.drawEllipse (c.x - rx, c.y - ry, rx * 2.0f, ry * 2.0f, 1.0f);
                 g.setFont (Brand::mono (Brand::Type::gridNum));
                 g.setColour (Brand::white().withAlpha (0.75f));
-                const juce::String lab = Units::metres ((double) rm, 0);
+                const juce::String lab = rangeRingLabel (rm);
                 g.drawText (lab,
                             (int) (c.x + rx * 0.707f) + 4,
                             (int) (c.y - ry * 0.707f) - 10,
@@ -5626,11 +6290,11 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
         const juce::PathStrokeType stroke (planeStrokeW (a),
                                            juce::PathStrokeType::curved,
                                            juce::PathStrokeType::rounded);
-        if (planeIsDashed (a))
+        float dl[2];
+        if (const int n = planeDashPattern (a, planeStrokeW (a), dl); n > 0)
         {
-            const float dl[] = { 8.0f, 6.0f };
             juce::Path dashed;
-            stroke.createDashedStroke (dashed, path, dl, 2);
+            stroke.createDashedStroke (dashed, path, dl, n);
             g.fillPath (dashed);
             return;
         }
@@ -6178,7 +6842,13 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         // anywhere along it takes that speaker and starts swinging it. Tested
         // before the normal selection, which would otherwise read the click as
         // empty field and drop the selection instead.
-        if (const int rayIdx = rayHitTest (e.position); rayIdx >= 0)
+        //
+        // A mic wins, though. A ray runs the whole width of the field and will
+        // sooner or later lie across something you placed deliberately; when
+        // it crosses a mic, the thing under the pointer is the mic, and trying
+        // to drag it would silently aim a speaker instead.
+        const bool micUnderCursor = micHitTestScreen (e.position) >= 0;
+        if (const int rayIdx = micUnderCursor ? -1 : rayHitTest (e.position); rayIdx >= 0)
         {
             if (onWillEdit) onWillEdit();
 
@@ -6208,6 +6878,8 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             ? (10.0f / juce::jmax (1.0f, polarRadius_))
             : (10.0f / juce::jmax (1.0f, worldScale()));
         const float handleR = radius * 1.35f;
+
+        cycleCandidate_ = -1;
 
         auto beginSelectionMove = [&] ()
         {
@@ -6241,11 +6913,11 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                     lastAnnotDrag_ = annot;
                     lastMouse_ = e.position;
                     auto& a = annotations_[(size_t) ai];
-                    if (a.kind == Annotation::Kind::TextBox && h == 4)
+                    if (Annotation::isRotatable (a.kind) && h == 4)
                     {
                         drag_ = Drag::AnnotRotate;
                         resizeHandleIndex_ = 4;
-                        const auto local = textBoxLocalRect (a);
+                        const auto local = rotatableLocalRect (a);
                         rotateDragCentre_ = local.getCentre();
                         rotateDragStartDeg_ = a.rotationDeg;
                         rotateDragStartMouseDeg_ = std::atan2 (annot.y - rotateDragCentre_.y,
@@ -6357,11 +7029,11 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             lastAnnotDrag_ = annot;
             lastMouse_ = e.position;
             auto& a = annotations_[(size_t) aHit];
-            if (a.kind == Annotation::Kind::TextBox && h == 4)
+            if (Annotation::isRotatable (a.kind) && h == 4)
             {
                 drag_ = Drag::AnnotRotate;
                 resizeHandleIndex_ = 4;
-                const auto local = textBoxLocalRect (a);
+                const auto local = rotatableLocalRect (a);
                 rotateDragCentre_ = local.getCentre();
                 rotateDragStartDeg_ = a.rotationDeg;
                 rotateDragStartMouseDeg_ = std::atan2 (annot.y - rotateDragCentre_.y,
@@ -6406,6 +7078,15 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                 syncPrimarySelectionFromSets();
                 if (onAnnotSelectionChanged) onAnnotSelectionChanged();
                 if (onMicsChanged) onMicsChanged();
+            }
+            else if (selectedAnnots_.size() == 1 && selectedMics_.empty()
+                     && selectedSpeakers_.empty())
+            {
+                // Already the selection: if this click does not turn into a
+                // drag, mouseUp steps to whatever is underneath.
+                cycleCandidate_ = aHit;
+                cycleAnnotPt_   = annot;
+                cycleRadius_    = radius;
             }
             beginSelectionMove();
             return true;
@@ -6515,7 +7196,7 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
     {
         auto cur = screenToAnnot (e.position.x, e.position.y);
         auto& a = annotations_[(size_t) selectedAnnot_];
-        if (a.kind == Annotation::Kind::TextBox)
+        if (Annotation::isRotatable (a.kind))
         {
             const float mouseDeg = std::atan2 (cur.y - rotateDragCentre_.y,
                                                cur.x - rotateDragCentre_.x)
@@ -6786,6 +7467,29 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
         return;
     }
 
+    // A click on an already-selected drawing that never became a drag means
+    // "show me what is under this one". Step one down the stack, wrapping at
+    // the bottom, so repeated clicks walk through everything at that point.
+    if (cycleCandidate_ >= 0 && drag_ == Drag::SelectionMove && ! annotDragMoved_)
+    {
+        const auto stack = annotationsUnder (cycleAnnotPt_, cycleRadius_);
+        if (stack.size() > 1)
+        {
+            const auto at = std::find (stack.begin(), stack.end(), cycleCandidate_);
+            const size_t next = (at == stack.end())
+                                  ? 0
+                                  : (size_t) ((at - stack.begin()) + 1) % stack.size();
+            selectedAnnots_ = { stack[next] };
+            selectedMics_.clear();
+            selectedSpeakers_.clear();
+            syncPrimarySelectionFromSets();
+            if (onAnnotSelectionChanged) onAnnotSelectionChanged();
+            if (onMicsChanged) onMicsChanged();
+            repaint();
+        }
+    }
+    cycleCandidate_ = -1;
+
     const bool committed = (drag_ == Drag::Pencil || drag_ == Drag::Erase
                             || drag_ == Drag::Speaker || drag_ == Drag::Layer
                             || (drag_ == Drag::Annot && annotDragMoved_)
@@ -6886,7 +7590,15 @@ void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent& e)
         // Speakers / mics under a covering text box win over edit-on-double-click.
         if (currentAnnotSpace() == AnnotSpace::World)
         {
-            if (micHitTestScreen (e.position) >= 0 || speakerHitTest (e.position) >= 0)
+            // Double click a mic to listen there. Right-click works too, but
+            // this is the gesture you reach for when you are moving a mic
+            // around and want to hear each spot.
+            if (const int mHit = micHitTestScreen (e.position); mHit >= 0)
+            {
+                if (onListenAtMic) onListenAtMic (mHit);
+                return;
+            }
+            if (speakerHitTest (e.position) >= 0)
                 return;
         }
 
@@ -6897,7 +7609,7 @@ void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent& e)
             && annotations_[(size_t) hit].kind == Annotation::Kind::TextBox)
         {
             setSelectedAnnotation (hit);
-            beginTextBoxEdit (hit);
+            beginTextBoxEdit (hit, &e.position);
         }
     }
 }

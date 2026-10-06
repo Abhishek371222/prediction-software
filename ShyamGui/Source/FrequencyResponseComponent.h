@@ -68,7 +68,14 @@ public:
             return;
         }
 
-        // Axes: 0 dB at mid, ±24 dB span relative to reference.
+        // With a single mic there is nothing to compare against: subtracting
+        // the reference from itself drew one dead flat line and the window
+        // looked broken. Alone, a mic shows its OWN shape instead - the curve
+        // against its average across the band, which is what "what does this
+        // seat sound like" actually means.
+        const bool comparing = (curves_.size() >= 2);
+
+        // Axes: 0 dB at mid, ±24 dB span.
         constexpr float spanDb = 24.0f;
         auto yFor = [&] (float relDb) -> float
         {
@@ -76,11 +83,18 @@ public:
             return plot.getBottom() - ((t + spanDb) / (2.0f * spanDb)) * plot.getHeight();
         };
 
-        g.setColour (Brand::border().withAlpha (0.35f));
+        g.setFont (Brand::tech (9.0f));
         for (int db = -24; db <= 24; db += 6)
         {
             const float y = yFor ((float) db);
+            g.setColour (Brand::border().withAlpha (0.35f));
             g.drawHorizontalLine ((int) y, (float) plot.getX(), (float) plot.getRight());
+            // Numbers on the scale: a grid you cannot read a value off is
+            // decoration.
+            g.setColour (Brand::muted());
+            g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
+                        plot.getX() - 30, (int) y - 6, 26, 12,
+                        juce::Justification::centredRight);
         }
         g.setColour (Brand::accent().withAlpha (0.45f));
         g.drawHorizontalLine ((int) yFor (0.0f), (float) plot.getX(), (float) plot.getRight());
@@ -91,33 +105,70 @@ public:
         };
 
         const int nHz = kNumSupportedFrequencies;
+        // A probe that could not be taken comes back at this floor; drawing it
+        // would invent a cliff that is not in the prediction.
+        auto valid = [] (float db) { return db > -119.0f; };
+
+        bool anyDrawn = false;
         for (int mi = 0; mi < (int) curves_.size(); ++mi)
         {
-            if ((int) curves_[(size_t) mi].size() < nHz) continue;
-            const float ref = (refIndex_ >= 0 && refIndex_ < (int) curves_.size()
-                               && (int) curves_[(size_t) refIndex_].size() >= nHz)
-                                  ? curves_[(size_t) refIndex_][0] // placeholder; per-Hz below
-                                  : 0.0f;
-            juce::ignoreUnused (ref);
+            const auto& cv = curves_[(size_t) mi];
+            if ((int) cv.size() < nHz) continue;
+
+            // What zero means on the axis: the reference mic when there is one
+            // to compare with, otherwise this curve's own band average.
+            float zero = 0.0f;
+            if (! comparing)
+            {
+                double sum = 0.0; int n = 0;
+                for (int hi = 0; hi < nHz; ++hi)
+                    if (valid (cv[(size_t) hi])) { sum += cv[(size_t) hi]; ++n; }
+                if (n == 0) continue;
+                zero = (float) (sum / n);
+            }
 
             juce::Path path;
             bool started = false;
             for (int hi = 0; hi < nHz; ++hi)
             {
-                float rel = curves_[(size_t) mi][(size_t) hi];
-                if (refIndex_ >= 0 && refIndex_ < (int) curves_.size()
+                const float here = cv[(size_t) hi];
+                if (! valid (here)) { started = false; continue; }   // break the line
+
+                float rel = here - zero;
+                if (comparing && refIndex_ >= 0 && refIndex_ < (int) curves_.size()
                     && (int) curves_[(size_t) refIndex_].size() > hi)
-                    rel -= curves_[(size_t) refIndex_][(size_t) hi];
+                {
+                    const float r = curves_[(size_t) refIndex_][(size_t) hi];
+                    if (! valid (r)) { started = false; continue; }
+                    rel = here - r;
+                }
 
                 const float x = plot.getX()
                     + ((float) hi / (float) juce::jmax (1, nHz - 1)) * plot.getWidth();
                 const float y = yFor (rel);
                 if (! started) { path.startNewSubPath (x, y); started = true; }
                 else path.lineTo (x, y);
+                anyDrawn = true;
             }
             g.setColour (juce::Colour (kCols[mi % 8]));
-            g.strokePath (path, juce::PathStrokeType (mi == refIndex_ ? 2.2f : 1.4f));
+            g.strokePath (path, juce::PathStrokeType (
+                (comparing && mi == refIndex_) ? 2.2f : 1.6f));
         }
+
+        if (! anyDrawn)
+        {
+            g.setColour (Brand::muted());
+            g.setFont (Brand::tech (11.0f));
+            g.drawText ("No level at this position - run the simulation first",
+                        plot, juce::Justification::centred);
+        }
+
+        // Say which zero this is, so a flat trace is never ambiguous.
+        g.setColour (Brand::muted());
+        g.setFont (Brand::tech (9.0f));
+        g.drawText (comparing ? "dB re. reference mic" : "dB re. this mic's band average",
+                    plot.getX(), plot.getY() - 12, plot.getWidth(), 12,
+                    juce::Justification::topLeft);
 
         // Frequency ticks
         g.setFont (Brand::tech (9.0f));
@@ -140,7 +191,7 @@ public:
         const int legendW = 110;
         legend_.setBounds (r.removeFromRight (legendW));
         r.removeFromRight (4);
-        plotArea_ = r.withTrimmedBottom (14);
+        plotArea_ = r.withTrimmedBottom (14).withTrimmedLeft (30).withTrimmedTop (12);
         legend_.setBounds (legend_.getBounds().withHeight (legend_.preferredHeight()));
     }
 
