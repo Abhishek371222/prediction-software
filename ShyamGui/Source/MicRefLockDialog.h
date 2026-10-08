@@ -6,7 +6,9 @@
 #include "AcousticEngine.h"
 
 // ---------------------------------------------------------------------------
-// Dialog: place / lock a mic onto a 1 / 2 / 4 / 8 m ring around a speaker.
+// Dialog: place / lock a mic onto one of the range rings around a speaker.
+// The rings offered are the ones the user added - this used to list a fixed
+// 1 / 2 / 4 / 8 m set that existed nowhere else in the scene.
 // ---------------------------------------------------------------------------
 class MicRefLockDialog : public juce::Component
 {
@@ -15,8 +17,9 @@ public:
 
     MicRefLockDialog (const std::vector<MicReceiver>& mics,
                       const std::vector<Speaker>& speakers,
-                      int defaultMic)
-        : mics_ (mics), speakers_ (speakers)
+                      int defaultMic,
+                      const std::vector<float>& rings)
+        : mics_ (mics), speakers_ (speakers), rings_ (rings)
     {
         title_.setText ("Place on ring", juce::dontSendNotification);
         title_.setFont (Brand::techSemi (Brand::UI::scaledFont (14.0f)));
@@ -51,9 +54,12 @@ public:
         ringLabel_.setText ("Ring", juce::dontSendNotification);
         ringLabel_.setColour (juce::Label::textColourId, Brand::muted());
         addAndMakeVisible (ringLabel_);
-        for (int i = 0; i < MicRingSnap::kNumRings; ++i)
-            ringBox_.addItem (Units::metres ((double) MicRingSnap::kRingsM[i], 0), i + 1);
-        ringBox_.setSelectedId (2, juce::dontSendNotification); // 2 m default
+        for (int i = 0; i < (int) rings_.size(); ++i)
+            ringBox_.addItem (Units::metres ((double) rings_[(size_t) i], 1), i + 1);
+        if (! rings_.empty())
+            ringBox_.setSelectedId (1, juce::dontSendNotification);
+        else
+            ringBox_.setTextWhenNoChoicesAvailable ("Add a range first");
         addAndMakeVisible (ringBox_);
 
         applyBtn_.setButtonText ("Place");
@@ -66,7 +72,7 @@ public:
             {
                 onApply (micBox_.getSelectedId() - 1,
                          spkBox_.getSelectedId() - 1,
-                         MicRingSnap::kRingsM[ringBox_.getSelectedId() - 1]);
+                         rings_[(size_t) (ringBox_.getSelectedId() - 1)]);
             }
             if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
                 dw->exitModalState (1);
@@ -104,6 +110,7 @@ public:
 private:
     std::vector<MicReceiver> mics_;
     std::vector<Speaker> speakers_;
+    std::vector<float>       rings_;
     juce::Label title_, micLabel_, spkLabel_, ringLabel_;
     juce::ComboBox micBox_, spkBox_, ringBox_;
     juce::TextButton applyBtn_;

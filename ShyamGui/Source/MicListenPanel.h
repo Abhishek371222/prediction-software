@@ -139,9 +139,10 @@ public:
         styleBtn (followBtn_, "Follow mic");
         followBtn_.setClickingTogglesState (true);
         followBtn_.setToggleState (true, juce::dontSendNotification);
-        followBtn_.setTooltip ("Re-predict as you drag the mic, so moving it is "
-                               "something you hear. Switch off to hold what you "
-                               "have and re-predict only when you ask.");
+        followBtn_.setTooltip ("Keep what you hear in step with the prediction - "
+                               "as you drag the mic, and as you change the rig "
+                               "(filters, gain, delay, positions). Switch off to "
+                               "hold what you have and re-predict only when you ask.");
         followBtn_.onClick = [this] { refreshFollow(); };
 
         styleBtn (calcBtn_, "Recalculate");

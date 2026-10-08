@@ -119,6 +119,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        SpeakerFilter filter;      // applied per smoothing sub-band
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
         const DirectivityPattern* pat = nullptr;   // this speaker's own model, at f
         bool   hasAbs   = false;
@@ -140,6 +141,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.delaySec = s.delayMs * 1.0e-3;
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
+        src.filter = s.filter;
 
         const auto& table = tableFor (p, s.model);
         if (! table.empty())
@@ -185,6 +187,14 @@ SimResult AcousticEngine::compute (const SimParams& p)
     // never the other model's) - srcs is already enabled-only, same order.
     std::vector<std::vector<const DirectivityPattern*>> patBand (
         srcs.size(), std::vector<const DirectivityPattern*> ((size_t) mCount, nullptr));
+    // The crossover is evaluated at EVERY sub-band, not once at the centre.
+    // A filter is steepest exactly where it is interesting, so a single value
+    // taken at the middle of a smoothed band comes out about half a dB wrong
+    // near the corner - and wrong in a way that quietly disagrees with the
+    // transfer function it claims to be.
+    std::vector<std::vector<std::complex<double>>> hBand (
+        srcs.size(), std::vector<std::complex<double>> ((size_t) mCount,
+                                                        std::complex<double> (1.0, 0.0)));
     {
         size_t si = 0;
         for (const auto& s : p.speakers)
@@ -192,13 +202,15 @@ SimResult AcousticEngine::compute (const SimParams& p)
             if (! s.enabled) continue;
             const auto& table = tableFor (p, s.model);
             const double fOwn = ownFrequency (p, s.model);
-            if (! table.empty())
-                for (int m = 0; m < mCount; ++m)
-                {
-                    const double frac = (mCount == 1) ? 0.0
-                                      : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
-                    patBand[si][(size_t) m] = pickPattern (table, fOwn * std::pow (2.0, frac));
-                }
+            for (int m = 0; m < mCount; ++m)
+            {
+                const double frac = (mCount == 1) ? 0.0
+                                  : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
+                const double fmOwn = fOwn * std::pow (2.0, frac);
+                if (! table.empty())
+                    patBand[si][(size_t) m] = pickPattern (table, fmOwn);
+                hBand[si][(size_t) m] = filterResponse (fmOwn, s.filter);
+            }
             ++si;
         }
     }
@@ -294,8 +306,11 @@ SimResult AcousticEngine::compute (const SimParams& p)
                     const DirectivityPattern* pm = patBand[i][(size_t) m];
                     const double D = dirFactor (pm, km, s.facing, theta[i]);
                     const double ampBase = D / rSpread[i];
-                    const double amp = s.gainLin * ampBase;
-                    const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
+                    const auto&  H  = hBand[i][(size_t) m];
+                    const double hm = std::abs (H);
+                    const double amp = s.gainLin * ampBase * hm;
+                    const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase
+                                       + std::arg (H);
                     sm += std::polar (amp, phase);
                     smUnity += std::polar (ampBase, phase);
                     if (hasAbs)
@@ -303,7 +318,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                         // This speaker's own on-axis calibration (dB @ its own
                         // refDistanceM), carried as a per-speaker linear scale
                         // so mixed-sensitivity devices sum correctly.
-                        const double ampAbs = s.gainLin * ampBase * s.calAbs * s.refDistM;
+                        const double ampAbs = s.gainLin * ampBase * hm * s.calAbs * s.refDistM;
                         smAbs += std::polar (ampAbs, phase);
                     }
                 }
@@ -457,6 +472,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        SpeakerFilter filter;      // applied per smoothing sub-band
         int    model;
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
         bool   hasAbs   = false;
@@ -476,6 +492,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.model = s.model;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
+        src.filter = s.filter;
         srcs.push_back (src);
     }
     if (srcs.empty()) return false;
@@ -536,8 +553,11 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
             const DirectivityPattern* pm = table.empty() ? nullptr : pickPattern (table, fmOwn);
             const double D = dirFactor (pm, km, s.facing, theta[i]);
             const double ampBase = D / rSpread[i];
-            const double amp = s.gainLin * ampBase;
-            const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase;
+            const auto   H  = filterResponse (fmOwn, s.filter);
+            const double hm = std::abs (H);
+            const double amp = s.gainLin * ampBase * hm;
+            const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase
+                               + std::arg (H);
             sm += std::polar (amp, phase);
             if (hasAbs)
             {

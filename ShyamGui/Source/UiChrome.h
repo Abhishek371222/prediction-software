@@ -553,6 +553,17 @@ public:
         btnRangeAdd_.setClickingTogglesState (false);
         btnRangeAdd_.onClick = [this] { if (onAddRange) onAddRange(); };
 
+        planeBtn (btnRangeShow_, "Shown",
+                  "Put the rings away without forgetting them. Hidden rings are "
+                  "not drawn, and a mic will not snap to them.");
+        btnRangeShow_.setToggleState (true, juce::dontSendNotification);
+        btnRangeShow_.onClick = [this]
+        {
+            const bool on = btnRangeShow_.getToggleState();
+            btnRangeShow_.setButtonText (on ? "Shown" : "Hidden");
+            if (onShowRanges) onShowRanges (on);
+        };
+
         styleClusterLabel (lblRange_, "Range");
         addAndMakeVisible (lblRange_);
 
@@ -954,11 +965,12 @@ public:
     }
 
     void showMicMenu (std::function<void (int itemId)> onPick, bool hasMics,
-                      bool showDegrees)
+                      bool showDegrees, bool hasRings = true)
     {
         juce::PopupMenu root;
         root.addItem (1, "Add Mic");
-        root.addItem (2, "Place on ring", hasMics);
+        // Nothing to place onto until a range exists.
+        root.addItem (2, "Place on ring", hasMics && hasRings);
         root.addItem (3, "Show Degrees", true, showDegrees);
         root.addItem (4, "Show Frequency Response", hasMics);
         root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnMic_),
@@ -1050,6 +1062,7 @@ public:
     std::function<void(int)>   onPlaneListenHeight;
     std::function<void()>      onAddRange;
     std::function<void(float)> onDeleteRange;
+    std::function<void(bool)>  onShowRanges;
 
     /** The Plane cluster shares the Text Box slot: a text box can never be a
         plane, so the two are mutually exclusive and only one can ever want
@@ -1074,6 +1087,14 @@ public:
             rangeChips_.add (b);
         }
         resized();
+        repaint();
+    }
+
+    /** Reflect whether the rings are currently drawn. */
+    void setRangesShown (bool on)
+    {
+        btnRangeShow_.setToggleState (on, juce::dontSendNotification);
+        btnRangeShow_.setButtonText (on ? "Shown" : "Hidden");
         repaint();
     }
 
@@ -1285,7 +1306,7 @@ public:
     juce::TextButton btnLockRays_;
     juce::TextButton btnUsePlane_, btnPlaneListen_, btnPlaneVirt_, btnPlaneArch_;
     juce::TextButton btnPlaneSeated_, btnPlaneStanding_;
-    juce::TextButton btnRangeAdd_;
+    juce::TextButton btnRangeAdd_, btnRangeShow_;
     juce::Label      lblRange_;
     // One chip per range the user has added, each with its own delete.
     juce::OwnedArray<juce::TextButton> rangeChips_;
@@ -1494,6 +1515,9 @@ private:
                                                : Brand::muted().withAlpha (0.45f));
         lblOptions_.setVisible     (false);   // merged into the Options cluster
         btnRangeAdd_.setVisible (! homeTab);
+        // Nothing to show or hide until there is a range.
+        btnRangeShow_.setVisible (! homeTab);
+        btnRangeShow_.setEnabled (! rangeChips_.isEmpty());
         lblRange_.setVisible    (! homeTab);
         for (auto* c : rangeChips_) c->setVisible (! homeTab);
 
@@ -1577,7 +1601,7 @@ private:
         constexpr int kMapOpts  = 142 + 6 + 96 + 12                     // interdist | values
                                 + kOptionPillW * 2 + kOptionPillGap;    // Snap | Ortho
         constexpr int kMapPlane = 72 + 70 + 58 + 86 + 54 + 66 + 5 * 5;  // the six plane buttons
-        constexpr int kMapMic   = kPitch + 8 + 72;                      // mic icon + "+ Range"
+        constexpr int kMapMic   = kPitch + 8 + 72 + 4 + 54;             // mic, + Range, Shown
         // The range chips share the cluster, so the row grows as ranges are
         // added and has to shrink to match - otherwise adding a third range
         // walks the row back over the pill.
@@ -1939,9 +1963,11 @@ private:
                 const int mx0 = plateRightP + px2 (14);
                 btnMic_.setBounds (mx0, iconTop, tool, tool);
 
-                const int addW = px2 (72);
+                const int addW  = px2 (72);
+                const int showW = px2 (54);
                 const int rx0 = mx0 + tool + px2 (8);
                 btnRangeAdd_.setBounds (rx0, iconTop, addW, tool);
+                btnRangeShow_.setBounds (rx0 + addW + px2 (4), iconTop, showW, tool);
 
                 // The ranges already added sit on the caption row, each one
                 // carrying its own delete, so you can see and remove them
@@ -1954,7 +1980,7 @@ private:
                     c->setBounds (cx, labelTop, chipW, juce::jmax (12, labelH));
                     cx += chipW + chipGap;
                 }
-                const int iconRowRight = rx0 + addW;
+                const int iconRowRight = rx0 + addW + px2 (4) + showW;
                 const int chipRowRight = rangeChips_.isEmpty() ? mx0 : (cx - chipGap);
                 const int plateRightM = juce::jmax (iconRowRight, chipRowRight) + px2 (14);
                 if (rangeChips_.isEmpty())

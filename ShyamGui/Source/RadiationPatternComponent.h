@@ -40,6 +40,16 @@ public:
     bool addRangeRing (float metres);
     void removeRangeRing (float metres);
     void clearRangeRings();
+    /** Put the rings away without forgetting them. Hidden rings are not drawn
+        and nothing snaps to them - a line you cannot see must not pull on what
+        you are placing. */
+    void setRangesVisible (bool on);
+    bool rangesVisible() const noexcept { return rangesVisible_; }
+    /** The rings that are actually ON SCREEN - what snapping is allowed to use. */
+    std::vector<float> activeRangeRings() const
+    {
+        return rangesVisible_ ? rangeRings_ : std::vector<float>{};
+    }
     void setRangeRings (std::vector<float> metres);
     /** The ring nearest @p screenPos, within grab distance - what a right
         click is pointing at. Returns a negative number when nothing is near. */
@@ -577,6 +587,7 @@ private:
     bool                showGrid_ = true;
     bool                showDistanceRings_ = false;
     std::vector<float>  rangeRings_;        // metres, sorted, user-chosen
+    bool                rangesVisible_ = true;
     bool                showMicDegrees_ = false;
     bool                showSpeakerDims_ = false;
     bool                showRays_ = false;

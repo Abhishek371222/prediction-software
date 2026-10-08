@@ -731,8 +731,9 @@ void RadiationPatternComponent::refreshMicLevels()
 
 void RadiationPatternComponent::snapMicWorld (float& wx, float& wy, bool playSoundIfNewClip)
 {
-    // Original ring snap: pull onto 1/2/4/8 m; tak only when newly latching.
-    const auto snap = MicRingSnap::snapToRing (wx, wy, speakers_);
+    // Ring snap: pull onto one of the user's own range rings, and only the
+    // ones on screen. Tak only when newly latching.
+    const auto snap = MicRingSnap::snapToRing (wx, wy, speakers_, activeRangeRings());
     const bool nowSnapped = snap.snapped;
     if (nowSnapped)
     {
@@ -779,7 +780,7 @@ bool RadiationPatternComponent::placeMicAtWorld (float wx, float wy)
     m.y = sy;
     if (micWasSnapped_)
     {
-        const auto snap = MicRingSnap::snapToRing (sx, sy, speakers_);
+        const auto snap = MicRingSnap::snapToRing (sx, sy, speakers_, activeRangeRings());
         m.ringLocked = snap.snapped;
         m.ringRadiusM = snap.radiusM;
         m.ringSpeaker = snap.speakerIndex;
@@ -5523,6 +5524,14 @@ void RadiationPatternComponent::setRangeRings (std::vector<float> metres)
     repaint();
 }
 
+void RadiationPatternComponent::setRangesVisible (bool on)
+{
+    if (rangesVisible_ == on) return;
+    rangesVisible_ = on;
+    if (onRangeRingsChanged) onRangeRingsChanged();
+    repaint();
+}
+
 void RadiationPatternComponent::clearRangeRings()
 {
     if (rangeRings_.empty()) return;
@@ -5533,7 +5542,7 @@ void RadiationPatternComponent::clearRangeRings()
 
 float RadiationPatternComponent::rangeRingAtScreen (juce::Point<float> p) const
 {
-    if (rangeRings_.empty()) return -1.0f;
+    if (rangeRings_.empty() || ! rangesVisible_) return -1.0f;
 
     // Rings are drawn round every enabled speaker, so the one you are pointing
     // at is whichever ring of whichever speaker passes closest to the cursor.
@@ -5565,7 +5574,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 {
     // Range rings at the distances the user asked for - nothing is drawn
     // until they add one.
-    if (! rangeRings_.empty())
+    if (! rangeRings_.empty() && rangesVisible_)
     {
         for (const auto& spk : speakers_)
         {
@@ -7322,7 +7331,7 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
             mic.y = ny;
             if (micWasSnapped_)
             {
-                const auto snap = MicRingSnap::snapToRing (nx, ny, speakers_);
+                const auto snap = MicRingSnap::snapToRing (nx, ny, speakers_, activeRangeRings());
                 mic.ringLocked = snap.snapped;
                 mic.ringRadiusM = snap.radiusM;
                 mic.ringSpeaker = snap.speakerIndex;

@@ -144,7 +144,8 @@ private:
     void pushEdit();          // commit editor values into selected speaker
     void pushPositionEdit();  // X/Y only - avoids quantizing snapped positions
     void syncPositionRanges();   // X/Y slider spans follow the world extent
-    void pushSharedEdit();    // gain/delay/polarity/orientation/enabled (multi-select)
+    void pushSharedEdit();
+    void syncFilterEnabled();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
     /** Height / tilt only. These describe the rig, not the sound field, so
         they take a light path: the plot redraws, nothing is re-solved. */
@@ -207,6 +208,10 @@ private:
     juce::Label  heightLabel_, tiltLabel_;
     juce::Slider heightSlider_, tiltSlider_;
     juce::ToggleButton polarityToggle_, orientationToggle_, enabledToggle_;
+    // Crossover on the selected cabinet(s). The maths is in AcousticEngine.h.
+    juce::Label    filtLabel_, filtTypeLabel_, filtOrderLabel_, filtFreqLabel_;
+    juce::ComboBox filtBox_, filtTypeBox_, filtOrderBox_;
+    juce::Slider   filtFreqSlider_;
 
     // Global
     SectionHeader globalHdr_ { "4. Simulation" };

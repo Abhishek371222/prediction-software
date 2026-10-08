@@ -57,7 +57,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.0.9", juce::dontSendNotification);
+    versionLabel_.setText ("v1.5.0", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -321,7 +321,8 @@ MainComponent::MainComponent (ProjectData project)
             {
                 showFrequencyResponseWindow();
             }
-        }, hasMics, patternComp_.showMicDegrees());
+        }, hasMics, patternComp_.showMicDegrees(),
+           ! patternComp_.rangeRings().empty());
     };
     patternComp_.onAddMicArmedChanged = [this]
     {
@@ -445,6 +446,10 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setShowSplValues (on);
     };
     plotHeader_.onAddRange = [this] { promptForRange(); };
+    plotHeader_.onShowRanges = [this] (bool on)
+    {
+        patternComp_.setRangesVisible (on);
+    };
     plotHeader_.onDeleteRange = [this] (float m)
     {
         willEdit();
@@ -774,6 +779,8 @@ MainComponent::MainComponent (ProjectData project)
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
+    patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
+                                   || (bool) project_.rangesVisible);
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
@@ -904,6 +911,7 @@ ProjectData MainComponent::currentProject() const
     // undo snapshot, so every shape, ruler and text box was lost on save.
     p.drawings = RadiationPatternComponent::annotationsToVar (patternComp_.getAnnotations());
     p.rangeRings = rangeRingsToVar (patternComp_.rangeRings());
+    p.rangesVisible = patternComp_.rangesVisible();
     return p;
 }
 
@@ -2369,6 +2377,13 @@ void MainComponent::applyResult (const SimResult& r)
     syncRenderer();
     updateSettingsBar();
     refreshFrequencyResponse();
+    // A new solve means what you would hear at the mic has changed - a filter
+    // put on a cabinet, a gain, a delay, a speaker moved. Following is about
+    // keeping the sound in step with the prediction, not only with the mic, so
+    // it follows this too. Same debounce: a drag re-solves continuously.
+    if (listenWindow_ != nullptr && listenWindow_->isVisible()
+        && listenWindow_->content.isFollowing())
+        listenFollow_.startTimer (60);
     // Not a blanket "Ready": every edit triggers a recompute, so hard-coding
     // it here overwrote the "Unsaved changes" that markProjectDirty had just
     // set, milliseconds earlier. The pill then always read "Ready" no matter
@@ -2826,7 +2841,8 @@ void MainComponent::showMicPlaceOnRingDialog()
     const auto speakers = controlPanel_.getSpeakers();
     const int defMic = juce::jmax (0, patternComp_.getSelectedMic());
 
-    auto* body = new MicRefLockDialog (mics, speakers, defMic);
+    auto* body = new MicRefLockDialog (mics, speakers, defMic,
+                                       patternComp_.rangeRings());
     body->onApply = [this] (int micIndex, int speakerIndex, float radiusM)
     {
         patternComp_.placeMicOnRing (micIndex, speakerIndex, radiusM);
@@ -3003,6 +3019,7 @@ void MainComponent::syncRangeChips()
 {
     plotHeader_.setRanges (patternComp_.rangeRings(),
                            [] (float m) { return RadiationPatternComponent::rangeRingLabel (m); });
+    plotHeader_.setRangesShown (patternComp_.rangesVisible());
 }
 
 float MainComponent::parseLength (const juce::String& raw)
@@ -3218,6 +3235,8 @@ void MainComponent::loadProjectFile (const juce::File& f)
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
+    patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
+                                   || (bool) project_.rangesVisible);
     patternComp_.clearMics();
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
@@ -3547,7 +3566,7 @@ void MainComponent::exportCSV()
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Simulation Engine v1.4.0.9");
+            line ("# Atomik Simulation Engine v1.5.0");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

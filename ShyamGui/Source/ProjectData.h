@@ -51,6 +51,7 @@ struct ProjectData
     // every save.
     juce::var drawings;
     juce::var rangeRings;      // metres, the reference rings the user added
+    juce::var rangesVisible;   // whether those rings are drawn
 
     juce::File file;   // backing file on disk (empty until first save)
 
@@ -127,13 +128,20 @@ struct ProjectData
             o->setProperty ("baseHeightM", s.baseHeightM);
             o->setProperty ("tiltDeg", s.tiltDeg);
             o->setProperty ("rotationDeg", s.rotationDeg);
+            o->setProperty ("filterType",   (int) s.filter.type);
+            o->setProperty ("filterFamily", (int) s.filter.family);
+            o->setProperty ("filterOrder",  s.filter.order);
+            o->setProperty ("filterFcHz",   s.filter.fcHz);
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
         if (drawings.isArray() && drawings.size() > 0)
             root->setProperty ("drawings", drawings);
         if (rangeRings.isArray() && rangeRings.size() > 0)
+        {
             root->setProperty ("rangeRings", rangeRings);
+            root->setProperty ("rangesVisible", rangesVisible);
+        }
         root->setProperty ("format", "atmk-1");
 
         return juce::var (root);
@@ -148,6 +156,7 @@ struct ProjectData
             // simply leaves them empty - an old file still opens.
             p.drawings = root->getProperty ("drawings");
             p.rangeRings = root->getProperty ("rangeRings");
+            p.rangesVisible = root->getProperty ("rangesVisible");
 
             if (auto mv = root->getProperty ("meta"); auto* m = mv.getDynamicObject())
             {
@@ -197,6 +206,19 @@ struct ProjectData
                         // Projects saved before the rotation handle point +x.
                         s.rotationDeg = o->hasProperty ("rotationDeg")
                                       ? (float) (double) o->getProperty ("rotationDeg") : 0.0f;
+                        // Projects saved before crossovers have no filter, and
+                        // a cabinet without one is full range.
+                        s.filter.type = (SpeakerFilter::Type) juce::jlimit (
+                            0, 2, o->hasProperty ("filterType")
+                                    ? (int) o->getProperty ("filterType") : 0);
+                        s.filter.family = (o->hasProperty ("filterFamily")
+                                           && (int) o->getProperty ("filterFamily") == 0)
+                                            ? SpeakerFilter::Family::Butterworth
+                                            : SpeakerFilter::Family::LinkwitzRiley;
+                        s.filter.order = o->hasProperty ("filterOrder")
+                                       ? ((int) o->getProperty ("filterOrder") == 2 ? 2 : 4) : 4;
+                        s.filter.fcHz  = o->hasProperty ("filterFcHz")
+                                       ? (float) (double) o->getProperty ("filterFcHz") : 100.0f;
                         p.speakers.push_back (s);
                     }
                 }

@@ -21,12 +21,16 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// Ring snap (1 / 2 / 4 / 8 m around enabled speakers) + short "tak" click.
+// Ring snap - a mic lands on a range ring around an enabled speaker, plus a
+// short "tak" click to say it happened.
+//
+// The rings are the ones the USER added, passed in. They used to be a fixed
+// 1 / 2 / 4 / 8 m set in here, which meant mics snapped to rings that were
+// never asked for and are not drawn: an invisible grid tugging at the thing
+// you were trying to place.
 // ---------------------------------------------------------------------------
 namespace MicRingSnap
 {
-    static constexpr float kRingsM[] = { 1.0f, 2.0f, 4.0f, 8.0f };
-    static constexpr int   kNumRings = 4;
     static constexpr float kSnapTolM = 0.45f;
 
     struct SnapResult
@@ -37,13 +41,18 @@ namespace MicRingSnap
         bool  snapped = false;
     };
 
+    /** @param rings the range rings currently ON SCREEN, in metres. Empty
+               means nothing to snap to, which is the honest answer when no
+               range has been added or they are hidden. */
     inline SnapResult snapToRing (float wx, float wy,
                                   const std::vector<Speaker>& speakers,
+                                  const std::vector<float>& rings,
                                   float tolM = kSnapTolM)
     {
         SnapResult best;
         best.x = wx;
         best.y = wy;
+        if (rings.empty()) return best;
         float bestDist = tolM;
 
         for (int si = 0; si < (int) speakers.size(); ++si)
@@ -55,9 +64,8 @@ namespace MicRingSnap
             const float r = std::sqrt (dx * dx + dy * dy);
             if (r < 1.0e-6f) continue;
 
-            for (int i = 0; i < kNumRings; ++i)
+            for (float ring : rings)
             {
-                const float ring = kRingsM[i];
                 const float err = std::abs (r - ring);
                 if (err <= bestDist)
                 {

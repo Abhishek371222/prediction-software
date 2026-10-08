@@ -231,6 +231,54 @@ ControlPanel::ControlPanel()
         if (onShowSpeakerDims) onShowSpeakerDims (dimsToggle_.getToggleState());
     };
 
+    // --- crossover on the selected cabinet(s) --------------------------
+    // Subs get a low pass, tops a high pass; the engine applies H to the
+    // complex pressure, so the phase shift the filter brings is in the
+    // prediction and not just the level.
+    configTxt (filtLabel_,      "Filter");
+    configTxt (filtTypeLabel_,  "Filter type");
+    configTxt (filtOrderLabel_, "Order");
+    configTxt (filtFreqLabel_,  "Crossover (Hz)");
+
+    auto styleCombo = [this] (juce::ComboBox& c, const juce::String& tip)
+    {
+        c.setComponentID ("ctrlCombo");
+        c.setTooltip (tip);
+        c.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+        c.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
+        c.onChange = [this] { if (! updatingUI_) { willEdit(); pushSharedEdit(); } };
+        addAndMakeVisible (c);
+    };
+    filtBox_.addItem ("Off",       1);
+    filtBox_.addItem ("Low pass",  2);
+    filtBox_.addItem ("High pass", 3);
+    filtBox_.setSelectedId (1, juce::dontSendNotification);
+    styleCombo (filtBox_, "Low pass for subs, high pass for tops. Off leaves "
+                          "the cabinet full range.");
+    // Choosing a filter has to light up the controls that describe it in the
+    // same gesture; waiting for the next full sync left them greyed and the
+    // feature looking broken.
+    filtBox_.onChange = [this]
+    {
+        syncFilterEnabled();
+        if (! updatingUI_) { willEdit(); pushSharedEdit(); }
+    };
+
+    filtTypeBox_.addItem ("Linkwitz-Riley", 1);
+    filtTypeBox_.addItem ("Butterworth",    2);
+    filtTypeBox_.setSelectedId (1, juce::dontSendNotification);
+    styleCombo (filtTypeBox_, "Linkwitz-Riley is -6 dB at the corner and its two "
+                              "halves sum flat. Butterworth is -3 dB and they do not.");
+
+    filtOrderBox_.addItem ("2nd order (12 dB/oct)", 1);
+    filtOrderBox_.addItem ("4th order (24 dB/oct)", 2);
+    filtOrderBox_.setSelectedId (2, juce::dontSendNotification);
+    styleCombo (filtOrderBox_, "How steeply it rolls off past the corner.");
+
+    styleSlider (filtFreqSlider_, 20.0, 2000.0, 1.0, 100.0);
+    filtFreqSlider_.onValueChange = [this] { pushSharedEdit(); };
+    filtFreqSlider_.onDragStart   = [this] { willEdit(); };
+
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
     styleToggle (enabledToggle_,     "Enabled");
@@ -521,6 +569,11 @@ void ControlPanel::refreshEditors()
         polarityToggle_.setToggleState    (s.polarityInverted,   juce::dontSendNotification);
         orientationToggle_.setToggleState (s.reverseOrientation, juce::dontSendNotification);
         enabledToggle_.setToggleState     (s.enabled,            juce::dontSendNotification);
+        filtBox_.setSelectedId      ((int) s.filter.type + 1, juce::dontSendNotification);
+        filtTypeBox_.setSelectedId  (s.filter.family == SpeakerFilter::Family::Butterworth ? 2 : 1,
+                                     juce::dontSendNotification);
+        filtOrderBox_.setSelectedId (s.filter.order == 2 ? 1 : 2, juce::dontSendNotification);
+        filtFreqSlider_.setValue    (s.filter.fcHz, juce::dontSendNotification);
         // Section 3's header always names the SELECTED unit's own model -
         // never the section-2 browsing selection, which may differ.
         editHdr_.setTitle ("3. Selected " + juce::String (speakerModelName (s.model)));
@@ -534,6 +587,8 @@ void ControlPanel::refreshEditors()
     heightSlider_.setEnabled (has); tiltSlider_.setEnabled (has);
     polarityToggle_.setEnabled (has); orientationToggle_.setEnabled (has);
     enabledToggle_.setEnabled (has);
+    filtBox_.setEnabled (has);
+    syncFilterEnabled();
     deleteBtn_.setEnabled (has || ! selectedSpeakers_.empty());
     updatingUI_ = false;
 }
@@ -773,6 +828,16 @@ void ControlPanel::pushPositionEdit()
     notifyChanged();
 }
 
+void ControlPanel::syncFilterEnabled()
+{
+    // The shape of a filter only means anything once there IS one, so the
+    // three that describe it follow the first.
+    const bool filtOn = filtBox_.isEnabled() && filtBox_.getSelectedId() > 1;
+    filtTypeBox_.setEnabled    (filtOn);
+    filtOrderBox_.setEnabled   (filtOn);
+    filtFreqSlider_.setEnabled (filtOn);
+}
+
 void ControlPanel::pushSharedEdit()
 {
     if (updatingUI_) return;
@@ -780,6 +845,13 @@ void ControlPanel::pushSharedEdit()
 
     const float gainDB  = (float) gainSlider_.getValue();
     const float delayMs = (float) delaySlider_.getValue();
+    SpeakerFilter flt;
+    flt.type   = (SpeakerFilter::Type) juce::jlimit (0, 2, filtBox_.getSelectedId() - 1);
+    flt.family = (filtTypeBox_.getSelectedId() == 2) ? SpeakerFilter::Family::Butterworth
+                                                     : SpeakerFilter::Family::LinkwitzRiley;
+    flt.order  = (filtOrderBox_.getSelectedId() == 1) ? 2 : 4;
+    flt.fcHz   = (float) filtFreqSlider_.getValue();
+
     const bool polarity = polarityToggle_.getToggleState();
     const bool reverse  = orientationToggle_.getToggleState();
     const bool enabled  = enabledToggle_.getToggleState();
@@ -796,6 +868,7 @@ void ControlPanel::pushSharedEdit()
         auto& s = speakers_[(size_t) idx];
         s.gainDB  = gainDB;
         s.delayMs = delayMs;
+        s.filter  = flt;
         s.polarityInverted   = polarity;
         s.reverseOrientation = reverse;
         s.enabled            = enabled;
@@ -1164,7 +1237,7 @@ void ControlPanel::applyColours()
     styleBtnC (applyPresetBtn_, true);
 
     for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
-                     &resSlider_, &floorSlider_,
+                     &filtFreqSlider_, &resSlider_, &floorSlider_,
                      &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ })
     {
         s->setColour (juce::Slider::trackColourId,           juce::Colour (0xff313131));
@@ -1223,7 +1296,7 @@ void ControlPanel::updateScaledChrome()
                            Brand::UI::sidebarSliderBoxH);
     };
     for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
-                     &resSlider_, &floorSlider_,
+                     &filtFreqSlider_, &resSlider_, &floorSlider_,
                      &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ })
         fixSlider (*s);
 }
@@ -1351,6 +1424,10 @@ void ControlPanel::resized()
         editRow (yLabel_,     ySlider_);
         editRow (gainLabel_,  gainSlider_);
         editRow (delayLabel_, delaySlider_);
+        editRow (filtLabel_,      filtBox_);
+        editRow (filtTypeLabel_,  filtTypeBox_);
+        editRow (filtOrderLabel_, filtOrderBox_);
+        editRow (filtFreqLabel_,  filtFreqSlider_);
         if (UiConfig::showViewSwitcher)
         {
             editRow (heightLabel_, heightSlider_);
@@ -1365,6 +1442,8 @@ void ControlPanel::resized()
     });
     setSectionVisible ({ &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
                          &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
+                         &filtLabel_, &filtTypeLabel_, &filtOrderLabel_, &filtFreqLabel_,
+                         &filtBox_, &filtTypeBox_, &filtOrderBox_, &filtFreqSlider_,
                          &polarityToggle_, &orientationToggle_, &enabledToggle_ },
                        secEditOpen_);
     sectionBreak();

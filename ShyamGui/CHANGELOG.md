@@ -25,9 +25,87 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves; per-model cabinet size |
 | **1.4.0.7** | 2026-09-28 | 5-degree rotation handle; sketch plan sizes; Show sizes dimensioning; 3D cabinet view; mojibake purge |
 | **1.4.0.9** | 2026-10-06 | Home / Mapping ribbon; aiming rays; planes that act on rays and own the map; listen at a mic as you move it; range rings; shape rotation; text box rebuild |
+| **1.5.0** | 2026-10-08 | Crossover filters on any cabinet (Butterworth / Linkwitz-Riley), applied to the complex pressure; ranges can be hidden; mic ring snap no longer pulls on invisible rings |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.5.0] - 2026-10-08
+
+**Atomik Simulation Engine v1.5.0** - cabinets can carry a crossover. Pick a
+filter on a speaker and the prediction changes with it, on the map and in what
+you hear at a mic.
+
+### Added
+
+- **Crossover filters on any speaker.** Select a cabinet and the Selected panel
+  carries Filter (Off / Low pass / High pass), Filter type (Linkwitz-Riley /
+  Butterworth), Order (2nd, 12 dB/oct, or 4th, 24 dB/oct) and the crossover
+  frequency. Settings apply to the whole selection, so eight subs take a low
+  pass in one go, and they save with the project.
+- **The transfer functions are the analogue prototypes**, evaluated at the run
+  frequency: `s = j*2*pi*f`, `wc = 2*pi*fc`, Butterworth as its Q-sections and
+  Linkwitz-Riley as the Butterworth of half the order squared. Verified against
+  the reference implementation over 288 combinations of corner, order, type and
+  frequency - largest difference 0.000e+00.
+- **H is applied to the complex pressure before summation**, as a magnitude and
+  a phase shift. A crossover moves the phase of what it passes, so it moves
+  where cabinets sum and cancel; applying only the magnitude would have changed
+  the level and quietly left the interference pattern wrong.
+- **Evaluated at every smoothing sub-band**, not once at the band centre. A
+  filter is steepest exactly where it is interesting, so a single value taken at
+  the middle of a 1/3-octave band came out half a dB wrong near the corner.
+  After the fix, a single cabinet at 198 Hz with a 200 Hz corner measures
+  -6.10 dB on Linkwitz-Riley against -6.09 predicted, and -3.20 dB on
+  Butterworth against -3.17 - the textbook corner values.
+- **Ranges can be hidden.** A Shown / Hidden toggle beside + Range puts the
+  rings away without forgetting them: the chips stay, so the distances are
+  still defined and come back when you switch it on. Saved with the project.
+
+### Changed
+
+- **The Listen window follows the rig, not just the mic.** A new solve - a
+  filter, a gain, a delay, a speaker moved - now re-predicts what you hear, on
+  the same debounce as a mic drag. Following is about keeping the sound in step
+  with the prediction; previously a filter changed the map and the graph while
+  the audio carried on as before until you pressed Recalculate.
+- **Place on ring offers the ranges you have added**, and the menu item greys
+  out when there are none. It used to list a fixed 1 / 2 / 4 / 8 m set and
+  would place a mic on a ring that existed nowhere in the scene.
+
+### Fixed
+
+- **Mics snapped to rings that were never asked for and are drawn nowhere.**
+  Ring snap carried its own hard-coded 1 / 2 / 4 / 8 m list, predating range
+  rings entirely, so four invisible circles round every speaker tugged at every
+  mic you placed. Snapping now uses the rings actually on screen - your ranges,
+  and only while they are shown. Covered by a direct test of the snap function:
+  no ranges does not snap, hidden does not snap, a 20 m range snaps onto exactly
+  20 m, and a point near 8 m is no longer pulled onto a phantom ring.
+- **Choosing a filter left its own settings greyed out** until the next full
+  panel sync, which made the feature look broken at the moment you first used
+  it. The dependent controls light up in the same gesture now.
+
+### Notes
+
+- A cabinet carries one filter section, which covers a two-way split - subs low
+  passed, tops high passed. A band pass on a mid cabinet would need a second
+  section; that is the product of two transfer functions, the same way 4th
+  order already multiplies two.
+- Butterworth and Linkwitz-Riley of the same order differ by at most 3 dB, only
+  near the corner, and have the same ultimate slope. The difference shows up in
+  the SUM: a Butterworth crossover bumps +3 dB at the handover where Linkwitz-
+  Riley sums flat. Measured on two co-located cabinets at a 98 Hz crossover:
+  +2.90 dB apart, against +2.91 predicted.
+
+### Packaging
+
+- Version strings, file version resource (string and numeric `FILEVERSION`) and
+  installer -> **v1.5.0**.
+- **Windows Release** `Atomik Simulation Engine v1.5.0.exe`
+  (Q21S + BEM 2inch + UI assets embedded).
 
 ---
 

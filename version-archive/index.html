@@ -79,15 +79,16 @@
       Standalone backup index (not part of the simulation app).
       Starting at <strong>v1.3.0</strong> — download source, macOS DMG, or Windows
       installer / ZIP for any saved release. Current product cut is
-      <strong>v1.4.0.9</strong> (Home / Mapping ribbon tabs; aiming rays you can grab
+      <strong>v1.5.0</strong> (crossover filters on any cabinet &mdash; Butterworth or
+      Linkwitz-Riley, low or high pass, 2nd or 4th order, at a corner you choose &mdash;
+      applied to the complex pressure so they move phase as well as level, and heard at a
+      mic as well as seen on the map; Home / Mapping ribbon tabs; aiming rays you can grab
       anywhere to turn a speaker; shapes markable as Listening, Virtual or Architectural
-      planes, each with its own stroke, stopping rays or letting them through, reporting
-      coverage from the solved grid, and clipping the SPL map to the audience; Show Values
-      printing levels across the map; range rings at any distance you type, metric or
-      imperial; listen at a mic with the sound following it as you drag; rotation for
-      rectangles and squares; click-through selection; and a rebuilt text box that keeps
-      its colour, size and alignment while you edit; Q21S, BEM 2inch and UI assets
-      embedded).
+      planes, each stopping rays or letting them through, reporting coverage from the
+      solved grid and clipping the SPL map to the audience; range rings at any distance you
+      type, metric or imperial, now hideable; listen at a mic with the sound following the
+      rig as you change it; rotation for rectangles and squares; Q21S, BEM 2inch and UI
+      assets embedded).
     </p>
     <p class="status" id="status">Loading versions…</p>
     <div id="list"></div>
@@ -123,7 +124,7 @@
           <article class="card">
             <div class="row">
               <span class="ver">v${v.version}</span>
-              ${v.version === '1.4.0.9' ? '<span class="tag">latest</span>' : ''}
+              ${v.version === '1.5.0' ? '<span class="tag">latest</span>' : ''}
               ${v.version === '1.3.0' ? '<span class="tag">baseline</span>' : ''}
               <span class="notes">${(v.notes || '').replace(/</g, '&lt;')}</span>
               <span class="date">${created}</span>

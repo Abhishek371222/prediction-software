@@ -3,6 +3,78 @@
 #include <complex>
 
 // ---------------------------------------------------------------------------
+// SpeakerFilter - a crossover section on one cabinet.
+//
+// The transfer functions are the analogue prototypes, evaluated at the run
+// frequency, exactly as butterworthFilter.m and LRFilter.m define them:
+//
+//   s = j*2*pi*f        wc = 2*pi*fc
+//
+//   Butterworth 2   LP  wc^2 / (s^2 + sqrt(2)*wc*s + wc^2)
+//                   HP  s^2  / (s^2 + sqrt(2)*wc*s + wc^2)
+//   Butterworth 4       the two Q-sections above with a1 / a2, multiplied
+//   Linkwitz-Riley 2    a first-order section squared
+//   Linkwitz-Riley 4    the 2nd-order Butterworth squared
+//
+// H is COMPLEX, so it carries phase as well as magnitude. That is the whole
+// point: a crossover shifts the phase of what it passes, which moves where
+// cabinets sum and cancel. Applying only |H| would change the level and quietly
+// leave the interference pattern wrong.
+// ---------------------------------------------------------------------------
+struct SpeakerFilter
+{
+    enum class Family { Butterworth = 0, LinkwitzRiley = 1 };
+    enum class Type   { Off = 0, LowPass = 1, HighPass = 2 };
+
+    Family family = Family::LinkwitzRiley;
+    Type   type   = Type::Off;
+    int    order  = 4;            // 2 or 4, as the .m files allow
+    float  fcHz   = 100.0f;
+
+    bool active() const noexcept
+    {
+        return type != Type::Off && fcHz > 0.0f && (order == 2 || order == 4);
+    }
+};
+
+/** H(f) for one filter. Returns 1 (no change) when the filter is off. */
+inline std::complex<double> filterResponse (double f, const SpeakerFilter& flt) noexcept
+{
+    using cplx = std::complex<double>;
+    if (! flt.active()) return cplx (1.0, 0.0);
+
+    constexpr double kPi = 3.14159265358979323846;
+    const cplx   s  (0.0, 2.0 * kPi * f);
+    const double wc = 2.0 * kPi * (double) flt.fcHz;
+    const double wc2 = wc * wc;
+    const bool   lp = (flt.type == SpeakerFilter::Type::LowPass);
+
+    // One 2nd-order section. `a` is the damping term that sets its Q.
+    auto section2 = [&] (double a) -> cplx
+    {
+        const cplx den = s * s + a * wc * s + wc2;
+        return lp ? (cplx (wc2, 0.0) / den) : ((s * s) / den);
+    };
+
+    if (flt.family == SpeakerFilter::Family::Butterworth)
+    {
+        if (flt.order == 2)
+            return section2 (1.41421356237309504880);          // sqrt(2)
+        // Order 4 is two sections with the Butterworth Q pair.
+        return section2 (0.7653668647) * section2 (1.8477590650);
+    }
+
+    // Linkwitz-Riley: the Butterworth of half the order, squared.
+    if (flt.order == 2)
+    {
+        const cplx h1 = lp ? (cplx (wc, 0.0) / (s + wc)) : (s / (s + wc));
+        return h1 * h1;
+    }
+    const cplx hbw = section2 (1.41421356237309504880);
+    return hbw * hbw;
+}
+
+// ---------------------------------------------------------------------------
 // Speaker - a single subwoofer in the 2D world (pure data, no JUCE).
 // Q21S cabinet: W 750 mm x H 784 mm x D 917 mm (plan footprint = W x D).
 // ---------------------------------------------------------------------------
@@ -31,6 +103,10 @@ struct Speaker
     // unit is simulated with its OWN model's directivity - a scene can freely
     // mix both; they are never blended into one shared pattern.
     int   model              = 0;
+    // Crossover on this cabinet: subs low-passed, tops high-passed, and so on.
+    // Applied to the complex pressure before summation, so it moves phase as
+    // well as level - see filterResponse().
+    SpeakerFilter filter;
 };
 
 // Display name for a Speaker::model / MeasurementData::Source value. Single
