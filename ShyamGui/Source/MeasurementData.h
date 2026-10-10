@@ -1302,10 +1302,10 @@ namespace MeasurementData
     inline juce::String suggestedDirectivityFileName (int hz, float distanceM)
     {
         return "Atomik_Directivity_" + juce::String (hz) + "Hz_"
-             + distanceFileTag (distanceM) + "(PredictionSoftware).csv";
+             + distanceFileTag (distanceM) + "(AtomikIntegral).csv";
     }
 
-    // VACS-style Atomik Prediction Software sheet (matches Export_Reference /
+    // VACS-style Atomik Integral sheet (matches Export_Reference /
     // Atomik_Directivity_* sample). Writes absolute measured SPL at native
     // angles - values differ per frequency / distance from the loaded Excel/CSV.
     inline bool writeAtomikDirectivitySheet (const juce::File& file,
@@ -1331,8 +1331,8 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.5.0'");
-        line ("Author='Atomik Prediction Software'");
+        line ("Version='v1.4.2'");
+        line ("Author='Atomik Integral'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));
         line ("Measurement_Set=Ground_Plane");

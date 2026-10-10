@@ -1,6 +1,8 @@
-# Changelog - Atomik Simulation Engine
+# Changelog - Atomik Integral
 
-All notable changes to this product are documented here.
+All notable changes to this product are documented here. Releases v1.3.0 to
+v1.4.2 shipped as **Atomik Simulation Engine**; the entries below keep the name
+each release carried.
 This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
@@ -25,16 +27,124 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.6** | 2026-09-26 | Export strip redesign; Peak SPL withdrawn; exports overwrite; selection no longer re-solves; per-model cabinet size |
 | **1.4.0.7** | 2026-09-28 | 5-degree rotation handle; sketch plan sizes; Show sizes dimensioning; 3D cabinet view; mojibake purge |
 | **1.4.0.9** | 2026-10-06 | Home / Mapping ribbon; aiming rays; planes that act on rays and own the map; listen at a mic as you move it; range rings; shape rotation; text box rebuild |
-| **1.5.0** | 2026-10-08 | Crossover filters on any cabinet (Butterworth / Linkwitz-Riley), applied to the complex pressure; ranges can be hidden; mic ring snap no longer pulls on invisible rings |
+| **1.4.1** | 2026-10-08 | Crossover filters on any cabinet (Butterworth / Linkwitz-Riley), applied to the complex pressure; ranges can be hidden; mic ring snap no longer pulls on invisible rings |
+| **1.4.2** | 2026-10-09 | Filters reach every view and are taken at the right frequency; both frequency-response plots read real dB SPL; the view stops snapping back; subs carry no ray; mic coordinates on the map; copy the plot to the clipboard |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
 
-## [1.5.0] - 2026-10-08
+## [Unreleased]
 
-**Atomik Simulation Engine v1.5.0** - cabinets can carry a crossover. Pick a
+### Changed
+
+- **Product renamed to Atomik Integral.** Window and header titles, the
+  dashboard, PDF and PNG report headers, CSV exports, the command-line HELP,
+  the Windows EXE (`Atomik Integral.exe`) and its file properties, the
+  installer (`AtomikIntegral-Setup-v*.exe`, installs over earlier versions),
+  the macOS app bundle and DMG, and the release archive file names.
+- Directivity CSV exports are now named
+  `Atomik_Directivity_<Hz>Hz_<dist>(AtomikIntegral).csv` and carry
+  `Author='Atomik Integral'`.
+
+---
+
+## [1.4.2] - 2026-10-09
+
+**Atomik Simulation Engine v1.4.2** - the crossover you set is now the
+crossover every view is drawn from, the two frequency-response plots read in
+real decibels, and the plot stays where you put it.
+
+### Added
+
+- **Mic coordinates on the map.** Each mic prints its X, Y beside its marker -
+  `Mic 1  94.3, 67.7 m  -44.3 dB` - in the unit on show, metric or imperial,
+  like every other length on the plot. A level means little without the seat it
+  was taken at, and reading a position off the axes by eye is guesswork at any
+  useful zoom. **Show Coordinates** in the mic menu turns it off for a crowded
+  plot.
+- **Copy image to clipboard**, from the right-click menu anywhere on the plot.
+  The canvas as you see it - heatmap, dispersion, grid, axes, markers, planes
+  and the colour scale - rendered at 2x and put on the clipboard as a bitmap,
+  ready to paste into a document, a chat or an image editor. The caption line
+  is drawn in, because away from the app the picture has nothing else to say
+  what frequency and how many devices it is of.
+
+### Fixed
+
+- **The crossover did not reach every view.** It was applied inside the
+  smoothed band sum, which the SPL map is built from, and nowhere else: the
+  single-frequency pressure field, the incoherent sum and the Directivity polar
+  were all still drawn from the unfiltered signal. A low pass could visibly
+  change the map and leave the pattern beside it untouched. H now multiplies
+  the complex pressure in every one of them.
+- **The filter was evaluated at the wrong frequency.** It took the browsed
+  model's own catalogue frequency rather than the frequency actually being
+  propagated. In a single-model scene these are the same number, which is why
+  it looked right; in a mixed scene, or simply while the other model's
+  catalogue was on show, the filter's level and phase belonged to a different
+  frequency than the wave they were applied to.
+- **Both frequency-response displays hid the level.** Each plotted a figure
+  relative to the map peak and then re-centred its own axis on whatever had
+  just arrived, so a filter, a gain or a delay redrew the same shape with
+  different numbers beside it - the one thing you changed was the one thing you
+  could not see. Both now plot calibrated dB SPL on a window anchored when the
+  first curve arrives, which only ever grows.
+- **The Listen window computed with no measured data.** Its probe was handed
+  parameters carrying no directivity tables and no calibration, so what you
+  heard came from a bare point source - this despite a comment claiming it used
+  the same probe as the Frequency Response window. It gets the real tables now,
+  and the graph and the sound agree.
+- **The view snapped back to the same framing after every edit.** The re-fit
+  test asked whether the zoom was within 2% of 1.0 - which is exactly where
+  fitting leaves it - so every pan was undone by the next solve. The view now
+  refits only until you first move it, and then stays where you put it.
+- **Subs carried an aiming ray.** A ray says a box is pointed somewhere, which
+  needs a front axis to mean anything; at sub frequencies a single cabinet is
+  close to omnidirectional. ArrayCalc and EASE Focus steer low end by array
+  geometry and per-box delay and show the resulting dispersion rather than
+  drawing an aim line, and the Q21S now follows suit. Note this removes the
+  only handle a sub could be turned by.
+- **The crossover row labels were drawn small.** Filter, Filter type, Order and
+  Crossover (Hz) kept the base font size set in the constructor, where the UI
+  scale is still 1.0, while every label beside them scaled up.
+- **A mic near the right-hand edge had its label clipped**, and now that the
+  label carries coordinates it is long enough for that to be the common case.
+  The reading flips to the left of the marker when it will not fit, and the
+  click target flips with it.
+
+### Changed
+
+- **The Frequency Response window is laid out from its own size.** The grid was
+  a fixed 60 dB window, so a 14 dB curve sat pinned in the top fifth of an empty
+  plot; the dB span now grows to hold the quietest point and no further, and the
+  gridline step picks itself from 3 / 6 / 12 / 24 dB. Gutters are measured from
+  the text that has to fit in them, frequency ticks thin out only until their
+  labels would touch, fonts follow the UI scale and grow a little on a large
+  window, and the legend steps aside when there is not enough width for both.
+  Size limits go from 900 x 520 to 2000 x 1400.
+- **Butterworth's 4th-order Q pair is written to full precision**
+  (2*sin(pi/8) and 2*sin(3*pi/8)). The shorter constants were accurate to about
+  a part in 10^9 - no audible difference, but no reason to carry a rounded
+  number where the exact one fits.
+
+### Packaging
+
+- Version strings, file version resource (string and numeric `FILEVERSION`) and
+  installer -> **v1.4.2**.
+- **Windows Release** `Atomik Simulation Engine v1.4.2.exe`
+  (Q21S + BEM 2inch + UI assets embedded).
+- **Renumbered:** the release cut on 2026-10-08 as **1.5.0** is **1.4.1**. Same
+  build, same contents; the line stays on 1.4.x. The archived
+  `Atomik-Windows-v1.4.1.exe` was built before the renumber and still reports
+  1.5.0 in its own file properties.
+
+---
+
+## [1.4.1] - 2026-10-08
+
+**Atomik Simulation Engine v1.4.1** - cabinets can carry a crossover. Pick a
 filter on a speaker and the prediction changes with it, on the map and in what
 you hear at a mic.
 
@@ -103,8 +213,8 @@ you hear at a mic.
 ### Packaging
 
 - Version strings, file version resource (string and numeric `FILEVERSION`) and
-  installer -> **v1.5.0**.
-- **Windows Release** `Atomik Simulation Engine v1.5.0.exe`
+  installer -> **v1.4.1**.
+- **Windows Release** `Atomik Simulation Engine v1.4.1.exe`
   (Q21S + BEM 2inch + UI assets embedded).
 
 ---

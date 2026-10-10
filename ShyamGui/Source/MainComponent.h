@@ -63,7 +63,7 @@ private:
     void runSimulation();
     void applyResult (const SimResult& r);
     void updateSettingsBar();
-    // Header row 1's document title: "Atomik Simulation Engine - <project>",
+    // Header row 1's document title: "Atomik Integral - <project>",
     // mirroring the OS window title (Figma row 1 shows the same composite).
     void refreshTitleLabel();
     // The canvas caption's ink: brand red on the bare grid, white once a field
@@ -111,6 +111,7 @@ private:
     static juce::juce_wchar shortcutLetter (const juce::KeyPress&);
 
     void exportPNG();
+    void copyPlotToClipboard();
     void exportCSV();
 
     juce::int64 measurementsSignature() const;   // mtime/size fingerprint, both models combined
@@ -143,6 +144,8 @@ private:
     void  syncRangeChips();
     void  promptForRange();
     static float parseLength (const juce::String& raw);
+    /** Several distances typed in one box, each ready for parseLength. */
+    static juce::StringArray splitLengthList (const juce::String& raw);
     void closeMicListener();
     int  micIndexForId (int micId) const;
     void showMicListener (int micIndex);

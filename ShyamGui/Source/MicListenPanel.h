@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "BrandTheme.h"
 #include "MicListener.h"
+#include "ToolWindow.h"
 
 // ---------------------------------------------------------------------------
 // The window behind "Listen here". Small on purpose: a transport, an A/B, and
@@ -19,6 +20,9 @@ public:
         absolute_ = absolute;
         repaint();
     }
+
+    /** Re-anchor the dB window - used when the window opens on a new mic. */
+    void resetAxis() noexcept { axisSet_ = false; }
 
     void paint (juce::Graphics& g) override
     {
@@ -38,12 +42,18 @@ public:
         }
 
         const double f0 = curve_.front().hz, f1 = curve_.back().hz;
-        float lo = curve_.front().db, hi = lo;
-        for (const auto& p : curve_) { lo = juce::jmin (lo, p.db); hi = juce::jmax (hi, p.db); }
-        // Always show at least 24 dB, or a flat response looks like noise.
-        const float mid = 0.5f * (lo + hi);
-        const float half = juce::jmax (12.0f, 0.6f * (hi - lo));
-        lo = mid - half; hi = mid + half;
+        float peak = curve_.front().db;
+        for (const auto& p : curve_) peak = juce::jmax (peak, p.db);
+
+        // The window is anchored the first time a curve arrives and only ever
+        // grows. It used to re-centre on whatever was in front of it, which
+        // meant a filter that pulled the whole response down 40 dB redrew the
+        // same picture with different axis numbers - the change you made was
+        // the one thing you could not see.
+        const float wantTop = std::ceil (peak / 6.0f) * 6.0f;
+        if (! axisSet_ || wantTop > axisTop_) { axisTop_ = wantTop; axisSet_ = true; }
+        const float hi = axisTop_;
+        const float lo = axisTop_ - 60.0f;
 
         auto xOf = [&] (double hz)
         {
@@ -96,7 +106,9 @@ public:
 
 private:
     std::vector<MicListener::Point> curve_;
-    bool absolute_ = false;
+    bool  absolute_ = false;
+    float axisTop_  = 0.0f;
+    bool  axisSet_  = false;
 };
 
 class MicListenPanel final : public juce::Component
@@ -218,6 +230,7 @@ public:
             lo = curve.front().hz;
             hi = curve.back().hz;
         }
+        plot_.resetAxis();          // a new listening session reframes the scale
         plot_.setCurve (curve, absolute);
         listener_.setResponse (curve, refDb);
         refreshFollow();
@@ -394,17 +407,16 @@ private:
     bool             absolute_ = false;
 };
 
-class MicListenWindow : public juce::DocumentWindow
+class MicListenWindow : public ToolWindow
 {
 public:
     MicListenWindow()
-        : DocumentWindow ("Listen", Brand::panelDark(), DocumentWindow::closeButton)
+        : ToolWindow ("Listen")
     {
-        setUsingNativeTitleBar (true);
         setResizable (true, false);
-        setContentNonOwned (&content, true);
-        setResizeLimits (430, 380, 980, 760);
-        centreWithSize (540, 430);
+        setToolContent (content, false);
+        setResizeLimits (430, 410, 10000, 10000);
+        centreWithSize (540, 460);
     }
 
     // Closing must silence it - a hidden window still holding the audio device

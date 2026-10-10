@@ -6,7 +6,7 @@ Copy everything below the line into Cursor chat **in your other existing project
 
 ## Goal
 
-Integrate the real loudspeaker polar measurement library into this existing project (Atomik Acoustic Simulation Engine / prediction software) so that:
+Integrate the real loudspeaker polar measurement library into this existing project (Atomik Integral / prediction software) so that:
 
 1. **Measured directivity** comes from real Excel/CSV readings (not only the piston model).
 2. **ShyamGuild is the reference set** — curves must match those files exactly.

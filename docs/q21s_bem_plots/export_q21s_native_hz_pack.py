@@ -21,7 +21,7 @@ OUT = ROOT / "ShyamGui/prediction software/MeasurementIntegrationPack/Data"
 P_REF = 20e-6
 DISTANCES = [0.5, 1.0, 2.0]
 # Native BEM_Data_10m/<Hz>Hz.xlsx → UI catalogue slots.
-DEFAULT_HZ = [20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401]
+DEFAULT_HZ = [20, 29, 52, 60, 81, 98, 153, 198, 256, 309, 352, 400, 401]
 LEGACY_DROP = {
     29: ["31"],
     52: ["50"],

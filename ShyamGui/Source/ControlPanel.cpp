@@ -36,6 +36,8 @@ void ControlPanel::styleToggle (juce::ToggleButton& t, const juce::String& txt)
 // ---------------------------------------------------------------------------
 ControlPanel::ControlPanel()
 {
+    juce::Desktop::getInstance().addGlobalMouseListener (&wheelArm_);
+
     auto configTxt = [&] (juce::Label& l, const juce::String& t)
     {
         l.setText (t, juce::dontSendNotification);
@@ -115,7 +117,13 @@ ControlPanel::ControlPanel()
     // Model picker - drives measurement source + frequency catalogue.
     configTxt (speakerModelLabel_, "Speaker model");
     speakerModelBox_.addItem ("Q21S",   1);   // source 0
-    speakerModelBox_.addItem ("BEM 2inch", 3);   // source 2
+    // BEM 2inch is withheld from this release: it is not being shipped yet,
+    // and its sensitivity is still unknown, so it cannot report absolute SPL
+    // beside the Q21S. Hidden, not removed - the model, its embedded polar
+    // pack and its frequency catalogue are all still here, and a project that
+    // already carries BEM units opens and solves exactly as before. Put the
+    // line back to offer it again.
+    // speakerModelBox_.addItem ("BEM 2inch", 3);   // source 2
     speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     speakerModelBox_.setComponentID ("ctrlCombo");
     speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
@@ -206,6 +214,13 @@ ControlPanel::ControlPanel()
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
     styleSlider (delaySlider_, 0.0, 10.0, 0.1,  0.0);
+    // Heading in degrees, 0 = +x, counter-clockwise, matching what the plot
+    // stores and what the ray / stalk read out. One-degree steps: the drag
+    // snaps to 5, and typing is here precisely for the angles it cannot hit.
+    configTxt (rotLabel_, "Rotation (deg)");
+    styleSlider (rotSlider_, 0.0, 359.0, 1.0, 0.0);
+    rotSlider_.setTooltip ("Heading of the selected cabinet(s), 0 = facing +x. "
+                           "With several selected, all of them take this angle.");
     // Ground level to a flown position; tilt is positive downwards, with a
     // little up-tilt allowed for front-fills aimed at a balcony.
     styleSlider (heightSlider_, 0.0, 20.0, 0.05, 0.0);
@@ -214,6 +229,8 @@ ControlPanel::ControlPanel()
     ySlider_.onValueChange     = [this] { pushPositionEdit(); };
     gainSlider_.onValueChange  = [this] { pushSharedEdit(); };
     delaySlider_.onValueChange = [this] { pushSharedEdit(); };
+    rotSlider_.onValueChange   = [this] { pushRotationEdit(); };
+    rotSlider_.onDragStart     = [this] { willEdit(); };
     heightSlider_.onValueChange = [this] { pushRigEdit(); };
     tiltSlider_.onValueChange   = [this] { pushRigEdit(); };
     xSlider_.onDragStart       = [this] { willEdit(); };
@@ -239,6 +256,9 @@ ControlPanel::ControlPanel()
     configTxt (filtTypeLabel_,  "Filter type");
     configTxt (filtOrderLabel_, "Order");
     configTxt (filtFreqLabel_,  "Crossover (Hz)");
+    configTxt (filtHiTypeLabel_,  "Band top type");
+    configTxt (filtHiOrderLabel_, "Band top order");
+    configTxt (filtHiFreqLabel_,  "Band top (Hz)");
 
     auto styleCombo = [this] (juce::ComboBox& c, const juce::String& tip)
     {
@@ -252,9 +272,11 @@ ControlPanel::ControlPanel()
     filtBox_.addItem ("Off",       1);
     filtBox_.addItem ("Low pass",  2);
     filtBox_.addItem ("High pass", 3);
+    filtBox_.addItem ("Band pass", 4);
     filtBox_.setSelectedId (1, juce::dontSendNotification);
-    styleCombo (filtBox_, "Low pass for subs, high pass for tops. Off leaves "
-                          "the cabinet full range.");
+    styleCombo (filtBox_, "Low pass for subs, high pass for tops, band pass for "
+                          "a mid that wants both ends. Off leaves the cabinet "
+                          "full range.");
     // Choosing a filter has to light up the controls that describe it in the
     // same gesture; waiting for the next full sync left them greyed and the
     // feature looking broken.
@@ -268,7 +290,8 @@ ControlPanel::ControlPanel()
     filtTypeBox_.addItem ("Butterworth",    2);
     filtTypeBox_.setSelectedId (1, juce::dontSendNotification);
     styleCombo (filtTypeBox_, "Linkwitz-Riley is -6 dB at the corner and its two "
-                              "halves sum flat. Butterworth is -3 dB and they do not.");
+                              "halves sum flat (2nd order only with one side's "
+                              "polarity inverted). Butterworth is -3 dB and they do not.");
 
     filtOrderBox_.addItem ("2nd order (12 dB/oct)", 1);
     filtOrderBox_.addItem ("4th order (24 dB/oct)", 2);
@@ -278,6 +301,28 @@ ControlPanel::ControlPanel()
     styleSlider (filtFreqSlider_, 20.0, 2000.0, 1.0, 100.0);
     filtFreqSlider_.onValueChange = [this] { pushSharedEdit(); };
     filtFreqSlider_.onDragStart   = [this] { willEdit(); };
+    filtFreqSlider_.setTooltip ("The corner. With Band pass this is the BOTTOM "
+                                "of the band and Band top (Hz) is the top.");
+
+    // The band pass's upper end. Only these three are new; the three above
+    // become the band's bottom end when Band pass is chosen.
+    filtHiTypeBox_.addItem ("Linkwitz-Riley", 1);
+    filtHiTypeBox_.addItem ("Butterworth",    2);
+    filtHiTypeBox_.setSelectedId (1, juce::dontSendNotification);
+    styleCombo (filtHiTypeBox_, "Family of the band's upper corner. It does not "
+                                "have to match the lower one.");
+
+    filtHiOrderBox_.addItem ("2nd order (12 dB/oct)", 1);
+    filtHiOrderBox_.addItem ("4th order (24 dB/oct)", 2);
+    filtHiOrderBox_.setSelectedId (2, juce::dontSendNotification);
+    styleCombo (filtHiOrderBox_, "How steeply the band's upper end rolls off.");
+
+    styleSlider (filtHiFreqSlider_, 20.0, 20000.0, 1.0, 2000.0);
+    filtHiFreqSlider_.onValueChange = [this] { pushSharedEdit(); };
+    filtHiFreqSlider_.onDragStart   = [this] { willEdit(); };
+    filtHiFreqSlider_.setTooltip ("Top of the pass band. Must be above the "
+                                  "corner below, or the band passes nothing and "
+                                  "the filter is treated as off.");
 
     styleToggle (polarityToggle_,    "Invert Polarity");
     styleToggle (orientationToggle_, "Reverse Orientation");
@@ -296,7 +341,7 @@ ControlPanel::ControlPanel()
     floorSlider_.onValueChange = [this] { notifyChanged(); };
     resSlider_.onDragStart     = [this] { willEdit(); };
     floorSlider_.onDragStart   = [this] { willEdit(); };
-    styleToggle (bandsToggle_, "Contour bands (3 dB)");
+    styleToggle (bandsToggle_, "Contour bands (6 dB)");
     bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
@@ -418,7 +463,20 @@ ControlPanel::ControlPanel()
     refreshLayoutControls();
 }
 
-ControlPanel::~ControlPanel() {}
+ControlPanel::~ControlPanel()
+{
+    juce::Desktop::getInstance().removeGlobalMouseListener (&wheelArm_);
+}
+
+void ControlPanel::armWheelFor (juce::Component* clicked)
+{
+    WheelSlider* all[] = { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_, &rotSlider_,
+                           &heightSlider_, &tiltSlider_, &filtFreqSlider_,
+                           &resSlider_, &floorSlider_,
+                           &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ };
+    for (auto* s : all)
+        s->setWheelArmed (clicked != nullptr && (clicked == s || s->isParentOf (clicked)));
+}
 
 // ---------------------------------------------------------------------------
 // Unit system: the X/Y position sliders store metres internally (so the
@@ -564,6 +622,7 @@ void ControlPanel::refreshEditors()
         ySlider_.setValue     (s.y,       juce::dontSendNotification);
         gainSlider_.setValue  (s.gainDB,  juce::dontSendNotification);
         delaySlider_.setValue (s.delayMs, juce::dontSendNotification);
+        rotSlider_.setValue   (s.rotationDeg, juce::dontSendNotification);
         heightSlider_.setValue (s.baseHeightM, juce::dontSendNotification);
         tiltSlider_.setValue   (s.tiltDeg,     juce::dontSendNotification);
         polarityToggle_.setToggleState    (s.polarityInverted,   juce::dontSendNotification);
@@ -574,6 +633,10 @@ void ControlPanel::refreshEditors()
                                      juce::dontSendNotification);
         filtOrderBox_.setSelectedId (s.filter.order == 2 ? 1 : 2, juce::dontSendNotification);
         filtFreqSlider_.setValue    (s.filter.fcHz, juce::dontSendNotification);
+        filtHiTypeBox_.setSelectedId  (s.filter.familyHi == SpeakerFilter::Family::Butterworth ? 2 : 1,
+                                       juce::dontSendNotification);
+        filtHiOrderBox_.setSelectedId (s.filter.orderHi == 2 ? 1 : 2, juce::dontSendNotification);
+        filtHiFreqSlider_.setValue    (s.filter.fcHiHz, juce::dontSendNotification);
         // Section 3's header always names the SELECTED unit's own model -
         // never the section-2 browsing selection, which may differ.
         editHdr_.setTitle ("3. Selected " + juce::String (speakerModelName (s.model)));
@@ -584,6 +647,7 @@ void ControlPanel::refreshEditors()
     }
     xSlider_.setEnabled (has); ySlider_.setEnabled (has);
     gainSlider_.setEnabled (has); delaySlider_.setEnabled (has);
+    rotSlider_.setEnabled (has);
     heightSlider_.setEnabled (has); tiltSlider_.setEnabled (has);
     polarityToggle_.setEnabled (has); orientationToggle_.setEnabled (has);
     enabledToggle_.setEnabled (has);
@@ -836,6 +900,14 @@ void ControlPanel::syncFilterEnabled()
     filtTypeBox_.setEnabled    (filtOn);
     filtOrderBox_.setEnabled   (filtOn);
     filtFreqSlider_.setEnabled (filtOn);
+
+    // The band's upper end exists only for a band pass. It greys out rather
+    // than disappearing: controls that come and go move everything around
+    // them, and you cannot learn a control you have never seen.
+    const bool bandOn = filtOn && filtBox_.getSelectedId() == 4;
+    filtHiTypeBox_.setEnabled    (bandOn);
+    filtHiOrderBox_.setEnabled   (bandOn);
+    filtHiFreqSlider_.setEnabled (bandOn);
 }
 
 void ControlPanel::pushSharedEdit()
@@ -846,11 +918,15 @@ void ControlPanel::pushSharedEdit()
     const float gainDB  = (float) gainSlider_.getValue();
     const float delayMs = (float) delaySlider_.getValue();
     SpeakerFilter flt;
-    flt.type   = (SpeakerFilter::Type) juce::jlimit (0, 2, filtBox_.getSelectedId() - 1);
+    flt.type   = (SpeakerFilter::Type) juce::jlimit (0, 3, filtBox_.getSelectedId() - 1);
     flt.family = (filtTypeBox_.getSelectedId() == 2) ? SpeakerFilter::Family::Butterworth
                                                      : SpeakerFilter::Family::LinkwitzRiley;
     flt.order  = (filtOrderBox_.getSelectedId() == 1) ? 2 : 4;
     flt.fcHz   = (float) filtFreqSlider_.getValue();
+    flt.familyHi = (filtHiTypeBox_.getSelectedId() == 2) ? SpeakerFilter::Family::Butterworth
+                                                         : SpeakerFilter::Family::LinkwitzRiley;
+    flt.orderHi  = (filtHiOrderBox_.getSelectedId() == 1) ? 2 : 4;
+    flt.fcHiHz   = (float) filtHiFreqSlider_.getValue();
 
     const bool polarity = polarityToggle_.getToggleState();
     const bool reverse  = orientationToggle_.getToggleState();
@@ -875,6 +951,36 @@ void ControlPanel::pushSharedEdit()
     }
 
     notifyChanged();
+}
+
+void ControlPanel::pushRotationEdit()
+{
+    if (updatingUI_) return;
+    if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
+
+    float deg = (float) rotSlider_.getValue();
+    while (deg < 0.0f)    deg += 360.0f;
+    while (deg >= 360.0f) deg -= 360.0f;
+
+    // A typed heading is an absolute instruction - "point at 37 degrees" - so
+    // every selected cabinet takes it, the way gain and delay do. Dragging a
+    // ray applies a DELTA instead, which is what keeps a fan's shape; the two
+    // gestures mean different things and both are worth having.
+    std::vector<int> targets = selectedSpeakers_;
+    if (targets.empty())
+        targets.push_back (selected_);
+
+    bool any = false;
+    for (int idx : targets)
+    {
+        if (idx < 0 || idx >= (int) speakers_.size()) continue;
+        auto& s = speakers_[(size_t) idx];
+        if (std::abs (s.rotationDeg - deg) < 0.001f) continue;
+        s.rotationDeg = deg;
+        any = true;
+    }
+
+    if (any) notifyChanged();
 }
 
 void ControlPanel::pushRigEdit()
@@ -915,10 +1021,29 @@ void ControlPanel::notifyChanged()
 }
 
 // ---------------------------------------------------------------------------
+void ControlPanel::setSpeakerAimLine (int index, bool show)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].showAimLine = show;
+}
+
 void ControlPanel::setSpeakerRotation (int index, float deg)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;
     speakers_[(size_t) index].rotationDeg = deg;
+
+    // Put it in the field too, or the number beside the slider goes stale the
+    // moment a ray or a sub's knob is dragged - and a stale readout is worse
+    // than none, because you would read it and believe it. dontSendNotification
+    // plus the updatingUI_ guard keeps this from pushing straight back out as
+    // an edit of its own.
+    if (index == selected_)
+    {
+        const bool wasUpdating = updatingUI_;
+        updatingUI_ = true;
+        rotSlider_.setValue (deg, juce::dontSendNotification);
+        updatingUI_ = wasUpdating;
+    }
 }
 
 void ControlPanel::setSpeakerPosition (int index, float x, float y)
@@ -960,7 +1085,10 @@ void ControlPanel::setSelectedSpeakers (const std::vector<int>& indices, int pri
     else if (! selectedSpeakers_.empty())
         selected_ = selectedSpeakers_.back();
     else
-        selected_ = speakers_.empty() ? -1 : juce::jlimit (0, (int) speakers_.size() - 1, selected_);
+        // Nothing selected on the plot means nothing selected here either.
+        // This used to clamp back onto a valid index, which is what kept one
+        // unit permanently current and its fields permanently live.
+        selected_ = -1;
 
     updatingUI_ = true;
     if (selected_ >= 0)
@@ -1236,8 +1364,8 @@ void ControlPanel::applyColours()
     styleBtnC (clearAllBtn_, false);
     styleBtnC (applyPresetBtn_, true);
 
-    for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
-                     &filtFreqSlider_, &resSlider_, &floorSlider_,
+    for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_, &rotSlider_,
+                     &filtFreqSlider_, &filtHiFreqSlider_, &resSlider_, &floorSlider_,
                      &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ })
     {
         s->setColour (juce::Slider::trackColourId,           juce::Colour (0xff313131));
@@ -1284,6 +1412,14 @@ void ControlPanel::updateScaledChrome()
     for (auto* l : { &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
                      &resLabel_, &floorLabel_, &measDistLabel_,
                      &speakerModelLabel_,
+                     // The crossover row labels belong here too: a font set in
+                     // the constructor keeps its base size, because the UI
+                     // scale is still 1.0 at that point. Left out, Filter,
+                     // Filter type, Order and Crossover (Hz) rendered smaller
+                     // than every other field label beside them.
+                     &filtLabel_, &filtTypeLabel_, &filtOrderLabel_, &filtFreqLabel_,
+                     &filtHiTypeLabel_, &filtHiOrderLabel_, &filtHiFreqLabel_,
+                     &rotLabel_,
                      &layoutWidthLabel_, &layoutRotLabel_, &layoutOpacityLabel_ })
         l->setFont (Brand::tech (labelSz));
 
@@ -1295,8 +1431,8 @@ void ControlPanel::updateScaledChrome()
                            Brand::UI::sidebarSliderBoxW,
                            Brand::UI::sidebarSliderBoxH);
     };
-    for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
-                     &filtFreqSlider_, &resSlider_, &floorSlider_,
+    for (auto* s : { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_, &rotSlider_,
+                     &filtFreqSlider_, &filtHiFreqSlider_, &resSlider_, &floorSlider_,
                      &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ })
         fixSlider (*s);
 }
@@ -1424,10 +1560,14 @@ void ControlPanel::resized()
         editRow (yLabel_,     ySlider_);
         editRow (gainLabel_,  gainSlider_);
         editRow (delayLabel_, delaySlider_);
+        editRow (rotLabel_,   rotSlider_);
         editRow (filtLabel_,      filtBox_);
         editRow (filtTypeLabel_,  filtTypeBox_);
         editRow (filtOrderLabel_, filtOrderBox_);
         editRow (filtFreqLabel_,  filtFreqSlider_);
+        editRow (filtHiTypeLabel_,  filtHiTypeBox_);
+        editRow (filtHiOrderLabel_, filtHiOrderBox_);
+        editRow (filtHiFreqLabel_,  filtHiFreqSlider_);
         if (UiConfig::showViewSwitcher)
         {
             editRow (heightLabel_, heightSlider_);
@@ -1441,9 +1581,12 @@ void ControlPanel::resized()
         enabledToggle_.setBounds (pad, y, W, chkH); y += chkH + gap;
     });
     setSectionVisible ({ &xLabel_, &yLabel_, &gainLabel_, &delayLabel_,
+                         &rotLabel_, &rotSlider_,
                          &xSlider_, &ySlider_, &gainSlider_, &delaySlider_,
                          &filtLabel_, &filtTypeLabel_, &filtOrderLabel_, &filtFreqLabel_,
                          &filtBox_, &filtTypeBox_, &filtOrderBox_, &filtFreqSlider_,
+                         &filtHiTypeLabel_, &filtHiOrderLabel_, &filtHiFreqLabel_,
+                         &filtHiTypeBox_, &filtHiOrderBox_, &filtHiFreqSlider_,
                          &polarityToggle_, &orientationToggle_, &enabledToggle_ },
                        secEditOpen_);
     sectionBreak();

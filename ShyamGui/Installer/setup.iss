@@ -1,16 +1,17 @@
-; Inno Setup script for Atomik Simulation Engine
+; Inno Setup script for Atomik Integral
 ; Single Setup.exe — app + brand fonts. Q21S measurement CSVs are embedded in the
 ; EXE (no Excel / MeasurementIntegrationPack shipped).
 
-#define MyAppName "Atomik Simulation Engine"
-#define MyAppVersion "1.5.0"
+#define MyAppName "Atomik Integral"
+#define MyAppVersion "1.4.2"
 #define MyAppPublisher "Atomik"
-#define MyAppExeName "Atomik Simulation Engine.exe"
+#define MyAppExeName "Atomik Integral.exe"
 #define RepoRoot "D:\WORKING_LATESTSHYAM_GUI"
 #define ShyamGui RepoRoot + "\ShyamGui"
 #define AssetsRoot "D:\shayam gui\Assets"
 
 [Setup]
+; Keep AppId fixed across product renames so a new installer upgrades old installs in place.
 AppId={{B7E1C2A4-9D3F-4A18-9C2E-7F5A6B8C9D01}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -21,7 +22,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
 OutputDir={#ShyamGui}\Installer\Output
-OutputBaseFilename=AtomikSimulationEngine-Setup-v{#MyAppVersion}
+OutputBaseFilename=AtomikIntegral-Setup-v{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

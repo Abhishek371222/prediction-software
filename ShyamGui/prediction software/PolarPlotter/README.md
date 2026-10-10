@@ -60,4 +60,4 @@ Then rebuild (or just copy `Data\` next to the EXE).
 
 ## Phase 2 (later)
 
-Heat maps, multi-device interference, measured-directivity engine — same UI direction as Atomik Acoustic Simulation Engine.
+Heat maps, multi-device interference, measured-directivity engine — same UI direction as Atomik Integral.

@@ -1,4 +1,4 @@
-# Start — Atomik Simulation Engine
+# Start — Atomik Integral
 
 How to build and run the Windows app from this repo.
 
@@ -7,13 +7,13 @@ How to build and run the Windows app from this repo.
 Double-click or from a terminal:
 
 ```bat
-ShyamGui\Builds\Release\Atomik Simulation Engine.exe
+ShyamGui\Builds\Release\Atomik Integral.exe
 ```
 
 Debug build:
 
 ```bat
-ShyamGui\Builds\Debug\Atomik Simulation Engine.exe
+ShyamGui\Builds\Debug\Atomik Integral.exe
 ```
 
 Or use the helper (builds Release if missing, then launches):
@@ -34,8 +34,8 @@ From the repo root (PowerShell or cmd):
 
 Use `Configuration=Debug` for a debug build. Output EXE:
 
-- Release → `ShyamGui\Builds\Release\Atomik Simulation Engine.exe`
-- Debug → `ShyamGui\Builds\Debug\Atomik Simulation Engine.exe`
+- Release → `ShyamGui\Builds\Release\Atomik Integral.exe`
+- Debug → `ShyamGui\Builds\Debug\Atomik Integral.exe`
 
 You can also open `ShyamGui\TwoSpeakerExplorer.sln` in Visual Studio and press **F5** / **Ctrl+F5**.
 
@@ -43,7 +43,7 @@ You can also open `ShyamGui\TwoSpeakerExplorer.sln` in Visual Studio and press *
 
 1. Build **Release** as above.
 2. Compile `ShyamGui\Installer\setup.iss` with [Inno Setup](https://jrsoftware.org/isinfo.php).
-3. Setup lands in `ShyamGui\Installer\Output\AtomikSimulationEngine-Setup-v*.exe`.
+3. Setup lands in `ShyamGui\Installer\Output\AtomikIntegral-Setup-v*.exe`.
 
 Q21S measurement data is **embedded** in the EXE — no Excel or `MeasurementIntegrationPack` folder is required next to the app.
 

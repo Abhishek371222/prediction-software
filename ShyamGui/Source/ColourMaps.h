@@ -117,12 +117,18 @@ inline float relDbToColourT (float dB, float floorDB) noexcept
     return juce::jlimit (0.0f, 1.0f, (dB + kRelSplDesignSpanDB) / kRelSplDesignSpanDB);
 }
 
+// The contour step, in dB: how wide one band of the banded SPL map is. One
+// constant, because the map fill and the legend beside it have to agree - a
+// legend that says 6 dB over a map drawn in 3 would be a lie about the very
+// thing it is there to explain.
+inline constexpr float kContourStepDB = 6.0f;
+
 // Hard-banded colour for a relative SPL value in dB (<= 0).
-// Fixed step size (6 dB default, or 3 dB contour bands). Floor clips only.
+// Fixed step size - kContourStepDB. Floor clips only.
 // Contour mode quantises the SAME gradient the legend draws, rather than
 // indexing the 7-entry palette. Indexing only lined up when the step was 6 dB
-// (7 entries x 6 dB = the 0..-36 span); at the UI's 3 dB step it ran out of
-// entries by -18 dB and flattened everything quieter than that to black.
+// (7 entries x 6 dB = the 0..-36 span); at a 3 dB step it ran out of entries
+// by -18 dB and flattened everything quieter than that to black.
 inline juce::Colour splBand (float dB, float stepDB = 6.0f)
 {
     if (stepDB < 0.5f) stepDB = 0.5f;

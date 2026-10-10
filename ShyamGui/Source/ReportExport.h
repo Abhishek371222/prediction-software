@@ -79,7 +79,7 @@ namespace ReportExport
 
         g.setColour (juce::Colours::white);
         g.setFont (Brand::tech (22.0f, true));
-        g.drawText ("ATOMIK ACOUSTIC SIMULATION ENGINE",
+        g.drawText ("ATOMIK INTEGRAL",
                     header.getRight() - 620, y + 22, 600, 28, juce::Justification::centredRight);
         g.setColour (Brand::accent());
         g.setFont (Brand::tech (16.0f, true));
@@ -194,7 +194,7 @@ namespace ReportExport
         g.drawText ("www.atomikaudio.com",
                     margin, y, contentW / 2, 16, juce::Justification::centredLeft);
         g.setFont (Brand::tech (12.0f));
-        g.drawText ("Generated  " + liveStamp() + "    v1.5.0",
+        g.drawText ("Generated  " + liveStamp() + "    v1.4.2",
                     margin + contentW / 2, y, contentW / 2, 16, juce::Justification::centredRight);
 
         return img;

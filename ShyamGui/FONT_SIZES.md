@@ -15,7 +15,7 @@
 
 | Variable | Exact value | Used for |
 |---|---:|---|
-| `appTitle` | **13.0f** | Header: “Atomik Acoustic Simulation Engine” |
+| `appTitle` | **13.0f** | Header: “Atomik Integral - &lt;project&gt;” |
 | `appVersion` | **9.0f** | Header version / build label (`beta_v…`) |
 | `paramChip` | **12.14f** | Top param strip chips (`f = … Hz`, Grid, View, …) |
 | `sectionHeader` | **9.0f** | Sidebar / info section headers |

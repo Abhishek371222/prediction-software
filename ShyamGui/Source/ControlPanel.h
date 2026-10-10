@@ -9,6 +9,85 @@
 #include <functional>
 
 // ---------------------------------------------------------------------------
+// WheelSlider - a sidebar slider the mouse wheel can nudge once it has been
+// clicked. Until then the wheel scrolls the panel as before, so running the
+// wheel down the sidebar never changes a value by accident. Each notch is one
+// step of the slider's own interval; Shift makes it ten.
+// ---------------------------------------------------------------------------
+class WheelSlider : public juce::Slider
+{
+public:
+    void setWheelArmed (bool on)
+    {
+        if (armed_ == on) return;
+        armed_ = on;
+        wheelAccum_ = 0.0f;
+        repaint();
+    }
+
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        if (! armed_ || ! isEnabled() || getMaximum() <= getMinimum())
+        {
+            juce::Component::mouseWheelMove (e, w);   // hand it on: the panel scrolls
+            return;
+        }
+        // Windows can deliver the same wheel event twice.
+        if (e.eventTime == lastWheelTime_) return;
+        lastWheelTime_ = e.eventTime;
+
+        float d = std::abs (w.deltaX) > std::abs (w.deltaY) ? -w.deltaX : w.deltaY;
+        if (w.isReversed) d = -d;
+
+        int notches = 0;
+        if (w.isSmooth)
+        {
+            // A trackpad sends many small deltas; collect them into steps.
+            constexpr float kPerStep = 0.15f;
+            wheelAccum_ += d;
+            notches = (int) (wheelAccum_ / kPerStep);
+            wheelAccum_ -= (float) notches * kPerStep;
+        }
+        else
+        {
+            notches = d > 0.0f ? 1 : (d < 0.0f ? -1 : 0);
+        }
+        if (notches == 0) return;
+
+        // A burst of notches is one edit, so it undoes in one go.
+        const auto now = juce::Time::getMillisecondCounter();
+        if (now - lastWheelMs_ > 600 && onDragStart) onDragStart();
+        lastWheelMs_ = now;
+
+        // Typing into the value box and then wheeling keeps what was typed.
+        for (auto* c : getChildren())
+            if (auto* l = dynamic_cast<juce::Label*> (c))
+                l->hideEditor (false);
+
+        const double interval = getInterval() > 0.0 ? getInterval()
+                                                    : (getMaximum() - getMinimum()) / 100.0;
+        const double step = interval * (e.mods.isShiftDown() ? 10.0 : 1.0);
+        setValue (juce::jlimit (getMinimum(), getMaximum(), getValue() + notches * step),
+                  juce::sendNotificationSync);
+    }
+
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (! armed_ || ! isEnabled()) return;
+        const auto box = getLookAndFeel().getSliderLayout (*this).textBoxBounds.toFloat();
+        if (box.isEmpty()) return;
+        g.setColour (Brand::accent());
+        g.drawRoundedRectangle (box.reduced (0.75f), 2.0f, 1.5f);
+    }
+
+private:
+    bool         armed_ = false;
+    float        wheelAccum_ = 0.0f;
+    juce::Time   lastWheelTime_;
+    juce::uint32 lastWheelMs_ = 0;
+};
+
+// ---------------------------------------------------------------------------
 // ControlPanel - owns the editable scene (speaker list + global settings) and
 // is the single source of truth for SimParams. Any edit fires onChanged so
 // MainComponent can recompute; speaker drags in the renderer are pushed back
@@ -104,6 +183,9 @@ public:
     void setSpeakerPosition (int index, float x, float y);
     /** Heading in degrees, already snapped by the plot's rotation handle. */
     void setSpeakerRotation (int index, float deg);
+    /** Plot -> model: the aim line's hide state lives with the speaker, and
+        the plot only ever holds a COPY of the speaker list. */
+    void setSpeakerAimLine (int index, bool show);
     void selectSpeaker (int index);
     /** Sync plot multi-select into the panel (primary drives the editor values). */
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
@@ -145,6 +227,10 @@ private:
     void pushPositionEdit();  // X/Y only - avoids quantizing snapped positions
     void syncPositionRanges();   // X/Y slider spans follow the world extent
     void pushSharedEdit();
+    /** Typed heading -> every selected cabinet. Separate from pushSharedEdit
+        because turning a cabinet changes where its sound goes, so it has to
+        re-solve, and because X/Y must not be re-quantized on the way. */
+    void pushRotationEdit();
     void syncFilterEnabled();    // gain/delay/polarity/orientation/enabled (multi-select)
     void notifyChanged();
     /** Height / tilt only. These describe the rig, not the sound field, so
@@ -204,21 +290,31 @@ private:
     // Per-speaker editors
     SectionHeader editHdr_ { "3. Selected Q21S" };
     juce::Label  xLabel_,  yLabel_,  gainLabel_,  delayLabel_;
-    juce::Slider xSlider_, ySlider_, gainSlider_, delaySlider_;
+    WheelSlider xSlider_, ySlider_, gainSlider_, delaySlider_;
+    // Heading, typed. The plot can be turned by hand - a ray on a top, the
+    // stalk and knob on a sub - but neither gets you to exactly 37 degrees.
+    juce::Label  rotLabel_;
+    WheelSlider rotSlider_;
     juce::Label  heightLabel_, tiltLabel_;
-    juce::Slider heightSlider_, tiltSlider_;
+    WheelSlider heightSlider_, tiltSlider_;
     juce::ToggleButton polarityToggle_, orientationToggle_, enabledToggle_;
     // Crossover on the selected cabinet(s). The maths is in AcousticEngine.h.
     juce::Label    filtLabel_, filtTypeLabel_, filtOrderLabel_, filtFreqLabel_;
     juce::ComboBox filtBox_, filtTypeBox_, filtOrderBox_;
-    juce::Slider   filtFreqSlider_;
+    WheelSlider    filtFreqSlider_;
+    // The band pass's upper end. It keeps its own family and order because
+    // BandPass.m gives each section its own, and it stays on screen greyed
+    // out rather than appearing and vanishing with the Filter choice.
+    juce::Label    filtHiTypeLabel_, filtHiOrderLabel_, filtHiFreqLabel_;
+    juce::ComboBox filtHiTypeBox_, filtHiOrderBox_;
+    WheelSlider    filtHiFreqSlider_;
 
     // Global
     SectionHeader globalHdr_ { "4. Simulation" };
     juce::Label  resLabel_;
-    juce::Slider resSlider_;
+    WheelSlider  resSlider_;
     juce::Label  floorLabel_;
-    juce::Slider floorSlider_;
+    WheelSlider  floorSlider_;
     juce::ToggleButton bandsToggle_;
     // Measured directivity is always on (Q21S BEM) - no UI toggle.
 
@@ -237,7 +333,7 @@ private:
     juce::TextButton   importLayoutBtn_, removeLayoutBtn_;
     juce::ToggleButton layoutVisibleToggle_, layoutLockToggle_, layoutEditToggle_, layoutSnapToggle_;
     juce::Label        layoutWidthLabel_, layoutRotLabel_, layoutOpacityLabel_;
-    juce::Slider       layoutWidthSlider_, layoutRotSlider_, layoutOpacitySlider_;
+    WheelSlider        layoutWidthSlider_, layoutRotSlider_, layoutOpacitySlider_;
 
     // Array presets
     SectionHeader      presetHdr_ { "6. Array presets" };
@@ -269,6 +365,18 @@ private:
     void updateModelDependentLabels();      // headers, tooltip, speaker list prefix
 
     void styleSlider (juce::Slider&, double lo, double hi, double step, double val);
+
+    // The wheel adjusts the slider clicked last, and only that one; a click
+    // anywhere else, in the panel or out of it, hands the wheel back to
+    // scrolling. Listens app-wide so a click on the plot counts too.
+    struct WheelArm : juce::MouseListener
+    {
+        explicit WheelArm (ControlPanel& o) : owner (o) {}
+        void mouseDown (const juce::MouseEvent& e) override { owner.armWheelFor (e.eventComponent); }
+        ControlPanel& owner;
+    };
+    WheelArm wheelArm_ { *this };
+    void armWheelFor (juce::Component* clicked);
     void styleToggle (juce::ToggleButton&, const juce::String&);
     void updateScaledChrome();
 

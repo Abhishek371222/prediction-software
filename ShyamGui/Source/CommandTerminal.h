@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "BrandTheme.h"
 #include "CommandRegistry.h"
+#include "ToolWindow.h"
 #include <deque>
 #include <functional>
 #include <vector>
@@ -457,21 +458,18 @@ private:
 // ---------------------------------------------------------------------------
 // Floating terminal window - undocked from the main bottom panel.
 // ---------------------------------------------------------------------------
-class TerminalFloatWindow : public juce::DocumentWindow
+class TerminalFloatWindow : public ToolWindow
 {
 public:
     TerminalFloatWindow (CommandTerminal& terminal, std::function<void()> onRequestDock)
-        : DocumentWindow ("Terminal",
-                          Brand::panelDark(),
-                          DocumentWindow::closeButton | DocumentWindow::minimiseButton),
+        : ToolWindow ("Terminal"),
           onRequestDock_ (std::move (onRequestDock))
     {
-        setUsingNativeTitleBar (true);
         setResizable (true, false);
         // false: do not shrink/grow the float when content bounds change (avoids
         // looking "minimised" when the host layouts other UI).
-        setContentNonOwned (&terminal, false);
-        setResizeLimits (420, 220, 1600, 1000);
+        setToolContent (terminal, false);
+        setResizeLimits (420, 250, 10000, 10000);
         centreWithSize (720, 380);
     }
 
@@ -488,12 +486,6 @@ public:
         if (key.isKeyCode (juce::KeyPress::escapeKey))
             return true;
         return DocumentWindow::keyPressed (key);
-    }
-
-    void lookAndFeelChanged() override
-    {
-        DocumentWindow::lookAndFeelChanged();
-        setBackgroundColour (Brand::panelDark());
     }
 
 private:

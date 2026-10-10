@@ -25,7 +25,7 @@ The screen is a 4-region layout, matching the current JUCE app's overall structu
 
 1. **Header / ribbon** — `y = 0` to `132` (full width, 1920 wide). Two stacked bars:
    - Row 1 (`y=0..58`, 58px tall): logo, "Auto Save" checkbox+label, centered document title
-     ("Atomik Simulation Engine - Atomik"), right-aligned "Statistics" label and a red
+     ("Atomik Simulation Engine - Atomik" in Figma; the app now reads "Atomik Integral - <project>"), right-aligned "Statistics" label and a red
      "● Ready" status pill.
    - Row 2 (`y=58..132`, 74px tall): the main toolbar — grouped icon clusters for File,
      Navigation, View, Tools, Shapes, Colours, Help, each with a text label centered below the

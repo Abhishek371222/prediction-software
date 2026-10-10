@@ -17,7 +17,7 @@ screenshot (exact bounding boxes, glyph shapes identified from the downloaded ic
 | Logo mark ("Horizontal Logo - Black 1", `1:701`) | 20 | 20 | 94 | 18 | Angular wordmark "ATOMIK•" — see `figma_logo_atomik_horizontal_black.png` |
 | "Auto Save" checkbox box (`1:699` "Rectangle 576") | 143 | 19 | 20 | 20 | Unchecked square checkbox |
 | "Auto Save" label (`1:698`) | 173 | 19 | 85.17 | 20.39 | |
-| Document title (`1:694`) | 815 | 20 | 289 | 20 | "Atomik Simulation Engine - Atomik", centered-ish in the 1920 width (815+289/2 ≈ 959.5, canvas center = 960 — confirmed centered) |
+| Document title (`1:694`) | 815 | 20 | 289 | 20 | "Atomik Simulation Engine - Atomik" in the Figma file (the app now reads "Atomik Integral - &lt;project&gt;"), centered-ish in the 1920 width (815+289/2 ≈ 959.5, canvas center = 960 — confirmed centered) |
 | "Statistics" label (`1:700`) | 1414.74 | 86.375 | 77.97 | 20.39 | Sits at y=86, which is actually inside Row 2's vertical band — likely a label for a toolbar-row element, not Row 1 |
 | "Ready" status group (`1:689`/`1:690`) | 1784 | 87 | 76 | 18 | Also in Row 2's band |
 | Status dot (ellipse `1:692`) | 1784 | 88 | 16 | 16 | Red filled circle |

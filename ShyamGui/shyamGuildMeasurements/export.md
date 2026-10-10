@@ -1,4 +1,4 @@
-# Atomik — Export Reference
+# Atomik Integral — Export Reference
 
 What the app can export, where each action lives, and what the output contains.
 
@@ -27,7 +27,7 @@ A simulation result must exist for PNG / SPL CSV / SVG / PDF (status: “Nothing
 - Wraps the plot in Atomik branding: logo header, project metadata block, plot, footer.
 
 **Contents of the sheet**
-- Header: Atomik logo + “ACOUSTIC SIMULATION ENGINE” + title (e.g. SPL Coverage Heatmap)
+- Header: Atomik logo + “ATOMIK INTEGRAL” + title (e.g. SPL Coverage Heatmap)
 - Project details from the open project
 - Embedded plot (heatmap / polar / whatever is currently shown)
 - Footer with software / data notes
@@ -47,7 +47,7 @@ A simulation result must exist for PNG / SPL CSV / SVG / PDF (status: “Nothing
 
 **Format**
 ```text
-# Atomik Acoustic Simulation Engine - relative SPL (dB)
+# Atomik Integral - relative SPL (dB)
 # peak=0 dB; negative = quieter; not absolute SPL
 # frequency_Hz,…,rows,…,cols,…,worldW_m,…,worldH_m,…,dbFloor_display_only,…
 # matrix: row0 = world Y=0 (bottom); col0 = world X=0 (left)
@@ -70,17 +70,17 @@ A simulation result must exist for PNG / SPL CSV / SVG / PDF (status: “Nothing
 - **\<N\> Hz** — single file for that band  
 
 **Code:** `exportDirectivityAllFrequencies()` / `exportDirectivityOneFrequency()` → `MeasurementData::exportCurveSheet()` / `writeAtomikDirectivitySheet()`  
-**File:** `Atomik_Directivity_<Hz>Hz_<dist>.csv` (e.g. `Atomik_Directivity_50Hz_1p0m.csv`)
+**File:** `Atomik_Directivity_<Hz>Hz_<dist>(AtomikIntegral).csv` (e.g. `Atomik_Directivity_50Hz_1p0m(AtomikIntegral).csv`)
 
 **What it does**
-- Exports the **in-app measured polar curve** (Ground Plane / Maths / Room set currently loaded), branded as Atomik Prediction Software.
+- Exports the **in-app measured polar curve** (Ground Plane / Maths / Room set currently loaded), branded as Atomik Integral.
 - Does **not** copy third-party VACS source files; writes Atomik sheets from our curve data.
 
 **Format (VACS-style header + CSV data block)**
 ```text
 SourceDesc=Atomik_Data_Text
 Version='beta_v1.3.0'
-Author='Atomik Prediction Software'
+Author='Atomik Integral'
 
 StartString_Data=Data
 EndString_Data=Data_End

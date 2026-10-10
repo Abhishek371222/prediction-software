@@ -70,13 +70,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(ProjectDir)Builds\Debug\</OutDir>
     <IntDir>$(ProjectDir)Builds\obj\Debug\</IntDir>
-    <TargetName>Atomik Simulation Engine</TargetName>
+    <TargetName>Atomik Integral</TargetName>
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)Builds\Release\</OutDir>
     <IntDir>$(ProjectDir)Builds\obj\Release\</IntDir>
-    <TargetName>Atomik Simulation Engine</TargetName>
+    <TargetName>Atomik Integral</TargetName>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
 

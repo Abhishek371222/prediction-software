@@ -2,6 +2,7 @@
 #include "PreferencesComponent.h"
 #include "InfoDialogComponent.h"
 #include "ReportExport.h"
+#include "ImageClipboard.h"
 #include "ReportBuilder.h"
 #include "AcousticAnalysis.h"
 #include "GraphRender.h"
@@ -45,7 +46,7 @@ MainComponent::MainComponent (ProjectData project)
 {
     logo_ = Brand::createLogo (Brand::text());
 
-    titleLabel_.setText ("Atomik Simulation Engine",
+    titleLabel_.setText ("Atomik Integral",
                          juce::dontSendNotification);
     titleLabel_.setMinimumHorizontalScale (1.0f);
     titleLabel_.setBorderSize ({});
@@ -57,7 +58,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.5.0", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.2", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -220,6 +221,10 @@ MainComponent::MainComponent (ProjectData project)
     {
         patternComp_.setShowDistanceRings (plotHeader_.rangeBtn_.getToggleState());
     };
+    plotHeader_.btnMagnify_.onClick  = [this]
+    {
+        patternComp_.setMagnifier (plotHeader_.btnMagnify_.getToggleState());
+    };
     plotHeader_.btnZoomIn_.onClick   = [this] { patternComp_.zoomIn(); };
     plotHeader_.btnZoomOut_.onClick  = [this] { patternComp_.zoomOut(); };
     plotHeader_.btnSelect_.onClick   = [this]
@@ -321,8 +326,13 @@ MainComponent::MainComponent (ProjectData project)
             {
                 showFrequencyResponseWindow();
             }
+            else if (itemId == 5)
+            {
+                patternComp_.setShowMicCoords (! patternComp_.showMicCoords());
+            }
         }, hasMics, patternComp_.showMicDegrees(),
-           ! patternComp_.rangeRings().empty());
+           ! patternComp_.rangeRings().empty(),
+           patternComp_.showMicCoords());
     };
     patternComp_.onAddMicArmedChanged = [this]
     {
@@ -491,6 +501,7 @@ MainComponent::MainComponent (ProjectData project)
         commitEdit();
     };
     patternComp_.onListenAtMic = [this] (int idx) { showMicListener (idx); };
+    patternComp_.onCopyImage   = [this] { copyPlotToClipboard(); };
     patternComp_.onAnnotSelectionChanged = [this]
     {
         // Swatch + opacity follow the selected shape (or the draw brush if none).
@@ -721,6 +732,12 @@ MainComponent::MainComponent (ProjectData project)
     {
         controlPanel_.setSpeakerRotation (idx, deg);
         scheduleRecompute();
+    };
+    // Display only - nothing to re-solve, but it has to reach the model or it
+    // would not be saved and the next push would wipe it.
+    patternComp_.onSpeakerAimLineChanged = [this] (int idx, bool show)
+    {
+        controlPanel_.setSpeakerAimLine (idx, show);
     };
     patternComp_.onWillEdit = [this] { willEdit(); };
     patternComp_.onEditCommitted = [this] { commitEdit(); };
@@ -2589,8 +2606,8 @@ void MainComponent::refreshTitleLabel()
 {
     const auto name = project_.displayName();
     const juce::String text = name.isNotEmpty()
-                                ? "Atomik Simulation Engine - " + name
-                                : juce::String ("Atomik Simulation Engine");
+                                ? "Atomik Integral - " + name
+                                : juce::String ("Atomik Integral");
     if (titleLabel_.getText() != text)
     {
         titleLabel_.setText (text, juce::dontSendNotification);
@@ -2933,16 +2950,22 @@ void MainComponent::refreshFrequencyResponse()
             p.frequency = kSupportedFrequencies[hi];
             if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
             else                                         p.frequencyQ21S   = p.frequency;
+            // The REAL level at this mic, in calibrated dB SPL. This used to
+            // store intensityDb, which is relative to the map peak at each
+            // frequency - so the plot could not show what a filter, a gain or
+            // a delay actually did to the sound. absDb falls back to the
+            // relative figure when the device carries no calibration.
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
                                                    intensityDb, absDb))
-                curves[mi][(size_t) hi] = intensityDb;
+                curves[mi][(size_t) hi] = absDb;
             else
                 curves[mi][(size_t) hi] = -120.0f;
         }
     }
 
-    frWindow_->content.setCurves (mics, curves, frRefMic_);
+    frWindow_->content.setCurves (mics, curves, frRefMic_,
+                                  patternComp_.resultHasAbsoluteSpl());
 }
 
 bool MainComponent::buildMicCurve (int micIndex,
@@ -2956,7 +2979,20 @@ bool MainComponent::buildMicCurve (int micIndex,
     // The SAME probe the Frequency Response window uses, so what you hear and
     // what that graph draws cannot drift apart - and both come off the engine
     // that drew the heatmap.
-    SimParams base = controlPanel_.getParams();
+    //
+    // That means attaching the measurement tables, which this did not do. The
+    // probe then ran with no measured directivity and no calibration: an omni,
+    // uncalibrated source. What you heard had no off-axis roll-off in it and
+    // its level was the map-relative figure rather than dB SPL, so the Listen
+    // window and the Frequency Response window disagreed about the same mic.
+    SimParams base;
+    {
+        juce::ScopedLock sl (measLock_);
+        base = controlPanel_.getParams();
+        base.directivity         = directivityQ21STables_;
+        base.directivityBEM2inch = directivityBEM2inchTables_;
+        base.bemFields           = bemFieldTablesQ21S_;
+    }
     const int browsedModel = controlPanel_.getBrowsedModel();
 
     curve.reserve ((size_t) kNumSupportedFrequencies);
@@ -2967,11 +3003,13 @@ bool MainComponent::buildMicCurve (int micIndex,
         if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
         else                                         p.frequencyQ21S     = p.frequency;
 
+        // Calibrated dB SPL, not the map-relative figure - see
+        // refreshFrequencyResponse().
         float intensityDb = 0.0f, absDb = 0.0f;
         if (AcousticEngine::sampleIntensityAt (p, mics[(size_t) micIndex].x,
                                                mics[(size_t) micIndex].y,
                                                intensityDb, absDb))
-            curve.push_back ({ p.frequency, intensityDb });
+            curve.push_back ({ p.frequency, absDb });
     }
     if (curve.empty()) return false;
 
@@ -3054,14 +3092,37 @@ float MainComponent::parseLength (const juce::String& raw)
     return (float) (v * mult);
 }
 
+juce::StringArray MainComponent::splitLengthList (const juce::String& raw)
+{
+    // Commas, semicolons, new lines and spaces all separate entries, so a
+    // comma is a list separator here and never a decimal point. A unit typed
+    // after a space ("6 ft") stays with the number in front of it.
+    juce::StringArray words;
+    words.addTokens (raw.replaceCharacters (",;", "  "), " \t\r\n", {});
+    words.removeEmptyStrings();
+
+    juce::StringArray items;
+    for (const auto& w : words)
+    {
+        const auto c = w[0];
+        const bool unitOnly = juce::CharacterFunctions::isLetter (c) || c == '\'' || c == '"';
+        if (unitOnly && items.size() > 0)
+            items.getReference (items.size() - 1) << " " << w;
+        else
+            items.add (w);
+    }
+    return items;
+}
+
 void MainComponent::promptForRange()
 {
-    auto* w = new juce::AlertWindow ("Add range ring",
-                                     "Distance from each speaker. Metres or feet - "
-                                     "type 2, 2 m, 6 ft, 18 in.",
+    auto* w = new juce::AlertWindow ("Add range rings",
+                                     "Distance from each speaker. Add one or several at once, "
+                                     "separated by commas or spaces - e.g. 2, 4, 8, 16 or "
+                                     "5 m, 20 ft. Use a dot for decimals (2.5).",
                                      juce::MessageBoxIconType::NoIcon);
-    w->addTextEditor ("dist", "", "Distance");
-    w->addButton ("Add",    1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addTextEditor ("dist", "", "Distances");
+    w->addButton ("Apply",  1, juce::KeyPress (juce::KeyPress::returnKey));
     w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     // Put the caret in the box. Without this the window takes focus but the
     // editor does not, so you type into nothing and Add reads an empty field.
@@ -3078,18 +3139,46 @@ void MainComponent::promptForRange()
             std::unique_ptr<juce::AlertWindow> owner (w);
             if (res != 1) return;
 
-            const float m = parseLength (typed);
-            if (m <= 0.0f)
+            std::vector<float> wanted;
+            juce::StringArray unreadable;
+            for (const auto& item : splitLengthList (typed))
             {
-                reportStatus ("Could not read \"" + typed + "\" as a distance.", false);
+                const float m = parseLength (item);
+                if (m > 0.0f) wanted.push_back (m);
+                else          unreadable.add ("\"" + item + "\"");
+            }
+
+            if (wanted.empty())
+            {
+                reportStatus (unreadable.isEmpty()
+                                  ? juce::String ("No distance entered.")
+                                  : "Could not read " + unreadable.joinIntoString (", ")
+                                        + " as a distance.", false);
                 return;
             }
+
+            // One undo step for the whole batch.
             willEdit();
-            const bool added = patternComp_.addRangeRing (m);
+            juce::StringArray added, existing;
+            for (float m : wanted)
+            {
+                const auto label = RadiationPatternComponent::rangeRingLabel (m);
+                if (patternComp_.addRangeRing (m)) added.addIfNotAlreadyThere (label);
+                else                               existing.addIfNotAlreadyThere (label);
+            }
             commitEdit();
-            if (! added)
-                reportStatus ("There is already a range at "
-                              + RadiationPatternComponent::rangeRingLabel (m) + ".", false);
+
+            juce::String msg;
+            if (! added.isEmpty())
+                msg << "Added " << (added.size() == 1 ? "range " : "ranges ")
+                    << added.joinIntoString (", ") << ".";
+            if (! existing.isEmpty())
+                msg << (msg.isEmpty() ? "" : " ") << "Already there: "
+                    << existing.joinIntoString (", ") << ".";
+            if (! unreadable.isEmpty())
+                msg << (msg.isEmpty() ? "" : " ") << "Could not read "
+                    << unreadable.joinIntoString (", ") << ".";
+            reportStatus (msg, unreadable.isEmpty() && existing.isEmpty());
         }), false);
 }
 
@@ -3176,7 +3265,7 @@ void MainComponent::launchNewProjectInstance()
         juce::AlertWindow::showMessageBoxAsync (
             juce::AlertWindow::WarningIcon,
             "New Project",
-            "Could not start a new Atomik instance.");
+            "Could not start a new Atomik Integral instance.");
     }
 }
 
@@ -3255,7 +3344,7 @@ void MainComponent::loadProjectFile (const juce::File& f)
     reportStatus ("Opened: " + project_.displayName(), true);
 
     if (auto* w = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()))
-        w->setName ("Atomik Simulation Engine - " + project_.displayName());
+        w->setName ("Atomik Integral - " + project_.displayName());
 }
 
 void MainComponent::updateViewButtonHighlights()
@@ -3332,6 +3421,42 @@ void MainComponent::exportPNG()
                 reportStatus ("Saved: " + f.getFileName(), true);
             }
         });
+}
+
+void MainComponent::copyPlotToClipboard()
+{
+    // Rendered at 2x and handed over at that size, like the PNG export: a
+    // picture that leaves the app is likely to be looked at closely, or
+    // dropped into a document that scales it, and the screen resolution is
+    // the one size it is guaranteed to be wrong at.
+    const int pw = juce::jmax (1, patternComp_.getWidth());
+    const int ph = juce::jmax (1, patternComp_.getHeight());
+
+    juce::Image shot (juce::Image::RGB, pw * 2, ph * 2, true);
+    {
+        juce::Graphics g (shot);
+        g.addTransform (juce::AffineTransform::scale (2.0f));
+        patternComp_.paintEntireComponent (g, false);
+
+        // The "SPL Gradient Plot | n devices | f Hz" caption looks like part
+        // of the canvas but is a MainComponent child sitting over it, so the
+        // plot's own render leaves it out. Pasted somewhere else the picture
+        // has nothing else to say what it is of, which is exactly when that
+        // line is worth most - so it is drawn in at the place it appears.
+        auto& caption = plotHeader_.getTitleLabel();
+        if (caption.isVisible() && ! caption.getBounds().isEmpty())
+        {
+            const auto where = patternComp_.getLocalArea (&caption, caption.getLocalBounds());
+            juce::Graphics::ScopedSaveState ss (g);
+            g.setOrigin (where.getX(), where.getY());
+            caption.paintEntireComponent (g, false);
+        }
+    }
+
+    if (ImageClipboard::copyImage (shot))
+        reportStatus ("Plot copied to the clipboard.", true);
+    else
+        reportStatus ("Could not reach the clipboard.", false);
 }
 
 void MainComponent::exportPdfReport()
@@ -3566,7 +3691,7 @@ void MainComponent::exportCSV()
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Simulation Engine v1.5.0");
+            line ("# Atomik Integral v1.4.2");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

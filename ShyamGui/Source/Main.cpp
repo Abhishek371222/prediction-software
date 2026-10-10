@@ -6,8 +6,8 @@
 class TwoSpeakerApp : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName()    override { return "Atomik Simulation Engine"; }
-    const juce::String getApplicationVersion() override { return "1.5.0"; }
+    const juce::String getApplicationName()    override { return "Atomik Integral"; }
+    const juce::String getApplicationVersion() override { return "1.4.2"; }
     bool moreThanOneInstanceAllowed()          override { return true; }
 
     void initialise (const juce::String& /*commandLine*/) override
@@ -95,7 +95,7 @@ public:
     {
     public:
         explicit DashboardWindow (std::function<void(ProjectData)> onReady)
-            : DocumentWindow ("Atomik - Project Dashboard", Brand::base(),
+            : DocumentWindow ("Atomik Integral - Project Dashboard", Brand::base(),
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);

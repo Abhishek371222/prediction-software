@@ -1,5 +1,5 @@
 """Generate a styled Excel changelog (CHANGELOG.xlsx) for the
-Atomik Simulation Engine, mirroring CHANGELOG.md."""
+Atomik Integral, mirroring CHANGELOG.md."""
 
 import os
 from openpyxl import Workbook
@@ -105,10 +105,41 @@ wb = Workbook()
 ws = wb.active
 ws.title = "Overview"
 ws.sheet_view.showGridLines = False
-banner(ws, "Atomik Simulation Engine - Changelog",
+banner(ws, "Atomik Integral - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.2", "2026-10-09", "Filters reach every view; real dB SPL on both FR plots",
+     "The crossover was applied inside the smoothed band sum the SPL map is built from "
+     "and nowhere else, so the single-frequency pressure field, the incoherent sum and "
+     "the Directivity polar were drawn from the unfiltered signal; H now multiplies the "
+     "complex pressure in all of them, and is taken at the frequency being propagated "
+     "rather than the browsed model's own catalogue frequency; both frequency-response "
+     "displays read calibrated dB SPL on an axis anchored on first data instead of a "
+     "map-relative figure re-centred every solve; the Listen window's probe was running "
+     "with no directivity tables and no calibration; the view no longer snaps back to "
+     "the same framing after every edit; subs carry no aiming ray; mic X / Y printed on "
+     "the map with a Show Coordinates toggle; right-click > Copy image to clipboard; "
+     "Frequency Response window laid out from its own size"],
+    ["1.4.1", "2026-10-08", "Crossover filters on any cabinet (was 1.5.0)",
+     "Off / Low pass / High pass, Linkwitz-Riley or Butterworth, 2nd or 4th order at a "
+     "corner you set, applied to the whole selection and saved with the project; the "
+     "analogue prototypes evaluated at the run frequency, verified against the reference "
+     "implementation over 288 combinations (largest difference 0.000e+00); H applied to "
+     "the complex pressure so phase moves with level, evaluated at every smoothing "
+     "sub-band; ranges can be hidden without being forgotten; mic ring snap no longer "
+     "pulls on a hard-coded 1 / 2 / 4 / 8 m set that was drawn nowhere. Renumbered from "
+     "1.5.0 to keep the line on 1.4.x - same build"],
+    ["1.4.0.9", "2026-10-06", "Mapping ribbon, planes that act, listening at a mic",
+     "Home / Mapping ribbon tabs; aiming rays grabbable anywhere along their length, "
+     "with Lock Rays and whole-selection turning; shapes markable as Listening, Virtual "
+     "or Architectural planes, each with its own stroke, stopping rays or letting them "
+     "through, reporting coverage from the solved grid and clipping the SPL map to the "
+     "audience; Listening height (Seated / Standing) as documentation only; Show Values "
+     "across the map; range rings at any distance typed, metric or imperial; listen at a "
+     "mic with the sound following as you drag; rotation for rectangles and squares; "
+     "click again to reach what is underneath; text box rebuild; MP3 loads (the build "
+     "had no audio backends compiled in at all)"],
     ["1.4.0.7", "2026-09-28", "Rotation handle + sketch sizes + 3D cabinet view",
      "5-degree rotation handle on selected units (rotationDeg saved, re-solves the field); "
      "plan footprints from the placement sketch (Q21S 900 x 1000 mm, BEM 2inch 500 x 500 mm); "

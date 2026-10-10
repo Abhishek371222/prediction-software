@@ -1,7 +1,7 @@
 # Directivity & Measured Polar — Behaviour Guide
 
 A sound-engineering / maths description of how the two polar views behave in
-**Atomik Simulation Engine**, what each drawn element means, and where the
+**Atomik Integral**, what each drawn element means, and where the
 underlying data comes from.
 
 This note is **not** a coding guide. It is for people who think in **dB, angles,

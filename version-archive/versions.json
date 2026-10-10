@@ -1,6 +1,63 @@
 {
-    "generatedAt": "2026-09-28T20:55:00.000Z",
+    "generatedAt": "2026-10-09T19:30:00.000Z",
     "versions": [
+        {
+            "version": "1.4.2",
+            "notes": "The crossover now reaches every view: it was applied inside the smoothed band sum the SPL map is built from and nowhere else, leaving the single-frequency pressure field, the incoherent sum and the Directivity polar drawn from the unfiltered signal. It is also taken at the frequency actually being propagated rather than the browsed model's own catalogue frequency, which only matched in a single-model scene. Both frequency-response displays now read calibrated dB SPL on an axis anchored when the first curve arrives, instead of a map-relative figure on a scale that re-centred on every solve - so a filter, a gain or a delay is visible as a change in level. The Listen window's probe was running with no directivity tables and no calibration and now gets the real ones. The view no longer snaps back to the same framing after every edit. Subs carry no aiming ray, as ArrayCalc and EASE Focus steer low end by array geometry and delay rather than by pointing a cabinet. Added: each mic prints its X, Y beside its marker in the unit on show, with a Show Coordinates toggle; right-click the plot to copy the canvas to the clipboard at 2x, caption included, ready to paste anywhere. The Frequency Response window is laid out from its own size - the dB span fits the data, gridlines and ticks thin themselves, the legend steps aside when narrow - and the crossover row labels scale like every other sidebar label.",
+            "createdAt": "2026-10-09T19:30:00.000Z",
+            "updatedAt": "2026-10-09T19:30:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.2/Atomik-Windows-v1.4.2.exe",
+                    "size": 6476680
+                }
+            }
+        },
+        {
+            "version": "1.4.1",
+            "notes": "Crossover filters on any cabinet. Select a speaker and choose Off / Low pass / High pass, Linkwitz-Riley or Butterworth, 2nd or 4th order, at a corner you set; the settings apply to the whole selection and save with the project. The transfer functions are the analogue prototypes evaluated at the run frequency, verified against the reference implementation over 288 combinations with a largest difference of 0.000e+00. H is applied to the complex pressure, so a crossover moves phase as well as level and therefore moves where cabinets sum and cancel, and it is evaluated at every smoothing sub-band rather than once at the band centre. Ranges can be hidden without being forgotten. Fixes: mics snapped to a hard-coded 1 / 2 / 4 / 8 m ring set that was drawn nowhere; Place on ring now offers the ranges you actually added. Previously numbered 1.5.0 - same build, renumbered to keep the line on 1.4.x; this EXE still reports 1.5.0 in its own file properties.",
+            "createdAt": "2026-10-08T14:27:00.000Z",
+            "updatedAt": "2026-10-08T14:27:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.1/Atomik-Windows-v1.4.1.exe",
+                    "size": 6469512
+                }
+            }
+        },
+        {
+            "version": "1.4.0.9",
+            "notes": "Home / Mapping ribbon tabs. Aiming rays out of every speaker, grabbable anywhere along their length to turn it, with Lock Rays and whole-selection turning. Any shape can be marked a Listening, Virtual or Architectural plane, each with its own stroke: Listening and Architectural planes stop a ray, a Virtual plane lets it through, and a Listening plane clips the SPL map to the audience and reports coverage from the solved grid on its tag. Listening height (Seated 1.2 m / Standing 1.7 m) documents a plane and deliberately does not feed the prediction. Show Values prints the predicted level across the map. Range rings at any distance you type, metric or imperial, with chips to delete them. Listen at a mic: a track or pink noise filtered to what the engine predicts at that point, following the mic as you drag it. Rectangles and squares rotate. A second click reaches the shape underneath. Fixes: text boxes keep their font and colour when edited, rotate with their box and measure in line boxes; Frequency Response no longer flat with one mic; deleting a mic or closing the Listen window stops the audio; the ribbon no longer runs over the Ready pill; MP3 loads (the build had no audio backends compiled in at all).",
+            "createdAt": "2026-10-06T18:35:00.000Z",
+            "updatedAt": "2026-10-06T18:35:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.0.9/Atomik-Windows-v1.4.0.9.exe",
+                    "size": 6453128
+                }
+            }
+        },
         {
             "version": "1.4.0.7",
             "notes": "Speakers can be aimed: selected units show a handle off their front face that turns the cabinet in 5-degree steps, with the live angle beside the knob. The heading is saved per speaker (older projects open pointing +x as before) and is a real change of firing direction, so rotating re-solves the field. Plan footprints now follow the placement sketch - Q21S 900 x 1000 mm, BEM 2inch 500 x 500 mm - with heights unchanged; the engine's near-field floor follows the new depths (Q21S 512 -> 500 mm, horn 75 -> 250 mm), so levels right beside a cabinet move slightly while the far field does not. A Show sizes checkbox dimensions every cabinet on the plan (W along the baffle, D along the firing axis, H called out as vertical), and Speaker Properties gains View in 3D: the cabinet as a draggable solid with a red baffle and W / H / D marked on its own edges. All non-ASCII text removed from the UI, fixing the mojibake in the Properties dialog and two tooltips. Elevation views, per-speaker height / tilt and Z / F shortcuts are built but hidden behind a flag. Q21S, BEM 2inch and UI assets embedded.",

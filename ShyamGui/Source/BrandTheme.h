@@ -243,6 +243,8 @@ namespace Brand
         constexpr float plotToolbarLabel   = UiConfig::FontSize::plotToolbarLabel;
         constexpr float ribbonOpacityLabel = UiConfig::FontSize::ribbonOpacityLabel;
         constexpr float ribbonClusterLabel = UiConfig::FontSize::ribbonClusterLabel;
+        constexpr float ribbonTabLabel     = UiConfig::FontSize::ribbonTabLabel;
+        constexpr float ribbonPillText     = UiConfig::FontSize::ribbonPillText;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle         = UiConfig::FontSize::prefsTitle;
@@ -883,10 +885,19 @@ namespace Brand
             if (id == "ribbonStyle")
                 // The ribbon toggles were falling through to the generic cap
                 // below, which at a 21 px button height left them near 10 px -
-                // half the size of the combo sitting right beside them. Match
-                // the combo ("Mapping Off"), which is Type::sidebarMainValue.
-                return techMed (juce::jmin (UI::scaledFont (Type::sidebarMainValue),
-                                            (float) buttonHeight * 0.80f));
+                // half the size of the combo sitting right beside them.
+                //
+                // The height cap is what makes this responsive: the ribbon
+                // shrinks its own geometry as the window narrows, so the pill
+                // gets shorter and the text follows it down. 0.95 lets the
+                // text use nearly the whole pill instead of two thirds of it,
+                // and the floor keeps a narrow window readable rather than
+                // letting the cap run the text into the ground. Over-asking is
+                // safe: JUCE fits the text to the button and shrinks it again
+                // if a label is too long for its slot.
+                return techMed (juce::jmax (11.0f,
+                                juce::jmin (UI::scaledFont (Type::ribbonPillText),
+                                            (float) buttonHeight * 0.95f)));
             if (id == "plotFit")
                 return techMed (UI::scaledFont (Type::plotFitButton));
             if (id == "headerStats" || id == "headerNewProject")

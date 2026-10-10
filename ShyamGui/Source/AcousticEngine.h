@@ -24,18 +24,76 @@
 struct SpeakerFilter
 {
     enum class Family { Butterworth = 0, LinkwitzRiley = 1 };
-    enum class Type   { Off = 0, LowPass = 1, HighPass = 2 };
+    enum class Type   { Off = 0, LowPass = 1, HighPass = 2, BandPass = 3 };
 
     Family family = Family::LinkwitzRiley;
     Type   type   = Type::Off;
     int    order  = 4;            // 2 or 4, as the .m files allow
     float  fcHz   = 100.0f;
 
+    // Band pass only: the UPPER corner, where the pass band stops. fcHz is
+    // then the lower corner, so the band runs fcHz -> fcHiHz. Each end keeps
+    // its own family and order, as BandPass.m allows (lowtype/Nl for the low
+    // pass, hightype/Nh for the high pass) - a 24 dB/oct bottom under a
+    // 12 dB/oct top is a real thing to want.
+    Family familyHi = Family::LinkwitzRiley;
+    int    orderHi  = 4;
+    float  fcHiHz   = 2000.0f;
+
+    static bool validOrder (int n) noexcept { return n == 2 || n == 4; }
+
     bool active() const noexcept
     {
-        return type != Type::Off && fcHz > 0.0f && (order == 2 || order == 4);
+        if (type == Type::Off) return false;
+        if (! (fcHz > 0.0f && validOrder (order))) return false;
+        // A band with its top at or below its bottom passes nothing at all;
+        // treating that as "off" beats silencing a cabinet over a typo.
+        if (type == Type::BandPass)
+            return fcHiHz > fcHz && validOrder (orderHi);
+        return true;
     }
 };
+
+/** H(f) for ONE section - a single low pass or high pass of the given family
+    and order. This is the shared half of every filter shape: a low pass is one
+    of these, a high pass is one of these, and a band pass is the product of
+    two (BandPass.m: H = HLP .* HHP). */
+inline std::complex<double> filterSectionResponse (double f,
+                                                   SpeakerFilter::Family family,
+                                                   int order, double fcHz,
+                                                   bool lowPass) noexcept
+{
+    using cplx = std::complex<double>;
+    constexpr double kPi = 3.14159265358979323846;
+    const cplx   s  (0.0, 2.0 * kPi * f);
+    const double wc = 2.0 * kPi * fcHz;
+    const double wc2 = wc * wc;
+
+    // One 2nd-order section. `a` is the damping term that sets its Q.
+    auto section2 = [&] (double a) -> cplx
+    {
+        const cplx den = s * s + a * wc * s + wc2;
+        return lowPass ? (cplx (wc2, 0.0) / den) : ((s * s) / den);
+    };
+
+    if (family == SpeakerFilter::Family::Butterworth)
+    {
+        if (order == 2)
+            return section2 (1.41421356237309504880);          // sqrt(2)
+        // Order 4 is two sections with the Butterworth Q pair:
+        // 2*sin(pi/8) and 2*sin(3*pi/8).
+        return section2 (0.76536686473017954) * section2 (1.84775906502257351);
+    }
+
+    // Linkwitz-Riley: the Butterworth of half the order, squared.
+    if (order == 2)
+    {
+        const cplx h1 = lowPass ? (cplx (wc, 0.0) / (s + wc)) : (s / (s + wc));
+        return h1 * h1;
+    }
+    const cplx hbw = section2 (1.41421356237309504880);
+    return hbw * hbw;
+}
 
 /** H(f) for one filter. Returns 1 (no change) when the filter is off. */
 inline std::complex<double> filterResponse (double f, const SpeakerFilter& flt) noexcept
@@ -43,35 +101,26 @@ inline std::complex<double> filterResponse (double f, const SpeakerFilter& flt) 
     using cplx = std::complex<double>;
     if (! flt.active()) return cplx (1.0, 0.0);
 
-    constexpr double kPi = 3.14159265358979323846;
-    const cplx   s  (0.0, 2.0 * kPi * f);
-    const double wc = 2.0 * kPi * (double) flt.fcHz;
-    const double wc2 = wc * wc;
-    const bool   lp = (flt.type == SpeakerFilter::Type::LowPass);
-
-    // One 2nd-order section. `a` is the damping term that sets its Q.
-    auto section2 = [&] (double a) -> cplx
+    switch (flt.type)
     {
-        const cplx den = s * s + a * wc * s + wc2;
-        return lp ? (cplx (wc2, 0.0) / den) : ((s * s) / den);
-    };
+        case SpeakerFilter::Type::LowPass:
+            return filterSectionResponse (f, flt.family, flt.order, (double) flt.fcHz, true);
 
-    if (flt.family == SpeakerFilter::Family::Butterworth)
-    {
-        if (flt.order == 2)
-            return section2 (1.41421356237309504880);          // sqrt(2)
-        // Order 4 is two sections with the Butterworth Q pair.
-        return section2 (0.7653668647) * section2 (1.8477590650);
+        case SpeakerFilter::Type::HighPass:
+            return filterSectionResponse (f, flt.family, flt.order, (double) flt.fcHz, false);
+
+        case SpeakerFilter::Type::BandPass:
+            // BandPass.m: the two sections MULTIPLY. A band pass is one signal
+            // through both ends in series, which is a different thing from the
+            // crossover in Crossover.m, where two signals through one end each
+            // are ADDED back together in the air.
+            return filterSectionResponse (f, flt.family,   flt.order,   (double) flt.fcHz,   false)
+                 * filterSectionResponse (f, flt.familyHi, flt.orderHi, (double) flt.fcHiHz, true);
+
+        case SpeakerFilter::Type::Off:
+        default:
+            return cplx (1.0, 0.0);
     }
-
-    // Linkwitz-Riley: the Butterworth of half the order, squared.
-    if (flt.order == 2)
-    {
-        const cplx h1 = lp ? (cplx (wc, 0.0) / (s + wc)) : (s / (s + wc));
-        return h1 * h1;
-    }
-    const cplx hbw = section2 (1.41421356237309504880);
-    return hbw * hbw;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +156,25 @@ struct Speaker
     // Applied to the complex pressure before summation, so it moves phase as
     // well as level - see filterResponse().
     SpeakerFilter filter;
+    // Draw this unit's aiming line. Display only - the heading is still
+    // rotationDeg whether the line is on screen or not. A sub has no ray, so
+    // this stalk and knob is the only handle it can be turned by; hiding it is
+    // for a plan already crowded with them, not for giving up the aim.
+    bool  showAimLine        = true;
 };
+
+// Whether a model is a subwoofer. The Q21S is the sub; the 2" horn is not.
+//
+// Subs carry no aiming ray. A ray says "this box is pointed here", which only
+// means something for a box with a front axis - and at sub frequencies a single
+// cabinet is close to omnidirectional, so there is no axis to draw. The
+// industry tools agree: ArrayCalc and EASE Focus steer low end by array
+// geometry and per-box delay and then show the resulting dispersion, rather
+// than by pointing a cabinet.
+inline bool isSubwooferModel (int model) noexcept
+{
+    return model != 2;      // 0 = Q21S (sub); 2 = BEM 2inch
+}
 
 // Display name for a Speaker::model / MeasurementData::Source value. Single
 // canonical spot so UI labels, dialogs, and reports never disagree.
@@ -223,7 +290,7 @@ struct BemFieldPattern
 // extras). Q21S and BEM2inch are two completely separate devices: each keeps
 // its own array below and the two are never merged or shared.
 static constexpr double kQ21SFrequencies[] = {
-    20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401
+    20, 29, 52, 60, 81, 98, 153, 198, 256, 309, 352, 400, 401
 };
 static constexpr int kNumQ21SFrequencies =
     (int) (sizeof (kQ21SFrequencies) / sizeof (kQ21SFrequencies[0]));
@@ -381,8 +448,9 @@ public:
     static bool sampleIntensityAt (const SimParams& p, float x, float y,
                                    float& intensityDb, float& absDb);
 
-    // dB thresholds for the spec colour contour (0, -3, ... -18).
-    static constexpr double kColourStepDB = 3.0;
+    // dB thresholds for the spec colour contour (0, -6, ... -36).
+    // The step the renderer actually draws is ColourMaps::kContourStepDB.
+    static constexpr double kColourStepDB = 6.0;
 
 private:
     // Orientation directivity: subtle cardioid-like bias toward facing dir.

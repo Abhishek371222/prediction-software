@@ -1,5 +1,5 @@
-Atomik Simulation Engine v1.3.7
-======================================
+Atomik Integral v1.4.2
+=====================
 
 2D Q21S placement & directivity visualiser.
 

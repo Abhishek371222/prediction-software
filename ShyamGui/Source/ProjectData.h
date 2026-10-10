@@ -128,10 +128,14 @@ struct ProjectData
             o->setProperty ("baseHeightM", s.baseHeightM);
             o->setProperty ("tiltDeg", s.tiltDeg);
             o->setProperty ("rotationDeg", s.rotationDeg);
+            o->setProperty ("showAimLine", s.showAimLine);
             o->setProperty ("filterType",   (int) s.filter.type);
             o->setProperty ("filterFamily", (int) s.filter.family);
             o->setProperty ("filterOrder",  s.filter.order);
             o->setProperty ("filterFcHz",   s.filter.fcHz);
+            o->setProperty ("filterFamilyHi", (int) s.filter.familyHi);
+            o->setProperty ("filterOrderHi",  s.filter.orderHi);
+            o->setProperty ("filterFcHiHz",   s.filter.fcHiHz);
             spk.add (juce::var (o));
         }
         root->setProperty ("speakers", spk);
@@ -206,10 +210,14 @@ struct ProjectData
                         // Projects saved before the rotation handle point +x.
                         s.rotationDeg = o->hasProperty ("rotationDeg")
                                       ? (float) (double) o->getProperty ("rotationDeg") : 0.0f;
+                        // Older projects predate the per-unit hide, and every
+                        // aiming line was drawn then, so absent means shown.
+                        s.showAimLine = (! o->hasProperty ("showAimLine"))
+                                      || (bool) o->getProperty ("showAimLine");
                         // Projects saved before crossovers have no filter, and
                         // a cabinet without one is full range.
                         s.filter.type = (SpeakerFilter::Type) juce::jlimit (
-                            0, 2, o->hasProperty ("filterType")
+                            0, 3, o->hasProperty ("filterType")
                                     ? (int) o->getProperty ("filterType") : 0);
                         s.filter.family = (o->hasProperty ("filterFamily")
                                            && (int) o->getProperty ("filterFamily") == 0)
@@ -219,6 +227,17 @@ struct ProjectData
                                        ? ((int) o->getProperty ("filterOrder") == 2 ? 2 : 4) : 4;
                         s.filter.fcHz  = o->hasProperty ("filterFcHz")
                                        ? (float) (double) o->getProperty ("filterFcHz") : 100.0f;
+                        // Projects saved before band pass carry no upper
+                        // corner; the defaults stand and go unused, because
+                        // only a band pass reads them.
+                        s.filter.familyHi = (o->hasProperty ("filterFamilyHi")
+                                             && (int) o->getProperty ("filterFamilyHi") == 0)
+                                                ? SpeakerFilter::Family::Butterworth
+                                                : SpeakerFilter::Family::LinkwitzRiley;
+                        s.filter.orderHi  = o->hasProperty ("filterOrderHi")
+                                          ? (((int) o->getProperty ("filterOrderHi") == 2) ? 2 : 4) : 4;
+                        s.filter.fcHiHz   = o->hasProperty ("filterFcHiHz")
+                                          ? (float) (double) o->getProperty ("filterFcHiHz") : 2000.0f;
                         p.speakers.push_back (s);
                     }
                 }

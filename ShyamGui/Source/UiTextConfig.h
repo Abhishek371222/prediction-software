@@ -82,7 +82,7 @@ namespace UiConfig
     namespace FontSize
     {
         // --- Top header bar --------------------------------------------------
-        // "Atomik Simulation Engine - <project>" centred title. Calibrated
+        // "Atomik Integral - <project>" centred title. Calibrated
         // against the Figma render, where the full composite string measures
         // 288px of ink on a 1920-wide canvas (x=815..1102).
         constexpr float appTitle            = 22.25f;
@@ -208,7 +208,15 @@ namespace UiConfig
         // converting a CSS px value - JUCE's Font height is the whole line box,
         // so it needs a larger number than the design's nominal font-size to
         // put the same amount of ink on screen.
-        constexpr float ribbonClusterLabel    = 15.0f;
+        constexpr float ribbonClusterLabel    = 16.5f;
+        // Ribbon tab labels ("Home" / "Mapping") and the text on the ribbon's
+        // pill buttons ("Show Rays", "Show Interdistance", ...). These used to
+        // borrow sidebarMainValue, which is sized for a sidebar field value
+        // read from 40 cm away, not for a toolbar read at a glance. Their own
+        // names now, so the ribbon can be made legible without moving every
+        // number in the sidebar with it.
+        constexpr float ribbonTabLabel        = 17.0f;
+        constexpr float ribbonPillText        = 16.0f;
 
         // --- Preferences dialog ----------------------------------------------
         constexpr float prefsTitle            = 24.0f;

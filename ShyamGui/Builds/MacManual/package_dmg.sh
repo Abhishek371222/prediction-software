@@ -1,18 +1,23 @@
 #!/bin/zsh
-# Build Atomik .app + DMG for sharing (Apple Silicon, macOS 15+).
+# Build Atomik Integral .app + DMG for sharing (Apple Silicon, macOS 15+).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 VERSION="1.3.6"
-APP_NAME="Atomik Acoustic Simulation Engine"
-DMG_NAME="Atomik_Acoustic_Simulation_Engine_v${VERSION}_macOS"
+APP_NAME="Atomik Integral"
+DMG_NAME="Atomik_Integral_v${VERSION}_macOS"
 OUT_DIR="$ROOT/dist/mac"
 STAGE="$OUT_DIR/_dmg_stage"
 APP="$STAGE/${APP_NAME}.app"
 BIN_SRC="$ROOT/Builds/MacManual/build/TwoSpeakerExplorer"
-ICNS_SRC="$ROOT/dist/mac/Atomik Acoustic Simulation Engine.app/Contents/Resources/Atomik.icns"
+# Pre-rename bundles under dist/mac still carry the icon on older checkouts.
+ICNS_CANDIDATES=(
+  "$ROOT/dist/mac/Atomik Integral.app/Contents/Resources/Atomik.icns"
+  "$ROOT/dist/mac/Atomik Acoustic Simulation Engine.app/Contents/Resources/Atomik.icns"
+  "$ROOT/Assets/Atomik.icns"
+)
 
 echo "=== 1) Rebuild binary ==="
 zsh "$ROOT/Builds/MacManual/build_macos15.sh"
@@ -39,7 +44,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key>
   <string>Atomik</string>
   <key>CFBundleIdentifier</key>
-  <string>com.atomikaudio.acousticsimulationengine</string>
+  <string>com.atomikaudio.integral</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -64,9 +69,12 @@ echo -n "APPL????" > "$APP/Contents/PkgInfo"
 # Binary + icon
 cp "$BIN_SRC" "$APP/Contents/MacOS/TwoSpeakerExplorer"
 chmod +x "$APP/Contents/MacOS/TwoSpeakerExplorer"
-if [[ -f "$ICNS_SRC" ]]; then
-  cp "$ICNS_SRC" "$APP/Contents/Resources/Atomik.icns"
-fi
+for icns in "${ICNS_CANDIDATES[@]}"; do
+  if [[ -f "$icns" ]]; then
+    cp "$icns" "$APP/Contents/Resources/Atomik.icns"
+    break
+  fi
+done
 
 echo "=== 3) Bundle Assets + measurements + docs ==="
 # Brand assets (fonts, logos — including ATOMIK-only crops)
@@ -96,8 +104,8 @@ cp "$ROOT/Installer/README.txt" "$DOCS/Installer_README.txt" 2>/dev/null || true
 cp "$ROOT/prediction software/MeasurementIntegrationPack/README.md" \
    "$DOCS/MeasurementIntegrationPack_README.md" 2>/dev/null || true
 # Format example for Atomik directivity CSV (VACS-style header + Level/Phase)
-if [[ -f "$ROOT/Source/Atomik_Directivity_50Hz_1p0m(PredictionSoftware).csv" ]]; then
-  cp "$ROOT/Source/Atomik_Directivity_50Hz_1p0m(PredictionSoftware).csv" \
+if [[ -f "$ROOT/Source/Atomik_Directivity_50Hz_1p0m(AtomikIntegral).csv" ]]; then
+  cp "$ROOT/Source/Atomik_Directivity_50Hz_1p0m(AtomikIntegral).csv" \
      "$DOCS/Sample_Directivity_Format_Example.csv"
 fi
 
@@ -109,8 +117,8 @@ cp "$ROOT/prediction software/MeasurementIntegrationPack/Data/manifest.csv" \
    "$DOCS/Sample_CSV/" 2>/dev/null || true
 
 cat > "$DOCS/README.txt" <<'EOF'
-Atomik Acoustic Simulation Engine — Documentation
-=================================================
+Atomik Integral — Documentation
+===============================
 
 Export_Reference.md
   What the app can export (PNG, SPL CSV, Directivity CSV, SVG, PDF),
@@ -164,6 +172,8 @@ rm -f "$DMG_PATH"
 # Remove older/duplicate build outputs so only one shareable DMG exists
 rm -f "$OUT_DIR/${DMG_NAME}.dmg"
 setopt NULL_GLOB
+rm -f "$HOME/Desktop"/Atomik_Integral_v*_macOS.dmg
+rm -f "$OUT_DIR"/Atomik_Integral_v*_macOS.dmg
 rm -f "$HOME/Desktop"/Atomik_Acoustic_Simulation_Engine_v*_macOS.dmg
 rm -f "$OUT_DIR"/Atomik_Acoustic_Simulation_Engine_v*_macOS.dmg
 rm -f "$ROOT/dist/Atomik_Acoustic_Simulation_Engine_macOS.dmg"
@@ -176,7 +186,7 @@ rm -rf "$OUT_DIR/${APP_NAME}.app"
 cp -R "$APP" "$OUT_DIR/${APP_NAME}.app"
 
 hdiutil create \
-  -volname "Atomik v${VERSION}" \
+  -volname "Atomik Integral v${VERSION}" \
   -srcfolder "$STAGE" \
   -ov -format UDZO \
   "$DMG_PATH"

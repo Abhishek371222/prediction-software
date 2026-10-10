@@ -522,7 +522,7 @@ void RadiationPatternComponent::growTextBoxToFit (int index)
 
     const float pad = kTextBoxPad;
     juce::GlyphArrangement ga;
-    const auto font = textBoxFont (a, hPx);
+    const auto font = textBoxFont (a, wPx, hPx, label);
     // Baseline at the ascent, exactly as the painter lays it out. Starting at
     // zero put the first line's ascenders ABOVE the origin, so the height came
     // back one line short and the last line was clipped.
@@ -684,8 +684,15 @@ void RadiationPatternComponent::clearPlotSelection()
     selectedSpeakers_.clear();
     selectedAnnot_ = -1;
     selectedMic_ = -1;
-    if (onAnnotSelectionChanged) onAnnotSelectionChanged();
-    if (onMicsChanged) onMicsChanged();
+    // The speaker has to let go too. It used to be left behind here: the set
+    // emptied but selected_ kept pointing at the last unit, so one speaker was
+    // always current - highlighted on the plot, its fields live in the
+    // sidebar - and clicking empty field could not give you an empty
+    // selection. Telling the sidebar is part of it; without that the panel
+    // keeps editing a unit the plot no longer shows as chosen.
+    const bool hadSpeaker = (selected_ >= 0);
+    selected_ = -1;
+    if (hadSpeaker && onSpeakerSelected) onSpeakerSelected (-1);
     repaint();
 }
 
@@ -714,8 +721,8 @@ void RadiationPatternComponent::syncPrimarySelectionFromSets()
     if (selectedAnnot_ >= 0 && selectedAnnot_ < (int) annotations_.size()
         && isFilledShapeKind (annotations_[(size_t) selectedAnnot_].kind))
         drawFillAlpha_ = annotations_[(size_t) selectedAnnot_].fillAlpha;
-    if (! selectedSpeakers_.empty())
-        selected_ = selectedSpeakers_.back();
+    // Empty set means nothing selected, not "keep the last one".
+    selected_ = selectedSpeakers_.empty() ? -1 : selectedSpeakers_.back();
 }
 
 void RadiationPatternComponent::refreshMicLevels()
@@ -829,9 +836,26 @@ int RadiationPatternComponent::micHitTest (juce::Point<float> worldPt, float rad
     return -1;
 }
 
+juce::String RadiationPatternComponent::micCoordText (const MicReceiver& m)
+{
+    // Converted through Units, like every other length on the plot, so the
+    // mic does not read in metres while the axes beside it read in feet.
+    auto one = [] (float metres)
+    {
+        return juce::String (Units::metresToDisplay ((double) metres), 1);
+    };
+    return one (m.x) + ", " + one (m.y) + " " + Units::lengthUnit();
+}
+
 juce::String RadiationPatternComponent::micLabelText (const MicReceiver& m) const
 {
     juce::String label = micDisplayName (m);
+    // Where the mic actually stands, in the unit on show - the same reading a
+    // speaker carries in its X / Y fields. A level means little without the
+    // seat it was taken at, and reading the position off the axes by eye is
+    // guesswork at any useful zoom.
+    if (showMicCoords_)
+        label += "  " + micCoordText (m);
     if (showMicDegrees_)
     {
         const int si = MicRingSnap::referenceSpeakerIndex (
@@ -860,9 +884,15 @@ int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) co
         if (glyph.contains (screenPt))
             return i;
 
+        // Same flip the painter applies, or the label you can see beside a
+        // mic at the right-hand edge would not be the label you can click.
         const juce::String label = micLabelText (m);
         const float tw = juce::jmax (40.0f, (float) label.length() * 7.0f + 12.0f);
-        const auto box = juce::Rectangle<float> (s.x + 8.0f, s.y - 12.0f, tw, 20.0f);
+        const auto pb = plotArea().toFloat();
+        float boxX = s.x + 8.0f;
+        if (boxX + tw > pb.getRight() - 2.0f)
+            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f - tw);
+        const auto box = juce::Rectangle<float> (boxX, s.y - 12.0f, tw, 20.0f);
         if (box.contains (screenPt))
             return i;
     }
@@ -894,7 +924,16 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
         g.setColour (Brand::charcoal().withAlpha (0.94f));
         const float tw = (float) g.getCurrentFont().getStringWidth (label) + fh;
         const float th = fh * 1.55f;
-        auto box = juce::Rectangle<float> (s.x + 10.0f, s.y - th * 0.5f, tw, th);
+        // The reading sits to the right of the marker, unless that would push
+        // it off the plot - a mic placed near the right-hand edge used to have
+        // half its label clipped away, and carrying the coordinates makes the
+        // label long enough for that to be the common case rather than a rare
+        // one. It flips to the left when it does not fit.
+        const auto pb = plotArea().toFloat();
+        float boxX = s.x + 10.0f;
+        if (boxX + tw > pb.getRight() - 2.0f)
+            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f - tw);
+        auto box = juce::Rectangle<float> (boxX, s.y - th * 0.5f, tw, th);
         g.fillRoundedRectangle (box, 3.0f);
         // A hairline in the mic's own colour keeps the reading tied to its
         // marker when several sit close together.
@@ -2652,7 +2691,9 @@ void RadiationPatternComponent::layoutTextBoxEditor()
     // here on, so the words already in the box kept the look-and-feel's
     // default face and the box changed size and colour the instant you
     // clicked into it.
-    textEdit_->applyFontToAllText (textBoxFont (a, hPx));
+    // Fitted to what is being typed, so in Auto the words shrink as they
+    // fill the box rather than running out of it.
+    textEdit_->applyFontToAllText (textBoxFont (a, boxW, hPx, textEdit_->getText()));
     textEdit_->setJustification (textBoxJustification (a.align, a.valign));
     textEdit_->setLineSpacing (juce::jlimit (1.0f, 3.0f, a.lineHeight));
     textEdit_->setBounds (bounds);
@@ -2726,13 +2767,15 @@ void RadiationPatternComponent::drawTextBoxRotateIcon (juce::Graphics& g,
 }
 
 juce::Font RadiationPatternComponent::textBoxFont (const Annotation& a,
-                                                   float boxHeightPx) const
+                                                   float boxWidthPx,
+                                                   float boxHeightPx,
+                                                   const juce::String& text) const
 {
     // Weight only. Slant is NOT set here: see kItalicShear - there is no
     // italic Montserrat to switch to, so asking the Font for one silently
     // returned the upright face. The shear is applied where the glyphs are
     // drawn instead.
-    return Brand::tech (textBoxFontScreenPx (a, boxHeightPx), a.bold);
+    return Brand::tech (textBoxFontScreenPx (a, boxWidthPx, boxHeightPx, text), a.bold);
 }
 
 float RadiationPatternComponent::textBoxLeading (const Annotation& a,
@@ -2745,7 +2788,9 @@ float RadiationPatternComponent::textBoxLeading (const Annotation& a,
 }
 
 float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
-                                                      float boxHeightPx) const
+                                                      float boxWidthPx,
+                                                      float boxHeightPx,
+                                                      const juce::String& text) const
 {
     if (a.fontPx > 0.5f)
     {
@@ -2755,7 +2800,59 @@ float RadiationPatternComponent::textBoxFontScreenPx (const Annotation& a,
         const float z = (a.space == AnnotSpace::World) ? zoom_ : 1.0f;
         return juce::jlimit (5.0f, 400.0f, a.fontPx * z);
     }
-    return juce::jlimit (10.0f, 22.0f, boxHeightPx * 0.22f);
+    return textBoxFitPx (a, boxWidthPx, boxHeightPx, text);
+}
+
+float RadiationPatternComponent::textBoxFitPx (const Annotation& a,
+                                               float boxWidthPx,
+                                               float boxHeightPx,
+                                               const juce::String& text) const
+{
+    constexpr float kMinFitPx = 6.0f;
+    const float availW = boxWidthPx  - 2.0f * kTextBoxPad;
+    const float availH = boxHeightPx - 2.0f * kTextBoxPad;
+    if (availW < 1.0f || availH < 1.0f) return kMinFitPx;
+
+    const juce::String label = text.isNotEmpty() ? text : juce::String ("Text");
+
+    // GlyphArrangement breaks a word that is wider than the line mid-word, so
+    // the widest word has to fit on its own or a short label is cut in two
+    // instead of shrinking. Width is linear in font height, so measure once.
+    constexpr float kRefPx = 100.0f;
+    const auto refFont = Brand::tech (kRefPx, a.bold);
+    float widestWordRef = 0.0f;
+    {
+        juce::StringArray words;
+        words.addTokens (label, " \t\r\n", {});
+        for (const auto& w : words)
+            if (w.isNotEmpty())
+                widestWordRef = juce::jmax (widestWordRef, refFont.getStringWidthFloat (w));
+    }
+
+    auto fits = [&] (float px)
+    {
+        const auto f = Brand::tech (px, a.bold);
+        // The synthesised italic leans the top of each glyph to the right.
+        const float lean = a.italic ? kItalicShear * f.getAscent() : 0.0f;
+        if (widestWordRef * (px / kRefPx) + lean > availW) return false;
+
+        juce::GlyphArrangement ga;
+        ga.addJustifiedText (f, label, 0.0f, f.getAscent(), availW,
+                             juce::Justification::topLeft, textBoxLeading (a, f));
+        const auto bb = ga.getBoundingBox (0, -1, true);
+        return bb.getBottom() <= availH && bb.getRight() + lean <= availW;
+    };
+
+    float lo = kMinFitPx;
+    float hi = juce::jmin (availH, 2000.0f);
+    if (hi <= lo || ! fits (lo)) return lo;
+    if (fits (hi)) return hi;
+    for (int i = 0; i < 14; ++i)
+    {
+        const float mid = 0.5f * (lo + hi);
+        if (fits (mid)) lo = mid; else hi = mid;
+    }
+    return lo;
 }
 
 juce::Justification RadiationPatternComponent::textBoxJustification (int align, int valign)
@@ -2830,7 +2927,7 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
     if (wPx < 8.0f || hPx < 8.0f) return;
 
     const float pad = kTextBoxPad;
-    g.setFont (textBoxFont (a, hPx));
+    g.setFont (textBoxFont (a, wPx, hPx, label));
 
     // Fully opaque: opacity no longer applies to a text box (see
     // isFilledShapeKind), so the only thing that can fade the words is a
@@ -2850,7 +2947,7 @@ void RadiationPatternComponent::drawTextBoxAnnotation (juce::Graphics& g,
         // drawFittedText has no line-spacing control, so the text is laid out
         // by hand: GlyphArrangement takes the leading directly, and it is the
         // same call growTextBoxToFit measures with, so what fits is what shows.
-        const auto font = textBoxFont (a, hPx);
+        const auto font = textBoxFont (a, wPx, hPx, label);
         const auto hJust = (a.align == 1) ? juce::Justification::horizontallyCentred
                          : (a.align == 2) ? juce::Justification::right
                                           : juce::Justification::left;
@@ -3771,8 +3868,11 @@ void RadiationPatternComponent::updateData (const SimResult& result, const SimPa
     hasData_ = (result_.width > 0 && result_.activeSpeakers > 0);
     // Empty / pre-RUN scenes still get a world grid (no SPL field).
     ensureWorldExtents();
-    // First load, or still at default Fit View: fill the whole plot pane.
-    if (! viewInit_ || std::abs (zoom_ - 1.0f) < 0.02f)
+    // First load, or a view the user has not touched: fill the plot pane.
+    // This used to key off the ZOOM being near 1, which is exactly where the
+    // default fit leaves it - so panning without zooming was undone by the
+    // next solve, and every edit triggers a solve.
+    if (mayAutoFitView())
         fitView();
     buildImage();
     refreshMicLevels();
@@ -3965,6 +4065,18 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
         m.addSeparator();
     }
 
+    // A sub's stalk is its only aiming handle, so putting it away has to be
+    // reversible from the same place - which is why the item is offered on a
+    // sub whose line is already hidden too, reading "Show" instead.
+    const bool subUnderCursor = hasSpeakerProps
+        && isSubwooferModel (speakers_[(size_t) speakerUnderCursor].model);
+    if (subUnderCursor)
+    {
+        m.addItem (10, speakers_[(size_t) speakerUnderCursor].showAimLine
+                         ? "Hide aim line" : "Show aim line");
+        m.addSeparator();
+    }
+
     if (hasSpeakerProps)
     {
         m.addItem (4, "Properties");
@@ -3975,6 +4087,11 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     m.addItem (2, "Paste",  hasClipboardContent()); // off when clipboard empty
     m.addSeparator();
     m.addItem (3, "Delete", canEdit);
+    // Its own group, well away from Copy: that one copies the SELECTION,
+    // this one copies the picture, and the two sitting side by side would
+    // be a coin toss every time.
+    m.addSeparator();
+    m.addItem (9, "Copy image to clipboard");
     m.showMenuAsync (juce::PopupMenu::Options()
                          .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
                      [safe = juce::Component::SafePointer<RadiationPatternComponent> (this),
@@ -4000,6 +4117,27 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
                                  if (safe->onWillEdit) safe->onWillEdit();
                                  auto& pa = safe->annotations_[(size_t) planeIdx];
                                  pa.showTag = ! pa.showTag;
+                                 if (safe->onEditCommitted) safe->onEditCommitted();
+                                 safe->repaint();
+                             }
+                             return;
+                         }
+                         if (result == 9)
+                         {
+                             if (safe->onCopyImage) safe->onCopyImage();
+                             return;
+                         }
+                         if (result == 10)
+                         {
+                             if (speakerUnderCursor >= 0
+                                 && speakerUnderCursor < (int) safe->speakers_.size())
+                             {
+                                 if (safe->onWillEdit) safe->onWillEdit();
+                                 auto& sp = safe->speakers_[(size_t) speakerUnderCursor];
+                                 sp.showAimLine = ! sp.showAimLine;
+                                 if (safe->onSpeakerAimLineChanged)
+                                     safe->onSpeakerAimLineChanged (speakerUnderCursor,
+                                                                    sp.showAimLine);
                                  if (safe->onEditCommitted) safe->onEditCommitted();
                                  safe->repaint();
                              }
@@ -4196,6 +4334,8 @@ void RadiationPatternComponent::fitView()
     origin_ = { 0.5f * ((float) pb.getWidth()  - worldPxW),
                 0.5f * ((float) pb.getHeight() - worldPxH) };
     viewInit_   = true;
+    // An explicit fit is the user asking for the default framing back.
+    viewUserAdjusted_ = false;
     clampViewToField();
 }
 
@@ -4212,6 +4352,7 @@ void RadiationPatternComponent::zoomAboutCentre (float factor)
     origin_.x = cx - (float) pb.getX() - worldUnder.x * worldScaleX();
     origin_.y = cy - (float) pb.getY()
                   - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    noteViewAdjusted();
     clampViewToField();
     layoutTextBoxEditor();
     repaint();
@@ -4258,6 +4399,7 @@ void RadiationPatternComponent::zoomToSelection()
               - (c.x - (float) result_.worldX0) * worldScaleX();
     origin_.y = 0.5f * (float) pb.getHeight()
               - ((float) (result_.worldY0 + result_.worldH) - c.y) * worldScaleY();
+    noteViewAdjusted();
 
     clampViewToField();
     layoutTextBoxEditor();
@@ -4334,7 +4476,7 @@ void RadiationPatternComponent::resized()
     const double wh = (result_.worldH > 0 ? result_.worldH : params_.worldH);
     if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || ww <= 0 || wh <= 0) return;
 
-    if (! viewInit_ || std::abs (zoom_ - 1.0f) < 0.02f)
+    if (mayAutoFitView())
     {
         fitView();
         layoutTextBoxEditor();
@@ -4385,8 +4527,9 @@ void RadiationPatternComponent::buildImage()
                                     : result_.splDB[idx];
                 if (params_.bandedSPL)
                 {
-                    // Contour bands: fixed 3 dB steps. db Floor only clips the bottom.
-                    c = ColourMaps::splBandForFloor (dB, (float) params_.dBfloor, 3.0f);
+                    // Contour bands at the fixed step. db Floor only clips the bottom.
+                    c = ColourMaps::splBandForFloor (dB, (float) params_.dBfloor,
+                                                     ColourMaps::kContourStepDB);
                 }
                 else
                 {
@@ -4469,6 +4612,12 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     // No scale without a map to read it against.
     if (hasData_ && showField_)
         drawColourbar (g, getLocalBounds().withTrimmedLeft (pb.getWidth() + 8));
+
+    // The glass goes over everything, including the colourbar - it magnifies
+    // what is on screen, and the scale is part of that. Skipped while its own
+    // snapshot is being taken, or it would appear inside itself.
+    if (magnifierOn_ && magValid_ && ! magBusy_)
+        drawMagnifier (g);
 }
 
 // ---------------------------------------------------------------------------
@@ -5404,7 +5553,41 @@ void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
 
 bool RadiationPatternComponent::rayVisibleFor (int i) const noexcept
 {
+    if (i < 0 || i >= (int) speakers_.size()) return false;
+    // A sub has no aiming ray - see isSubwooferModel(). It carries the short
+    // stalk and knob instead (aimHandleVisibleFor), so it can still be turned;
+    // what it does not get is a line drawn across the whole field claiming a
+    // pattern it does not have.
+    if (isSubwooferModel (speakers_[(size_t) i].model)) return false;
     return showRays_ || (i == selected_) || isSpeakerSelected (i);
+}
+
+bool RadiationPatternComponent::aimHandleVisibleFor (int i) const noexcept
+{
+    if (i < 0 || i >= (int) speakers_.size()) return false;
+    const auto& spk = speakers_[(size_t) i];
+    // Only where there is no ray to do the job - otherwise it is the same
+    // control drawn twice.
+    if (! isSubwooferModel (spk.model)) return false;
+    if (! spk.showAimLine) return false;
+    return showRays_ || (i == selected_) || isSpeakerSelected (i);
+}
+
+int RadiationPatternComponent::aimHandleHitTest (juce::Point<float> p) const
+{
+    // Lock Rays locks every aiming control, stalk included: a lock that only
+    // held half of them would be worse than none.
+    if (lockRays_) return -1;
+
+    int   best  = -1;
+    float bestD = 11.0f;          // a little past the 8 px knob, in px
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        if (! aimHandleVisibleFor (i)) continue;
+        const float d = speakerRotateHandle (speakers_[(size_t) i]).getDistanceFrom (p);
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
 }
 
 int RadiationPatternComponent::rayHitTest (juce::Point<float> p) const
@@ -5694,19 +5877,39 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
             drawSpeakerDimensions (g, box, spk, alpha);
     }
 
-    // The angle readout, last and unrotated so it sits on top of every
-    // cabinet. There is no longer a stalk and knob to go with it: the ray IS
-    // the aiming handle now, and drawing a second one beside it was the same
-    // control twice.
+    // Aiming handles last and unrotated, so they sit on top of every cabinet.
+    // A top is aimed by its ray; a sub has none, so it keeps the original
+    // stalk and knob - the only handle it can be turned by, and the reason
+    // subs stopped being aimable at all when the ray replaced it.
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        if (! aimHandleVisibleFor (i)) continue;
+
+        const auto& spk = speakers_[i];
+        const auto  c   = worldToScreen (spk.x, spk.y);
+        const auto  h   = speakerRotateHandle (spk);
+        const float alpha = spk.enabled ? 1.0f : 0.42f;
+
+        g.setColour (Brand::charcoal().withAlpha (0.55f * alpha));
+        g.drawLine (c.x, c.y, h.x, h.y, 1.0f);
+        g.setColour (juce::Colour (0xffff3d6e).withAlpha (0.95f * alpha));
+        g.fillEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f);
+        g.setColour (Brand::white().withAlpha (0.9f * alpha));
+        g.drawEllipse (h.x - 4.0f, h.y - 4.0f, 8.0f, 8.0f, 1.0f);
+    }
+
+    // The angle readout. On the selected unit it stays up, so the heading can
+    // simply be read off; while turning it is the only way to see the 5-degree
+    // snap land.
     for (int i = 0; i < (int) speakers_.size(); ++i)
     {
         const auto& spk = speakers_[i];
-        if (! ((i == selected_) || isSpeakerSelected (i))) continue;
+        const bool turning = (drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i);
+        if (! (turning || ((i == selected_) || isSpeakerSelected (i)))) continue;
 
         const auto h = speakerRotateHandle (spk);
 
-        // While turning, say the angle - the snap is invisible otherwise.
-        if (drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
+        if (turning || aimHandleVisibleFor (i))
         {
             g.setFont (Brand::tech (juce::jmax (9.0f, 10.5f * Brand::UI::scale), true));
             const juce::String txt = juce::String (juce::roundToInt (spk.rotationDeg)) + " deg";
@@ -5825,8 +6028,8 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
 
     if (params_.viewMode == ViewMode::SPL && params_.bandedSPL)
     {
-        // Fixed 3 dB contour steps from 0 down to db Floor (never stretch labels).
-        const float step = 3.0f;
+        // Fixed contour steps from 0 down to db Floor (never stretch labels).
+        const float step = ColourMaps::kContourStepDB;
         const float floor = (float) params_.dBfloor;
         const int bands = juce::jmax (1, (int) std::lround (-floor / step) + 1);
         const float bh = (float) barH / (float) bands;
@@ -6857,7 +7060,13 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         // it crosses a mic, the thing under the pointer is the mic, and trying
         // to drag it would silently aim a speaker instead.
         const bool micUnderCursor = micHitTestScreen (e.position) >= 0;
-        if (const int rayIdx = micUnderCursor ? -1 : rayHitTest (e.position); rayIdx >= 0)
+        // A sub's knob is tested first and on the same terms: it is a small
+        // target sitting right beside the cabinet, so whatever is under the
+        // pointer there is meant to be the knob.
+        const int aimIdx = micUnderCursor ? -1 : aimHandleHitTest (e.position);
+        if (const int rayIdx = (aimIdx >= 0) ? aimIdx
+                                             : (micUnderCursor ? -1 : rayHitTest (e.position));
+            rayIdx >= 0)
         {
             if (onWillEdit) onWillEdit();
 
@@ -7360,6 +7569,7 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         // The clamp keeps the view inside the field, which is possible again
         // now that the fit crops rather than exactly filling.
         origin_ += (e.position - lastMouse_);
+        noteViewAdjusted();
         lastMouse_ = e.position;
         clampViewToField();
         if (tool_ == Tool::Select)
@@ -7537,13 +7747,99 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
     origin_.x = e.position.x - (float) pb.getX() - worldUnder.x * worldScaleX();
     origin_.y = e.position.y - (float) pb.getY()
                   - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    noteViewAdjusted();
     clampViewToField();
     layoutTextBoxEditor();
     repaint();
 }
 
+void RadiationPatternComponent::setMagnifier (bool on)
+{
+    if (magnifierOn_ == on) return;
+    magnifierOn_ = on;
+    if (! on) { magImage_ = juce::Image(); magValid_ = false; }
+    repaint();
+}
+
+float RadiationPatternComponent::magnifierRadiusPx() const noexcept
+{
+    // Big enough to be worth looking through, never so big it covers the plot
+    // it is meant to help you read.
+    const float want = 78.0f * juce::jmax (0.5f, Brand::UI::scale);
+    return juce::jlimit (36.0f, want,
+                         0.22f * (float) juce::jmin (getWidth(), getHeight()));
+}
+
+void RadiationPatternComponent::updateMagnifierImage()
+{
+    if (! magnifierOn_ || ! magValid_ || magBusy_) return;
+    if (getWidth() < 8 || getHeight() < 8) return;
+
+    const float r = magnifierRadiusPx();
+    const int   src = juce::jmax (8, juce::roundToInt (2.0f * r / kMagnifyFactor));
+
+    // Clamped into the component so the glass always has something under it;
+    // right at an edge that means the view stops following the pointer rather
+    // than filling half the circle with nothing.
+    auto area = juce::Rectangle<int> (0, 0, src, src)
+                    .withCentre (magPoint_.roundToInt())
+                    .constrainedWithin (getLocalBounds());
+
+    magBusy_ = true;      // suppresses the loupe inside its own snapshot
+    magImage_ = createComponentSnapshot (area, false, kMagnifyFactor);
+    magBusy_ = false;
+}
+
+void RadiationPatternComponent::drawMagnifier (juce::Graphics& g)
+{
+    if (! magImage_.isValid()) return;
+
+    const float r = magnifierRadiusPx();
+    const auto  c = magPoint_;
+
+    juce::Path circle;
+    circle.addEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r);
+
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (circle);
+        // The snapshot is already at the magnified scale, so it is drawn 1:1
+        // and simply centred - no second resample to soften it.
+        const float iw = (float) magImage_.getWidth();
+        const float ih = (float) magImage_.getHeight();
+        g.drawImageTransformed (magImage_,
+            juce::AffineTransform::translation (c.x - iw * 0.5f, c.y - ih * 0.5f),
+            false);
+    }
+
+    // A rim, so the glass reads as an instrument held over the plot rather
+    // than as part of the prediction.
+    g.setColour (Brand::charcoal().withAlpha (0.85f));
+    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 3.0f);
+    g.setColour (Brand::white().withAlpha (0.9f));
+    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 1.2f);
+
+    // Say how much it is enlarging, or the reading means nothing.
+    const float fh = juce::jmax (10.0f, 11.5f * juce::jmax (0.5f, Brand::UI::scale));
+    g.setFont (Brand::tech (fh, true));
+    const juce::String tag = juce::String (kMagnifyFactor, 1) + "x";
+    juce::Rectangle<float> pill (c.x - 18.0f, c.y + r + 4.0f, 36.0f, fh * 1.5f);
+    g.setColour (Brand::charcoal().withAlpha (0.85f));
+    g.fillRoundedRectangle (pill, 3.0f);
+    g.setColour (Brand::white());
+    g.drawText (tag, pill.toNearestInt(), juce::Justification::centred, false);
+}
+
 void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
 {
+    if (magnifierOn_)
+    {
+        magPoint_ = e.position;
+        magValid_ = true;
+        updateMagnifierImage();
+        repaint();
+    }
+
     const bool tracking = (tool_ == Tool::Ruler && pendingAnchor_)
                        || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty());
     if (tracking)
@@ -7574,6 +7870,7 @@ void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
 {
+    if (magValid_) { magValid_ = false; magImage_ = juce::Image(); repaint(); }
     hoverValid_ = false;
     const bool hadProbe = splProbeValid_;
     splProbeValid_ = false;
@@ -7683,6 +7980,41 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
         if (tool_ != Tool::Select)
             setTool (Tool::Select);
         return true;
+    }
+
+    // Arrow keys nudge whatever is selected - a shape, a mic, a cabinet, or a
+    // mixed group - the same way dragging it would, which is why it goes
+    // through moveSelectionBy and not a second mover of its own. A drag is
+    // fine for putting something roughly in place and hopeless for putting it
+    // exactly one step over.
+    if (! isEditingTextBox() && ! sessionActive_ && ! pendingAnchor_
+        && hasCopyableSelection())
+    {
+        const bool left  = key.isKeyCode (juce::KeyPress::leftKey);
+        const bool right = key.isKeyCode (juce::KeyPress::rightKey);
+        const bool up    = key.isKeyCode (juce::KeyPress::upKey);
+        const bool down  = key.isKeyCode (juce::KeyPress::downKey);
+        if (left || right || up || down)
+        {
+            // One step is the unit system's own small step - 100 mm, or a foot
+            // in Imperial - so a nudge lands on the same grid the snaps use.
+            // Shift takes ten of them for crossing the field.
+            const float base = Units::imperial() ? 0.3048f : 0.1f;
+            const float stepM = base * (key.getModifiers().isShiftDown() ? 10.0f : 1.0f);
+
+            // World Y runs up the plan, screen Y runs down it: Up means away
+            // from the viewer, which is +y.
+            juce::Point<float> d (left ? -stepM : (right ? stepM : 0.0f),
+                                  down ? -stepM : (up    ? stepM : 0.0f));
+
+            if (onWillEdit) onWillEdit();
+            const bool world = (currentAnnotSpace() == AnnotSpace::World);
+            moveSelectionBy (d, world ? d : juce::Point<float> (0.0f, 0.0f));
+            layoutTextBoxEditor();
+            if (onEditCommitted) onEditCommitted();
+            repaint();
+            return true;
+        }
     }
 
     if ((key.isKeyCode (juce::KeyPress::deleteKey)

@@ -120,6 +120,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
     {
         double x, y, gainLin, facing, delaySec, polPhase;
         SpeakerFilter filter;      // applied per smoothing sub-band
+        std::complex<double> hCentre { 1.0, 0.0 };  // H at f: pressure, interference, polar
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
         const DirectivityPattern* pat = nullptr;   // this speaker's own model, at f
         bool   hasAbs   = false;
@@ -142,6 +143,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
         src.filter = s.filter;
+        src.hCentre = filterResponse (f, s.filter);
 
         const auto& table = tableFor (p, s.model);
         if (! table.empty())
@@ -192,6 +194,11 @@ SimResult AcousticEngine::compute (const SimParams& p)
     // taken at the middle of a smoothed band comes out about half a dB wrong
     // near the corner - and wrong in a way that quietly disagrees with the
     // transfer function it claims to be.
+    // H is taken at the frequency the wave is propagated at (fm, the same one
+    // that sets km / wm), not at the model's own pattern frequency: the filter
+    // acts on the signal, and the two differ in a mixed scene or while another
+    // model's catalogue is browsed - which used to leave the filter's phase
+    // and level out of step with the wave it was applied to.
     std::vector<std::vector<std::complex<double>>> hBand (
         srcs.size(), std::vector<std::complex<double>> ((size_t) mCount,
                                                         std::complex<double> (1.0, 0.0)));
@@ -209,7 +216,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const double fmOwn = fOwn * std::pow (2.0, frac);
                 if (! table.empty())
                     patBand[si][(size_t) m] = pickPattern (table, fmOwn);
-                hBand[si][(size_t) m] = filterResponse (fmOwn, s.filter);
+                hBand[si][(size_t) m] = filterResponse (f * std::pow (2.0, frac), s.filter);
             }
             ++si;
         }
@@ -283,8 +290,9 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const auto& s = srcs[i];
                 const double D = dirFactor (s.pat, k, s.facing, theta[i]);
                 const double ampBase = D / rSpread[i];
-                const double amp = s.gainLin * ampBase;
-                const double phase = -(k * rGeom[i] + omega * s.delaySec) + s.polPhase;
+                const double amp = s.gainLin * ampBase * std::abs (s.hCentre);
+                const double phase = -(k * rGeom[i] + omega * s.delaySec) + s.polPhase
+                                   + std::arg (s.hCentre);
                 centre += std::polar (amp, phase);
                 centreUnity += std::polar (ampBase, phase);
                 incoh  += amp;
@@ -446,8 +454,9 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const double th = std::atan2 (Yf - s.y, Xf - s.x);
                 const double D  = dirFactor (s.pat, k, s.facing, th);
                 const double ampBase = D / rs;
-                const double amp = s.gainLin * ampBase;
-                const double phase = -(k * rg + omega * s.delaySec) + s.polPhase;
+                const double amp = s.gainLin * ampBase * std::abs (s.hCentre);
+                const double phase = -(k * rg + omega * s.delaySec) + s.polPhase
+                                   + std::arg (s.hCentre);
                 sum += std::polar (amp, phase);
                 sumUnity += std::polar (ampBase, phase);
             }
@@ -553,7 +562,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
             const DirectivityPattern* pm = table.empty() ? nullptr : pickPattern (table, fmOwn);
             const double D = dirFactor (pm, km, s.facing, theta[i]);
             const double ampBase = D / rSpread[i];
-            const auto   H  = filterResponse (fmOwn, s.filter);
+            const auto   H  = filterResponse (fm, s.filter);
             const double hm = std::abs (H);
             const double amp = s.gainLin * ampBase * hm;
             const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase

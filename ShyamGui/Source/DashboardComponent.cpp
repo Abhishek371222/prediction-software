@@ -58,14 +58,14 @@ DashboardComponent::DashboardComponent()
     setSize (760, 600);
     logo_ = Brand::createLogo (Brand::text());
 
-    title_.setText ("ACOUSTIC SIMULATION ENGINE", juce::dontSendNotification);
+    title_.setText ("INTEGRAL", juce::dontSendNotification);
     title_.setColour (juce::Label::textColourId, Brand::text());
     title_.setJustificationType (juce::Justification::centred);
     title_.setMinimumHorizontalScale (1.0f);
     title_.setBorderSize ({});
     addAndMakeVisible (title_);
 
-    footer_.setText ("Atomik - Simulation Engine - v1.5.0", juce::dontSendNotification);
+    footer_.setText ("Atomik Integral - v1.4.2", juce::dontSendNotification);
     footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
     footer_.setJustificationType (juce::Justification::centred);
     footer_.setMinimumHorizontalScale (1.0f);

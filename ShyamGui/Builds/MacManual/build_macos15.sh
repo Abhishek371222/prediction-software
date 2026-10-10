@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rebuild Atomik for macOS 15+ on Apple Silicon (M1/M2/M3/M4).
+# Rebuild Atomik Integral for macOS 15+ on Apple Silicon (M1/M2/M3/M4).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -114,10 +114,11 @@ clang++ "${common[@]}" \
 # Launching the bare Mach-O with `open` makes the app vanish from running
 # apps when you switch away — it looks "closed" even though the process lives.
 # ---------------------------------------------------------------------------
-APP_NAME="Atomik Acoustic Simulation Engine"
+APP_NAME="Atomik Integral"
 APP_DIR="$BUILD_DIR/${APP_NAME}.app"
 VERSION="1.3.6"
 ICNS_CANDIDATES=(
+  "$ROOT/dist/mac/Atomik Integral.app/Contents/Resources/Atomik.icns"
   "$ROOT/dist/mac/Atomik Acoustic Simulation Engine.app/Contents/Resources/Atomik.icns"
   "$ROOT/Assets/Atomik.icns"
 )
@@ -139,7 +140,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key>
   <string>Atomik</string>
   <key>CFBundleIdentifier</key>
-  <string>com.atomikaudio.acousticsimulationengine</string>
+  <string>com.atomikaudio.integral</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -184,7 +185,7 @@ echo "Run with:  open \"$APP_DIR\""
 if [[ "${1:-}" == "--run" ]]; then
   pkill -x TwoSpeakerExplorer 2>/dev/null || true
   sleep 0.4
-  rm -f "$HOME/Library/Caches/com.juce.locks/juceAppLock_Atomik Acoustic Simulation Engine"
+  rm -f "$HOME/Library/Caches/com.juce.locks/juceAppLock_Atomik Integral"
   open "$APP_DIR"
   echo "Launched."
 fi

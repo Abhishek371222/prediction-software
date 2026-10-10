@@ -47,7 +47,7 @@ function dirExists(p) {
 }
 
 // --- 1) Source zip (app sources + Q21S pack + docs; no JUCE / build junk) ---
-const sourceZip = path.join(outDir, `Atomik-Source-v${version}.zip`);
+const sourceZip = path.join(outDir, `AtomikIntegral-Source-v${version}.zip`);
 const sourceList = path.join(outDir, '_source_paths.txt');
 const includePaths = [
   'ShyamGui/Source',
@@ -75,20 +75,20 @@ console.log('Source zip:', sourceZip);
 // --- 2) macOS DMG (from built .app if present) ---
 const appPath = path.join(
   ROOT,
-  'ShyamGui/Builds/MacManual/build/Atomik Acoustic Simulation Engine.app'
+  'ShyamGui/Builds/MacManual/build/Atomik Integral.app'
 );
-let macDmg = path.join(outDir, `Atomik-macOS-v${version}.dmg`);
+let macDmg = path.join(outDir, `AtomikIntegral-macOS-v${version}.dmg`);
 let macAvailable = false;
 
 if (dirExists(appPath)) {
   const stage = path.join(outDir, '_dmg_stage');
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
-  run('cp', ['-R', appPath, path.join(stage, 'Atomik Acoustic Simulation Engine.app')]);
+  run('cp', ['-R', appPath, path.join(stage, 'Atomik Integral.app')]);
   if (fileExists(macDmg)) fs.unlinkSync(macDmg);
   run('hdiutil', [
     'create',
-    '-volname', `Atomik v${version}`,
+    '-volname', `Atomik Integral v${version}`,
     '-srcfolder', stage,
     '-ov',
     '-format', 'UDZO',
@@ -104,10 +104,10 @@ if (dirExists(appPath)) {
 
 // --- 3) Windows EXE (optional; often built on Windows) ---
 const winCandidates = [
-  path.join(ROOT, 'ShyamGui/Builds/Release/Atomik Simulation Engine.exe'),
-  path.join(ROOT, 'ShyamGui/Builds/VisualStudio2022/x64/Release/Atomik Simulation Engine.exe'),
+  path.join(ROOT, 'ShyamGui/Builds/Release/Atomik Integral.exe'),
+  path.join(ROOT, 'ShyamGui/Builds/VisualStudio2022/x64/Release/Atomik Integral.exe'),
 ];
-let winExe = path.join(outDir, `Atomik-Windows-v${version}.exe`);
+let winExe = path.join(outDir, `AtomikIntegral-Windows-v${version}.exe`);
 let winAvailable = false;
 for (const c of winCandidates) {
   if (fileExists(c)) {
@@ -151,9 +151,9 @@ async function replaceFile(filename, localPath) {
 }
 
 const files = {};
-files.source = await replaceFile(`v${version}/Atomik-Source-v${version}.zip`, sourceZip);
-if (macAvailable) files.mac = await replaceFile(`v${version}/Atomik-macOS-v${version}.dmg`, macDmg);
-if (winAvailable) files.windows = await replaceFile(`v${version}/Atomik-Windows-v${version}.exe`, winExe);
+files.source = await replaceFile(`v${version}/AtomikIntegral-Source-v${version}.zip`, sourceZip);
+if (macAvailable) files.mac = await replaceFile(`v${version}/AtomikIntegral-macOS-v${version}.dmg`, macDmg);
+if (winAvailable) files.windows = await replaceFile(`v${version}/AtomikIntegral-Windows-v${version}.exe`, winExe);
 
 const now = new Date();
 await versions.updateOne(

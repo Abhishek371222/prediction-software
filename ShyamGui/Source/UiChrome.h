@@ -260,8 +260,9 @@ public:
         g.setColour (on ? Brand::accent() : Brand::muted());
         // Same reference as the ribbon's controls, so a tab is never smaller
         // than the buttons it switches to.
-        g.setFont (Brand::tech (juce::jmin (Brand::UI::scaledFont (Brand::Type::sidebarMainValue),
-                                            r.getHeight() * 0.62f), on));
+        g.setFont (Brand::tech (juce::jmax (11.0f,
+                                juce::jmin (Brand::UI::scaledFont (Brand::Type::ribbonTabLabel),
+                                            r.getHeight() * 0.72f)), on));
         g.drawText (label_, getLocalBounds(), juce::Justification::centred);
 
         if (on)
@@ -353,6 +354,13 @@ public:
         styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the gradient plot", false);
         styleToolFile (btnZoomIn_,  "Zoom In.svg",  "Zoom in");
         styleToolFile (btnZoomOut_, "Zoom Out.svg", "Zoom out");
+        // Magnifier: a toggle, but deliberately NOT in the tool radio group.
+        // It is a way of looking at the plot, not a thing you do to it, so it
+        // must not take Select's place the moment you switch it on.
+        styleTool (btnMagnify_, kMagnifySVG,
+                   "Magnifier: a glass that follows the pointer and enlarges "
+                   "what is under it, without changing the view", false);
+        btnMagnify_.setClickingTogglesState (true);
 
         btnSelect_.setToggleState (true, juce::dontSendNotification);
 
@@ -548,8 +556,9 @@ public:
         planeBtn (btnPlaneArch_,   "Architectural",
                   "Structure: a wall, a balcony front, the stage edge.");
         planeBtn (btnRangeAdd_, "+ Range",
-                  "Draw a reference ring at a distance you choose, around every "
-                  "speaker. Type it in metres or feet - 2m, 6ft, 2.5.");
+                  "Draw reference rings at the distances you choose, around every "
+                  "speaker. Type one or several at once in metres or feet - "
+                  "2, 4, 8 or 5m, 20ft.");
         btnRangeAdd_.setClickingTogglesState (false);
         btnRangeAdd_.onClick = [this] { if (onAddRange) onAddRange(); };
 
@@ -860,7 +869,8 @@ public:
         addAndMakeVisible (rangeBtn_);
 
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
-                          &btnRuler_, &btnShape_, &btnMic_, &btnZoomIn_, &btnZoomOut_ })
+                          &btnRuler_, &btnShape_, &btnMic_, &btnZoomIn_, &btnZoomOut_,
+                          &btnMagnify_ })
             tb->toFront (false);
         for (auto* fb : { &btnFileNew_, &btnFileOpen_, &btnFileSave_, &btnFileSaveAs_, &btnFileExport_ })
             fb->toFront (false);
@@ -965,12 +975,14 @@ public:
     }
 
     void showMicMenu (std::function<void (int itemId)> onPick, bool hasMics,
-                      bool showDegrees, bool hasRings = true)
+                      bool showDegrees, bool hasRings = true,
+                      bool showCoords = true)
     {
         juce::PopupMenu root;
         root.addItem (1, "Add Mic");
         // Nothing to place onto until a range exists.
         root.addItem (2, "Place on ring", hasMics && hasRings);
+        root.addItem (5, "Show Coordinates", true, showCoords);
         root.addItem (3, "Show Degrees", true, showDegrees);
         root.addItem (4, "Show Frequency Response", hasMics);
         root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnMic_),
@@ -988,6 +1000,7 @@ public:
     juce::DrawableButton btnRuler_  { "rul", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnShape_  { "shp", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnMic_    { "mic", juce::DrawableButton::ImageFitted };
+    juce::DrawableButton btnMagnify_{ "mag", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
     /** Master switch for the "Options" cluster (Snap / Ortho) that sits after
@@ -1562,26 +1575,30 @@ private:
         struct Cluster { int iconX, dividerX; };
         static constexpr Cluster kFile    { 22,  138 };   // Figma  29 / 182
         static constexpr Cluster kNav     { 152, 207 };   //       200 / 272
-        static constexpr Cluster kView    { 211, 280 };   //       278 / 369
-        static constexpr Cluster kTools   { 287, 358 };   //       378 / 471
+        // View gained a fourth icon (the magnifier), so it is one pitch wider
+        // than the mock and every cluster after it moves right by the same 23
+        // units - the row had air to spare past Help, the same way Opacity was
+        // widened earlier.
+        static constexpr Cluster kView    { 211, 303 };   //       278 / 369 + 23
+        static constexpr Cluster kTools   { 310, 381 };   //       378 / 471 + 23
         // Opacity needs more room than the Figma mock gave it: at a legible
         // caption size "Opacity" and "100%" do not both fit in the original
         // 56-unit slot, so the caption lost its last letter and the value lost
         // its % sign. Widened by 60 units and everything after it shifted by
         // the same amount -- the row had empty space to spare to the right of
         // Help, so nothing is pushed off the end.
-        static constexpr Cluster kOpacity { 366, 488 };   // Opacity slot (Tools|Shapes)
-        static constexpr Cluster kShapes  { 494, 638 };   // Figma 478 / 668 + 60
-        static constexpr Cluster kColours { 643, 703 };   //       675 / 754 + 60
-        static constexpr Cluster kHelp    { 706, 774 };   //       758 / 847 + 60
+        static constexpr Cluster kOpacity { 389, 511 };   // Opacity slot (Tools|Shapes)
+        static constexpr Cluster kShapes  { 517, 661 };   // Figma 478 / 668 + 60
+        static constexpr Cluster kColours { 666, 726 };   //       675 / 754 + 60
+        static constexpr Cluster kHelp    { 729, 797 };   //       758 / 847 + 60
         // Options (Snap / Ortho) continues the row past Help on the same
         // rhythm the mock uses elsewhere: 14 units of air after the preceding
         // divider, then the controls, then 14 more before the next rule.
-        static constexpr Cluster kOptions { 728, 852 };
+        static constexpr Cluster kOptions { 751, 875 };
         // Text Box carries on past Help on the same rhythm: a little air after
         // the preceding rule, three alignment glyphs on the icon pitch, then
         // the size box, then the closing rule.
-        static constexpr Cluster kText    { 788, 1086 };
+        static constexpr Cluster kText    { 811, 1109 };
         static constexpr int kOptionPillW = 50;           // "Snap" / "Ortho" pills
         static constexpr int kOptionPillGap = 6;
         static constexpr int kPlateLeft = 15;             // Figma  20
@@ -1624,15 +1641,25 @@ private:
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
         auto px2 = [&] (int v) { return juce::jmax (1, juce::roundToInt ((float) UiConfig::Scale::px (v) * shrink)); };
 
-        const int tool       = juce::jmax (12, px2 (L::ribbonIconSize));
+        // `shrink` is a HORIZONTAL remedy - it exists because the clusters do
+        // not fit the window's width. It used to be applied to the vertical
+        // metrics as well, which shrank the row's height on a narrow window
+        // although the band it sits in is a fixed 80 units tall and had some
+        // 45 px going spare. The cost landed on the text: a pill squeezed to
+        // 15 px tall can only carry about 10 px of ink however large a font it
+        // is asked for, which is why the ribbon read small at any ordinary
+        // window size. Heights now stay at full scale and only x moves.
+        // `pitch` already takes jmax (tool + 1, ...), so wider icons spread
+        // out rather than overlapping when the row is tight.
+        const int tool       = juce::jmax (12, UiConfig::Scale::px (L::ribbonIconSize));
         const int pitch      = juce::jmax (tool + 1, px2 (kPitch));
         // The controls keep their Figma geometry; the whole row just starts
         // below the tab strip instead of at the top of the band.
-        const int tabStrip   = px2 (L::ribbonTabStripH);
+        const int tabStrip   = UiConfig::Scale::px (L::ribbonTabStripH);
         tabStripH_ = tabStrip;
-        const int iconTop    = tabStrip + juce::jmax (2, px2 (L::ribbonIconTop));
-        const int labelTop   = tabStrip + juce::jmax (tool + 2, px2 (L::ribbonLabelTop));
-        const int labelH     = juce::jmax (8, px2 (L::ribbonLabelH));
+        const int iconTop    = tabStrip + juce::jmax (2, UiConfig::Scale::px (L::ribbonIconTop));
+        const int labelTop   = tabStrip + juce::jmax (tool + 2, UiConfig::Scale::px (L::ribbonLabelTop));
+        const int labelH     = juce::jmax (8, UiConfig::Scale::px (L::ribbonLabelH));
         // Colours palette: 14px dots on a 20x16 grid in the Figma mock.
         const int swatch     = juce::jmax (6, px2 (L::ribbonSwatch));
         const int pitchX     = juce::jmax (swatch + 1, px2 (L::ribbonSwatchPitchX));
@@ -1642,7 +1669,8 @@ private:
         const int edgeIndent = 0;
 
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
-                          &btnRuler_, &btnZoomIn_, &btnZoomOut_, &btnFitView_ })
+                          &btnRuler_, &btnZoomIn_, &btnZoomOut_, &btnFitView_,
+                          &btnMagnify_ })
             tb->setEdgeIndent (edgeIndent);
         for (auto* fb : { &btnFileNew_, &btnFileOpen_, &btnFileSave_, &btnFileSaveAs_, &btnFileExport_ })
             fb->setEdgeIndent (edgeIndent);
@@ -1675,7 +1703,12 @@ private:
         // Brand::UI::scale is still 1.0, so a font set there stays at its base
         // size and renders roughly half as large as the design calls for.
         {
-            const auto capFont = Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel));
+            // The caption row keeps its full height now, so the captions keep
+            // their full size: a cluster's name is the thing you read to find
+            // the control, and shrinking it was saving width it does not use
+            // (captions are centred on a plate, not laid end to end).
+            const auto capFont = Brand::tech (
+                Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel));
             for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
                              &lblColours_, &lblHelp_, &lblOptions_, &lblMapping_,
                              &lblMappingType_, &lblDistance_, &lblPlane_, &lblMic_ })
@@ -1707,7 +1740,7 @@ private:
         cluster (kFile, lblFile_,
                  { &btnFileNew_, &btnFileOpen_, &btnFileSave_, &btnFileSaveAs_, &btnFileExport_ });
         cluster (kNav,   lblNav_,   { &btnSelect_, &btnPan_ });
-        cluster (kView,  lblView_,  { &btnZoomIn_, &btnZoomOut_, &btnFitView_ });
+        cluster (kView,  lblView_,  { &btnZoomIn_, &btnZoomOut_, &btnFitView_, &btnMagnify_ });
         cluster (kTools, lblTools_, { &btnPencil_, &btnEraser_, &btnRuler_ });
 
         // Opacity: caption + percentage on one line, track beneath. It has no
@@ -2058,6 +2091,9 @@ private:
             l->setColour (juce::Label::textColourId, Brand::text());
             l->setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel)));
         }
+        // resized() sizes the captions against the row's current shrink; the
+        // line above only knows the unshrunk size, so hand it back to layout.
+        resized();
 
         auto mk = [] (const char* svg, juce::Colour c) -> std::unique_ptr<juce::Drawable>
         {
@@ -2091,6 +2127,7 @@ private:
         restyleFile (btnRuler_,   "Ruler.svg");
         restyle (btnShape_,   kShapeSVG);
         restyle (btnMic_,     kMicSVG);
+        restyle (btnMagnify_, kMagnifySVG);
         restyleFile (btnZoomIn_,  "Zoom In.svg");
         restyleFile (btnZoomOut_, "Zoom Out.svg");
         restyleFile (btnFitView_, "Full Screen.svg");
@@ -2153,6 +2190,9 @@ private:
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M5 3l14 9.5-6.2 1.4L16.5 21l-2.2 1.2-3.6-7.2L5 19.5V3z"/></svg>)SVG";
     static constexpr const char* kShapeSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M3 5h8v6H3z" opacity=".45"/><path fill="#fff" d="M3 5h8v2H3zm0 4h8v2H3zM3 5h2v6H3zm6 0h2v6H9z"/><path fill="#fff" d="M14 4l6 4-6 4V4z"/><circle cx="17" cy="17" r="4" fill="#fff" opacity=".45"/><circle cx="17" cy="17" r="4" fill="none" stroke="#fff" stroke-width="2"/></svg>)SVG";
+    // Plain magnifying glass - no + or -, because it does not change the zoom.
+    static constexpr const char* kMagnifySVG =
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2"/><path stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M15.4 15.4L21 21"/></svg>)SVG";
     static constexpr const char* kMicSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path fill="none" stroke="#fff" stroke-width="2" d="M6 11a6 6 0 0 0 12 0"/><path fill="#fff" d="M11 17h2v3h-2z"/><path fill="#fff" d="M8 20h8v2H8z"/></svg>)SVG";
     // Figma ribbon icons: the Shapes cluster.

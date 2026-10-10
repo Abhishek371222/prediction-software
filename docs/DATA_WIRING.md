@@ -71,7 +71,15 @@ Derived from maths BEM workbook `Q21S_PolarPlot_Data_10M.xlsx` via
 | `Q21S_<Hz>Hz_2p0m.csv` | native bands | 2.0 m | 360 | Far-field prefer for SPL sim |
 
 Catalogue Hz list = `kQ21SFrequencies` in `AcousticEngine.h` (**xlsx only, extras hidden**):
-**20, 29, 52, 81, 98, 153, 198, 256, 309, 352, 400, 401**
+**20, 29, 52, 60, 81, 98, 153, 198, 256, 309, 352, 400, 401**
+
+Band labels are the integer at or below the run's native frequency
+(153.76 -> 153, 98.42 -> 98). **60 Hz is the exception**: its native frequency is
+**59.10 Hz**, so by that rule it would be 59. It is labelled 60 because that is
+what the band was asked for and what it is called on the floor; the solver
+therefore runs it 0.90 Hz (1.5%) above the frequency the polar was measured at,
+the largest such gap in the set. Relabel to 59 in `kQ21SFrequencies`,
+`export_q21s_native_hz_pack.py` and the pack filenames to close it.
 
 | Origin | Detail |
 |--------|--------|
@@ -213,6 +221,7 @@ Always **mirror opposite side → complete** before arcs / maps. See prior analy
 
 | Date | Change | Files |
 |------|--------|-------|
+| 2026-10-10 | Native BEM band **60 Hz** added (native 59.10 Hz) from `BEM_Data_10m/60Hz.xlsx` - polars at 0.5 / 1.0 / 2.0 m + `Q21S_Field_60Hz.q21f`, embedded into the EXE | `60Hz.xlsx`, `export_q21s_native_hz_pack.py`, `AcousticEngine.h`, `Q21S_60Hz_*.csv`, `EmbeddedQ21SData.cpp` |
 | 2026-08-13 | UI frequencies = **xlsx only** (hid 25 / 40 / 63 / 125 / 500) | `AcousticEngine.h` |
 | 2026-08-13 | Remaining native BEM bands **20 / 29 / 81 / 98 / 256 / 309 / 352 / 400 / 401** wired like 52 Hz (single-sub exact; multi-sub predicted) | `export_q21s_native_hz_pack.py`, `AcousticEngine.h`, pack CSVs |
 | 2026-08-12 | Native BEM bands **153 / 198** (replace 160 / 200); single-sub = exact xlsx polars; multi-sub = coherent array prediction | `export_q21s_native_hz_pack.py`, `AcousticEngine.h`, pack CSVs |

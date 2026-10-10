@@ -63,6 +63,15 @@ public:
     void setShowMicDegrees (bool b) { showMicDegrees_ = b; repaint(); }
     bool showMicDegrees() const noexcept { return showMicDegrees_; }
 
+    /** Magnifier: a loupe that follows the pointer and shows what is under it
+        enlarged, without changing the view everyone else is looking at. */
+    void setMagnifier (bool on);
+    bool magnifierOn() const noexcept { return magnifierOn_; }
+
+    /** Print each mic's X, Y beside its marker, in the unit on show. */
+    void setShowMicCoords (bool b) { showMicCoords_ = b; repaint(); }
+    bool showMicCoords() const noexcept { return showMicCoords_; }
+
     /** Print each placed unit's W x H x D under its marker. Display only:
         nothing is re-solved, since cabinet size is not a solver input. */
     void setShowSpeakerDims (bool b) { showSpeakerDims_ = b; repaint(); }
@@ -210,8 +219,8 @@ public:
         juce::String text;                            // TextBox label
         float rotationDeg = 0.0f;                     // rotation of a box-shaped annotation (CCW degrees)
         // TextBox type. fontPx is the height at the default fit (zoom 1), so
-        // the text scales with the plan like the box around it does; 0 keeps
-        // the old behaviour of sizing itself from the box.
+        // the text scales with the plan like the box around it does; 0 (Auto)
+        // fits the text to fill the box, so resizing the box resizes the text.
         float fontPx = 0.0f;
         int   align  = 0;                             // 0 left, 1 centre, 2 right
         int   valign = 0;                             // 0 top, 1 middle, 2 bottom
@@ -318,6 +327,10 @@ public:
     std::function<void(int, float, float)> onSpeakerMoved;
     /** A unit was turned by its handle: index, new heading in degrees. */
     std::function<void(int, float)> onSpeakerRotated;
+    /** Aim line hidden / shown on one speaker. The plot draws from its own
+        copy of the speaker list, so without this the change would look right
+        on screen, never reach the project, and vanish at the next push. */
+    std::function<void(int, bool)>  onSpeakerAimLineChanged;
     /** Paste speakers into the scene; return their new indices. */
     std::function<std::vector<int>(std::vector<Speaker>)> onPasteSpeakers;
     /** Remove speakers by index (e.g. Delete / context menu). */
@@ -330,6 +343,10 @@ public:
     /** Right-click a mic -> "Listen here". The host opens the player; the
         canvas has no business owning an audio device. */
     std::function<void(int)>                onListenAtMic;
+    /** Right-click > Copy image: hand the plot to the system clipboard.
+        Owned by MainComponent, which already renders the plot for PNG
+        export and owns the status line that reports the result. */
+    std::function<void()>                  onCopyImage;
     std::function<void()>                  onMicsChanged;
     std::function<void()>                  onAddMicArmedChanged;
     std::function<void()>                  onAddSpeakerArmedChanged;
@@ -363,7 +380,12 @@ private:
     /** Screen height for a text box's type, honouring a set size or falling
         back to the auto fit. Shared by the painter and the in-place editor so
         the text does not change size the moment you stop typing. */
-    float textBoxFontScreenPx (const Annotation&, float boxHeightPx) const;
+    float textBoxFontScreenPx (const Annotation&, float boxWidthPx, float boxHeightPx,
+                               const juce::String& text) const;
+    /** Auto size: the largest type at which @p text, wrapped at word breaks,
+        fills the box without overflowing it or splitting a word. */
+    float textBoxFitPx (const Annotation&, float boxWidthPx, float boxHeightPx,
+                        const juce::String& text) const;
     static juce::Justification textBoxJustification (int align, int valign = 0);
     /** CAD-style dimensioning on one plan marker: extension lines, arrowed
         dimension lines and their values, so it is obvious WHICH edge is the
@@ -374,6 +396,13 @@ private:
         view's transform is a top-down map and means nothing here. */
     void drawElevation (juce::Graphics&, juce::Rectangle<int>);
     void fitView();
+    /** True once the user has panned or zoomed. A solve must not refit the
+        view after that - every edit re-solves, so refitting threw the pan
+        away each time. */
+    bool viewUserAdjusted_ = false;
+    void noteViewAdjusted() noexcept { viewUserAdjusted_ = true; }
+    /** Whether a fresh solve is allowed to reframe the plot. */
+    bool mayAutoFitView() const noexcept { return ! viewInit_ || ! viewUserAdjusted_; }
     void clampViewToField();
     float minZoomForFit() const;        // zoom floor: whole field on screen
     void zoomAboutCentre (float factor);
@@ -503,6 +532,7 @@ private:
     int  micHitTest (juce::Point<float> worldPt, float radiusM) const;
     int  micHitTestScreen (juce::Point<float> screenPt) const;
     juce::String micLabelText (const MicReceiver& m) const;
+    static juce::String micCoordText (const MicReceiver& m);
     void snapMicWorld (float& wx, float& wy, bool playSoundIfNewClip);
     void beginMicDrag (int micIndex, juce::Point<float> screenPos);
     void drawShapeAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
@@ -588,7 +618,24 @@ private:
     bool                showDistanceRings_ = false;
     std::vector<float>  rangeRings_;        // metres, sorted, user-chosen
     bool                rangesVisible_ = true;
+    // --- Magnifier ---------------------------------------------------------
+    // The loupe is drawn from a snapshot of this component taken at the
+    // magnified scale. Taking it re-enters paint(), so magBusy_ both guards
+    // against recursion and stops the loupe drawing itself inside itself.
+    bool                magnifierOn_   = false;
+    bool                magValid_      = false;   // pointer is over the plot
+    bool                magBusy_       = false;   // snapshot in progress
+    juce::Point<float>  magPoint_;
+    juce::Image         magImage_;
+    void updateMagnifierImage();
+    void drawMagnifier (juce::Graphics& g);
+    float magnifierRadiusPx() const noexcept;
+    static constexpr float kMagnifyFactor = 3.0f;
+
     bool                showMicDegrees_ = false;
+    // On by default: the position is the point of placing a mic, and a
+    // reading with no seat attached to it is not worth much.
+    bool                showMicCoords_  = true;
     bool                showSpeakerDims_ = false;
     bool                showRays_ = false;
     bool                lockRays_ = false;
@@ -613,6 +660,9 @@ private:
         selected one - it replaced the rotation knob, so the selected unit must
         carry its aiming handle whether or not the toggle is on. */
     bool rayVisibleFor (int speakerIndex) const noexcept;
+    /** A sub's stalk-and-knob aiming handle: shown where there is no ray. */
+    bool aimHandleVisibleFor (int speakerIndex) const noexcept;
+    int  aimHandleHitTest (juce::Point<float> screenPt) const;
     // Defaults the next text box inherits, exactly as drawFillAlpha_ works.
     int                 drawTextAlign_ = 0;
     int                 drawTextVAlign_ = 0;
@@ -637,7 +687,8 @@ private:
         height: the width you drew is kept, the box never shrinks under you. */
     void growTextBoxToFit (int index);
     /** The font a box actually renders with, weight and slant included. */
-    juce::Font textBoxFont (const Annotation&, float boxHeightPx) const;
+    juce::Font textBoxFont (const Annotation&, float boxWidthPx, float boxHeightPx,
+                            const juce::String& text) const;
     LayoutLayer*        layout_ = nullptr;
     bool                layoutEditMode_ = false;
     bool                layoutSnap_ = false;

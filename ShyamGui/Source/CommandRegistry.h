@@ -166,7 +166,7 @@ namespace CommandRegistry
     inline juce::String helpText()
     {
         juce::String s;
-        s << "Atomik Acoustic Simulation Engine - command line\n"
+        s << "Atomik Integral - command line\n"
           << "Short form and full name run the same command.\n"
           << "\n"
           << "DRAW\n"

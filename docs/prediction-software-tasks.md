@@ -2,7 +2,7 @@
 
 ## Overview
 
-Atomik Acoustic Simulation Engine predicts low-frequency coverage for subwoofer arrays (UI cabinet label **XN18**; measured data pack remains Q21S BEM). Users place cabinets in a 2D world, simulate relative SPL coverage and far-field / measured polar directivity, and export PNG, CSV, and PDF reports. Simulation uses measured **Ground Plane** directivity, optional 1/3-octave smoothing, and a display-only dB floor for colour mapping.
+Atomik Integral predicts low-frequency coverage for subwoofer arrays (UI cabinet label **XN18**; measured data pack remains Q21S BEM). Users place cabinets in a 2D world, simulate relative SPL coverage and far-field / measured polar directivity, and export PNG, CSV, and PDF reports. Simulation uses measured **Ground Plane** directivity, optional 1/3-octave smoothing, and a display-only dB floor for colour mapping.
 
 ## Task Categories
 
