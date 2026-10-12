@@ -81,8 +81,8 @@ private:
     {
         return juce::jmax (0.5f, Brand::UI::scale) * uiScaleBoost_;
     }
-    float rowFontSize() const noexcept { return juce::jmax (9.0f, 11.0f * scale()); }
-    int   rowHeight()   const noexcept { return (int) (18.0f * scale()); }
+    float rowFontSize() const noexcept { return juce::jmax (13.0f, 14.0f * scale()); }
+    int   rowHeight()   const noexcept { return juce::jmax (20, (int) (22.0f * scale())); }
     int   topPad()      const noexcept { return (int) (4.0f * scale()); }
     int   sidePad()     const noexcept { return (int) (8.0f * scale()); }
 

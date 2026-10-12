@@ -7,7 +7,7 @@ class TwoSpeakerApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName()    override { return "Atomik Integral"; }
-    const juce::String getApplicationVersion() override { return "1.4.2"; }
+    const juce::String getApplicationVersion() override { return "1.4.3"; }
     bool moreThanOneInstanceAllowed()          override { return true; }
 
     void initialise (const juce::String& /*commandLine*/) override

@@ -63,6 +63,10 @@ private:
                                 "minimise it or switch this off.");
             pinBtn_.onClick = [this] { window_.setKeepOnTop (pinBtn_.getToggleState()); };
 
+            // Full screen is withheld: the window already carries the system's
+            // own maximise button, and two controls for one job is one too
+            // many. The button and its handler stay here, unparented, so it
+            // can be put back by adding it below.
             fullBtn_.setTooltip ("Fill the screen with this window, or restore it.");
             fullBtn_.onClick = [this]
             {
@@ -70,8 +74,11 @@ private:
                 syncButtons();
             };
 
-            for (auto* b : { &pinBtn_, &fullBtn_ })
-                addAndMakeVisible (*b);
+            // Sized like the bottom bar's actions, which is the nearest thing
+            // to it in the app - without an id these fell through to the
+            // generic cap and rendered about 8 px on a laptop.
+            pinBtn_.setComponentID ("bottomBtn");
+            addAndMakeVisible (pinBtn_);
             restyle();
         }
 
@@ -86,12 +93,11 @@ private:
         void syncButtons()
         {
             pinBtn_.setToggleState (window_.isAlwaysOnTop(), juce::dontSendNotification);
-            fullBtn_.setButtonText (window_.isFullScreen() ? "Exit full screen" : "Full screen");
         }
 
         void restyle()
         {
-            for (auto* b : { &pinBtn_, &fullBtn_ })
+            for (auto* b : { &pinBtn_ })
             {
                 b->setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());
                 b->setColour (juce::TextButton::buttonOnColourId, Brand::accent());
@@ -112,17 +118,21 @@ private:
         {
             const int h = stripH();
             auto strip = getLocalBounds().removeFromTop (h).reduced (4, 3);
-            const int w = juce::roundToInt (Brand::UI::scaledFont (1.0f) * 104.0f);
-            fullBtn_.setBounds (strip.removeFromRight (w));
-            strip.removeFromRight (4);
-            pinBtn_.setBounds (strip.removeFromRight (w));
+            // Floor in real pixels, like the ribbon's and the bottom bar's:
+            // the global factor bottoms out at 0.78, which left this strip
+            // 22 px tall carrying 8 px of text.
+            const int w = juce::jmax (130, juce::roundToInt (Brand::UI::scaledFont (1.0f) * 120.0f));
+            pinBtn_.setBounds (strip.removeFromRight (juce::jmin (w, strip.getWidth())));
 
             if (content_ != nullptr)
                 content_->setBounds (getLocalBounds().withTrimmedTop (h));
         }
 
     private:
-        int stripH() const { return juce::roundToInt (Brand::UI::scaledFont (1.0f) * 28.0f); }
+        int stripH() const
+        {
+            return juce::jmax (36, juce::roundToInt (Brand::UI::scaledFont (1.0f) * 34.0f));
+        }
 
         ToolWindow&       window_;
         juce::Component*  content_ = nullptr;

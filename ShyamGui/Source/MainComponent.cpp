@@ -58,7 +58,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.2", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.3", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -341,6 +341,7 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onMicsChanged = [this]
     {
+        syncMicSelectionToPanel();
         refreshFrequencyResponse();
         // Moving the mic is meant to be something you HEAR. Re-predicting on
         // every mouse move would run the probe hundreds of times a second, so
@@ -453,7 +454,15 @@ MainComponent::MainComponent (ProjectData project)
     };
     plotHeader_.onShowSplValues = [this] (bool on)
     {
-        patternComp_.setShowSplValues (on);
+        // Show Values is the live probe: the pointer becomes a crosshair and
+        // reads the level wherever it rests. It used to print a number in
+        // every major grid cell, which answered a question nobody asked - you
+        // want the level at the seat you are pointing at, not a wallpaper of
+        // readings over the map you are trying to see.
+        patternComp_.setShowSplProbe (on);
+        // The grid print-out stays in the code (setShowSplValues /
+        // drawSplValues) but is no longer driven from here.
+        patternComp_.setShowSplValues (false);
     };
     plotHeader_.onAddRange = [this] { promptForRange(); };
     plotHeader_.onShowRanges = [this] (bool on)
@@ -502,6 +511,18 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onListenAtMic = [this] (int idx) { showMicListener (idx); };
     patternComp_.onCopyImage   = [this] { copyPlotToClipboard(); };
+    controlPanel_.onMicPositionEdited = [this] (float x, float y)
+    {
+        patternComp_.setSelectedMicPosition (x, y);
+    };
+    plotHeader_.onMicCoordsEntered = [this] (float x, float y)
+    {
+        patternComp_.setSelectedMicPosition (x, y);
+    };
+    patternComp_.onMagnifierChanged = [this] (bool on)
+    {
+        plotHeader_.btnMagnify_.setToggleState (on, juce::dontSendNotification);
+    };
     patternComp_.onAnnotSelectionChanged = [this]
     {
         // Swatch + opacity follow the selected shape (or the draw brush if none).
@@ -672,6 +693,7 @@ MainComponent::MainComponent (ProjectData project)
 
     patternComp_.onSpeakerSelected = [this] (int idx)
     {
+        syncMicSelectionToPanel();
         controlPanel_.setSelectedSpeakers (patternComp_.getSelectedSpeakers(), idx);
         if (plotHeader_.btnOrtho_.getToggleState())
         {
@@ -2312,8 +2334,11 @@ void MainComponent::resized()
 
     {
         namespace L = UiConfig::Layout;
-        const int btnW    = UiConfig::Scale::px (L::bottomButtonWidth);
-        const int btnH    = UiConfig::Scale::px (L::bottomButtonHeight);
+        // Floors in real pixels, like the ribbon's: the global factor bottoms
+        // out at 0.78 on a laptop, which left these 18 px tall carrying 9 px
+        // of text. A button has to be readable before it is proportional.
+        const int btnW    = juce::jmax (150, UiConfig::Scale::px (L::bottomButtonWidth));
+        const int btnH    = juce::jmax (28,  UiConfig::Scale::px (L::bottomButtonHeight));
         const int btnGap  = UiConfig::Scale::px (L::bottomButtonGap);
         const int rightPd = UiConfig::Scale::px (L::bottomButtonRightPad);
         // Centre the row's contents in the strip rather than hanging them from
@@ -2501,6 +2526,9 @@ void MainComponent::applyPlotTool (RadiationPatternComponent::Tool tool,
                                    bool openColourPicker,
                                    bool focusPlot)
 {
+    // Picking a tool puts the glass away, the way picking one tool puts the
+    // last one away. Leaving it on top of a pencil was two modes at once.
+    patternComp_.setMagnifier (false);
     patternComp_.setTool (tool);
     using T = RadiationPatternComponent::Tool;
     using A = PlotHeaderBar::ActiveTool;
@@ -3423,6 +3451,23 @@ void MainComponent::exportPNG()
         });
 }
 
+void MainComponent::syncMicSelectionToPanel()
+{
+    const int idx = patternComp_.getSelectedMic();
+    const auto mics = patternComp_.getMics();
+    const bool has = (idx >= 0 && idx < (int) mics.size());
+    if (has)
+        controlPanel_.setMicSelection (true, mics[(size_t) idx].id,
+                                       mics[(size_t) idx].x, mics[(size_t) idx].y);
+    else
+        controlPanel_.setMicSelection (false, 0, 0.0f, 0.0f);
+
+    // The ribbon carries the same two numbers, beside the mic button.
+    plotHeader_.setMicCoords (has,
+                              has ? mics[(size_t) idx].x : 0.0f,
+                              has ? mics[(size_t) idx].y : 0.0f);
+}
+
 void MainComponent::copyPlotToClipboard()
 {
     // Rendered at 2x and handed over at that size, like the PNG export: a
@@ -3691,7 +3736,7 @@ void MainComponent::exportCSV()
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.4.2");
+            line ("# Atomik Integral v1.4.3");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

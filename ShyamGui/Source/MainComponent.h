@@ -112,6 +112,9 @@ private:
 
     void exportPNG();
     void copyPlotToClipboard();
+    /** Push the plot's mic selection into the Selected panel, so its X / Y
+        fields follow whichever mic is chosen. */
+    void syncMicSelectionToPanel();
     void exportCSV();
 
     juce::int64 measurementsSignature() const;   // mtime/size fingerprint, both models combined

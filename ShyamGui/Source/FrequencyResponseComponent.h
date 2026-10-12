@@ -61,8 +61,12 @@ public:
         g.drawRect (getLocalBounds(), 1);
 
         const float sc     = uiScale();
-        const float axisSz = juce::jmax (8.0f, 10.0f * sc);
-        const float noteSz = juce::jmax (9.0f, 11.0f * sc);
+        // These were 10 and 11 against a scale that bottoms out at 0.78 - so
+        // 8 px of axis numbers on a laptop, the smallest type anywhere in the
+        // app, on a window whose entire job is to be read. Floors are in real
+        // pixels for the same reason the ribbon's are.
+        const float axisSz = juce::jmax (13.0f, 14.0f * sc);
+        const float noteSz = juce::jmax (14.0f, 15.0f * sc);
         const juce::Font axisFont = Brand::tech (axisSz);
 
         auto plot = plotArea_;
@@ -218,20 +222,22 @@ public:
     {
         const float sc     = uiScale();
         const int   pad    = (int) (6.0f * sc);
-        const float axisSz = juce::jmax (8.0f, 10.0f * sc);
+        const float axisSz = juce::jmax (13.0f, 14.0f * sc);
         const juce::Font axisFont = Brand::tech (axisSz);
 
-        title_.setFont (Brand::techSemi (juce::jmax (10.0f, 12.0f * sc)));
+        title_.setFont (Brand::techSemi (juce::jmax (15.0f, 16.0f * sc)));
         legend_.setUiScaleBoost (sc / juce::jmax (0.5f, Brand::UI::scale));
 
         auto r = getLocalBounds().reduced (pad);
-        title_.setBounds (r.removeFromTop ((int) (18.0f * sc)));
+        // The title row has to hold the title: a juce::Label fits its text to
+        // its box, so a short row quietly caps the font however large it is set.
+        title_.setBounds (r.removeFromTop (juce::jmax (22, (int) (22.0f * sc))));
         r.removeFromTop ((int) (2.0f * sc));
 
         // The legend earns its width only while there is room for the plot
         // beside it; below that it would squeeze the curves into a sliver.
-        const int legendW = juce::jlimit ((int) (84.0f * sc),
-                                          (int) (170.0f * sc),
+        const int legendW = juce::jlimit ((int) (110.0f * sc),
+                                          (int) (210.0f * sc),
                                           r.getWidth() / 4);
         const bool showLegend = (! mics_.empty())
                               && r.getWidth() - legendW > (int) (190.0f * sc);

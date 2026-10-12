@@ -189,6 +189,14 @@ public:
     void selectSpeaker (int index);
     /** Sync plot multi-select into the panel (primary drives the editor values). */
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
+
+    /** A mic is selected on the plot: section 3's X / Y drive IT instead of a
+        speaker, so a mic is positioned by typing exactly like a cabinet is.
+        Everything else in the section greys out - a mic has no gain, delay or
+        crossover, and showing those live over a mic would be a lie. */
+    void setMicSelection (bool hasMic, int micId, float x, float y);
+    /** X / Y edited while a mic is the selection. */
+    std::function<void (float, float)> onMicPositionEdited;
     /** Append speakers (e.g. paste); returns new indices. Does not fire onSelectionChanged. */
     std::vector<int> appendSpeakers (const std::vector<Speaker>& added);
     /** Place a new Q21S at world metres (click-to-place). */
@@ -243,6 +251,12 @@ private:
     void pushLayoutTransform();   // commit width/rot/opacity sliders to the layer
 
     // Scene state
+    // Mic selection mirror. The plot owns the mics; this is only what the
+    // panel needs to show and edit them.
+    bool  micSelected_ = false;
+    int   micId_       = 0;
+    float micX_ = 0.0f, micY_ = 0.0f;
+
     std::vector<Speaker> speakers_;
     int  selected_ = -1;
     std::vector<int> selectedSpeakers_; // multi-select from plot; empty → use selected_

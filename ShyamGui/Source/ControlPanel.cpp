@@ -471,7 +471,7 @@ ControlPanel::~ControlPanel()
 void ControlPanel::armWheelFor (juce::Component* clicked)
 {
     WheelSlider* all[] = { &xSlider_, &ySlider_, &gainSlider_, &delaySlider_, &rotSlider_,
-                           &heightSlider_, &tiltSlider_, &filtFreqSlider_,
+                           &heightSlider_, &tiltSlider_, &filtFreqSlider_, &filtHiFreqSlider_,
                            &resSlider_, &floorSlider_,
                            &layoutWidthSlider_, &layoutRotSlider_, &layoutOpacitySlider_ };
     for (auto* s : all)
@@ -613,6 +613,32 @@ void ControlPanel::rebuildSpeakerBox()
 
 void ControlPanel::refreshEditors()
 {
+    // A mic owns the section while it is the selection.
+    if (micSelected_)
+    {
+        updatingUI_ = true;
+        syncPositionRanges();
+        xSlider_.setValue (micX_, juce::dontSendNotification);
+        ySlider_.setValue (micY_, juce::dontSendNotification);
+        editHdr_.setTitle ("3. Selected Mic " + juce::String (micId_));
+        xSlider_.setEnabled (true);
+        ySlider_.setEnabled (true);
+        // A mic has none of these, so they are shown and dead rather than
+        // whipped away - the section keeps its shape as the selection changes.
+        for (auto* s : { &gainSlider_, &delaySlider_, &rotSlider_,
+                         &filtFreqSlider_, &filtHiFreqSlider_ })
+            s->setEnabled (false);
+        for (auto* c : { &filtBox_, &filtTypeBox_, &filtOrderBox_,
+                         &filtHiTypeBox_, &filtHiOrderBox_ })
+            c->setEnabled (false);
+        polarityToggle_.setEnabled (false);
+        orientationToggle_.setEnabled (false);
+        enabledToggle_.setEnabled (false);
+        deleteBtn_.setEnabled (false);
+        updatingUI_ = false;
+        return;
+    }
+
     const bool has = (selected_ >= 0 && selected_ < (int) speakers_.size());
     updatingUI_ = true;
     if (has)
@@ -884,12 +910,32 @@ void ControlPanel::pushEdit()
 void ControlPanel::pushPositionEdit()
 {
     if (updatingUI_) return;
+
+    // A selected mic takes the position fields over. Same two controls, same
+    // wheel, same typing - the thing being moved is just a receiver.
+    if (micSelected_)
+    {
+        micX_ = (float) xSlider_.getValue();
+        micY_ = (float) ySlider_.getValue();
+        if (onMicPositionEdited) onMicPositionEdited (micX_, micY_);
+        return;
+    }
+
     if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
 
     auto& primary = speakers_[(size_t) selected_];
     primary.x = (float) xSlider_.getValue();
     primary.y = (float) ySlider_.getValue();
     notifyChanged();
+}
+
+void ControlPanel::setMicSelection (bool hasMic, int micId, float x, float y)
+{
+    micSelected_ = hasMic;
+    micId_ = micId;
+    micX_ = x;
+    micY_ = y;
+    refreshEditors();
 }
 
 void ControlPanel::syncFilterEnabled()

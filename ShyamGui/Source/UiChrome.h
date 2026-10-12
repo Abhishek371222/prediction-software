@@ -260,7 +260,7 @@ public:
         g.setColour (on ? Brand::accent() : Brand::muted());
         // Same reference as the ribbon's controls, so a tab is never smaller
         // than the buttons it switches to.
-        g.setFont (Brand::tech (juce::jmax (11.0f,
+        g.setFont (Brand::tech (juce::jmax (12.5f,
                                 juce::jmin (Brand::UI::scaledFont (Brand::Type::ribbonTabLabel),
                                             r.getHeight() * 0.72f)), on));
         g.drawText (label_, getLocalBounds(), juce::Justification::centred);
@@ -352,6 +352,42 @@ public:
         styleToolFile (btnRuler_,   "Ruler.svg",        "Ruler: click two points to measure distance", true);
         styleTool (btnShape_,   kShapeSVG,   "Shape: Line, Polyline, Circle, Arc, Rectangle, Square, or Text Box", true);
         styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the gradient plot", false);
+
+        // X / Y for the selected mic, typed in the ribbon. Styled like the
+        // Ortho gap read-out, which is the other number you type into up here.
+        {
+            auto styleCoord = [this] (juce::Label& l, const juce::String& tip)
+            {
+                l.setEditable (true, true, false);
+                l.setJustificationType (juce::Justification::centred);
+                l.setTooltip (tip);
+                l.setColour (juce::Label::backgroundColourId, Brand::plotToolbar());
+                l.setColour (juce::Label::textColourId,       Brand::text());
+                l.setColour (juce::Label::outlineColourId,    Brand::border().withAlpha (0.35f));
+                l.setColour (juce::Label::backgroundWhenEditingColourId, Brand::plotToolbar());
+                l.setColour (juce::Label::textWhenEditingColourId,       Brand::text());
+                l.onTextChange = [this] { pushMicCoords(); };
+                addAndMakeVisible (l);
+            };
+            styleCoord (micXBox_, "X of the selected mic, in the unit on show. "
+                                  "Select a mic on the plot to type its position.");
+            styleCoord (micYBox_, "Y of the selected mic, in the unit on show.");
+
+            // Two bare numbers say nothing about which is which. Named, the
+            // same way Gap names the box beside it.
+            auto styleCoordCaption = [this] (juce::Label& l, const juce::String& t)
+            {
+                l.setText (t, juce::dontSendNotification);
+                l.setJustificationType (juce::Justification::centredRight);
+                l.setColour (juce::Label::textColourId, Brand::muted());
+                l.setBorderSize ({});
+                l.setInterceptsMouseClicks (false, false);
+                addAndMakeVisible (l);
+            };
+            styleCoordCaption (micXLabel_, "X");
+            styleCoordCaption (micYLabel_, "Y");
+            setMicCoords (false, 0.0f, 0.0f);
+        }
         styleToolFile (btnZoomIn_,  "Zoom In.svg",  "Zoom in");
         styleToolFile (btnZoomOut_, "Zoom Out.svg", "Zoom out");
         // Magnifier: a toggle, but deliberately NOT in the tool radio group.
@@ -398,9 +434,15 @@ public:
             l.setColour (juce::Label::textColourId, Brand::text());
             l.setJustificationType (juce::Justification::centred);
             l.setBorderSize ({});
-            // Opt out of drawFittedText's auto-shrink so the caption renders at
-            // the Figma size instead of being squeezed to ~half of it.
-            l.setMinimumHorizontalScale (1.0f);
+            // Auto-shrink was turned off entirely because it squeezed captions
+            // to about half their size. Off, the size is capped instead by the
+            // longest caption that has to fit its plate - "Navigation",
+            // "Mapping Type", "Architectural" - so every other caption in the
+            // row is held down by the worst case. A floor of 0.82 gets both:
+            // the size can be set for legibility, and only the few long ones
+            // give up a little width, which is far less visible than every
+            // caption being a size too small.
+            l.setMinimumHorizontalScale (0.82f);
             l.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (l);
         };
@@ -500,7 +542,9 @@ public:
         addAndMakeVisible (lblMapping_);
 
         btnShowRays_.setButtonText ("Show Rays");
-        btnShowRays_.setTooltip ("Draw a fan of aiming rays out of every speaker.");
+        btnShowRays_.setTooltip ("Draw the aiming ray out of every mid and top. "
+                                 "Subs have no ray; select one to turn it, or "
+                                 "right-click it to show or hide its aim line.");
         btnShowRays_.setClickingTogglesState (true);
         btnShowRays_.setComponentID ("ribbonStyle");
         btnShowRays_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -615,10 +659,12 @@ public:
         addAndMakeVisible (btnInterdist_);
 
         btnShowValues_.setButtonText ("Show Values");
-        btnShowValues_.setTooltip ("Print the predicted level, in dB, across "
-                                   "the map. A colour tells you roughly; a "
-                                   "number tells you.");
+        btnShowValues_.setTooltip ("Read the level anywhere: the pointer becomes "
+                                   "a crosshair and shows the predicted dB at "
+                                   "whatever it is over. A colour tells you "
+                                   "roughly; a number tells you.");
         btnShowValues_.setClickingTogglesState (true);
+        btnShowValues_.setEnabled (false);   // no map yet, nothing to label
         btnShowValues_.setComponentID ("ribbonStyle");
         btnShowValues_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         btnShowValues_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
@@ -641,6 +687,7 @@ public:
         mappingTypeBox_.setSelectedId (1, juce::dontSendNotification);
         mappingTypeBox_.onChange = [this]
         {
+            setShowValuesAvailable (mappingTypeBox_.getSelectedId() == 2);
             if (onMappingType) onMappingType (mappingTypeBox_.getSelectedId() - 1);
         };
         addAndMakeVisible (mappingTypeBox_);
@@ -962,6 +1009,41 @@ public:
             });
     }
 
+    /** Show the selected mic's position in the ribbon's X / Y boxes, or grey
+        them out when nothing is selected. */
+    void setMicCoords (bool hasMic, float x, float y)
+    {
+        micHasSelection_ = hasMic;
+        updatingMicCoords_ = true;
+        micXBox_.setText (hasMic ? juce::String (Units::metresToDisplay ((double) x), 1)
+                                 : juce::String ("-"), juce::dontSendNotification);
+        micYBox_.setText (hasMic ? juce::String (Units::metresToDisplay ((double) y), 1)
+                                 : juce::String ("-"), juce::dontSendNotification);
+        updatingMicCoords_ = false;
+        micXBox_.setEnabled (hasMic);
+        micYBox_.setEnabled (hasMic);
+        micXBox_.setAlpha (hasMic ? 1.0f : 0.75f);
+        micYBox_.setAlpha (hasMic ? 1.0f : 0.75f);
+        micXLabel_.setAlpha (hasMic ? 1.0f : 0.75f);
+        micYLabel_.setAlpha (hasMic ? 1.0f : 0.75f);
+    }
+
+    /** Typed X / Y for the selected mic, in METRES. */
+    std::function<void (float, float)> onMicCoordsEntered;
+
+    /** Show Values prints readings ON the SPL map, so it can do nothing with
+        the map switched off. Greyed rather than silently inert: a toggle that
+        lights up and changes nothing on screen reads as a broken feature. */
+    void setShowValuesAvailable (bool mapOn)
+    {
+        btnShowValues_.setEnabled (mapOn);
+        btnShowValues_.setTooltip (mapOn
+            ? "Read the level anywhere: the pointer becomes a crosshair and "
+              "shows the predicted dB at whatever it is over."
+            : "Read the level under the pointer - switch Mapping Type to SPL "
+              "Mapping first, otherwise there is no field to read.");
+    }
+
     void setMicArmed (bool armed)
     {
         btnMic_.setToggleState (armed, juce::dontSendNotification);
@@ -1000,6 +1082,18 @@ public:
     juce::DrawableButton btnRuler_  { "rul", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnShape_  { "shp", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnMic_    { "mic", juce::DrawableButton::ImageFitted };
+    void pushMicCoords()
+    {
+        if (updatingMicCoords_ || ! micHasSelection_ || ! onMicCoordsEntered) return;
+        const double x = Units::displayToMetres (micXBox_.getText().getDoubleValue());
+        const double y = Units::displayToMetres (micYBox_.getText().getDoubleValue());
+        onMicCoordsEntered ((float) x, (float) y);
+    }
+
+    bool                 micHasSelection_   = false;
+    bool                 updatingMicCoords_ = false;
+    juce::Label          micXLabel_, micYLabel_;
+    juce::Label          micXBox_, micYBox_;
     juce::DrawableButton btnMagnify_{ "mag", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
@@ -1119,7 +1213,7 @@ public:
         // few dim buttons.
         planeTargetActive_ = on;
         btnUsePlane_.setEnabled (on);
-        lblPlane_.setAlpha (on ? 1.0f : 0.45f);
+        lblPlane_.setAlpha (on ? 1.0f : 0.75f);
         repaint();
     }
 
@@ -1500,6 +1594,10 @@ private:
             else if (isText)     c->setVisible (homeTab && textTargetActive_);
             else                 c->setVisible (homeTab);
         }
+        micXBox_.setVisible         (! homeTab);
+        micYBox_.setVisible         (! homeTab);
+        micXLabel_.setVisible       (! homeTab);
+        micYLabel_.setVisible       (! homeTab);
         btnShowRays_.setVisible     (! homeTab);
         btnLockRays_.setVisible     (! homeTab);
         lblMapping_.setVisible      (! homeTab);
@@ -1613,33 +1711,93 @@ private:
         // stale the moment a cluster is added - which is exactly what happened
         // when Range arrived and the pill got squeezed down to its dot.
         constexpr int kMapGap   = 14;                                   // air each side of a rule
-        constexpr int kMapRays  = 92 + 6 + 86;                          // Show Rays | Lock Rays
-        constexpr int kMapType  = 116;                                  // Mapping Type combo
-        constexpr int kMapOpts  = 142 + 6 + 96 + 12                     // interdist | values
-                                + kOptionPillW * 2 + kOptionPillGap;    // Snap | Ortho
-        constexpr int kMapPlane = 72 + 70 + 58 + 86 + 54 + 66 + 5 * 5;  // the six plane buttons
-        constexpr int kMapMic   = kPitch + 8 + 72 + 4 + 54;             // mic, + Range, Shown
-        // The range chips share the cluster, so the row grows as ranges are
-        // added and has to shrink to match - otherwise adding a third range
-        // walks the row back over the pill.
-        const int chipsW = rangeChips_.isEmpty()
-            ? 0 : (int) rangeChips_.size() * 54 + ((int) rangeChips_.size() - 1) * 4;
-        const int kMapMicRange = juce::jmax (kMapMic, chipsW);
 
-        const int mappingDividerX =
-              kPlateLeft + kMapRays + kMapGap
-            + kMapGap + kMapType      + kMapGap
-            + kMapGap + kMapOpts      + kMapGap
-            + kMapGap + kMapPlane     + kMapGap
-            + kMapGap + kMapMicRange  + kMapGap;
+        // --- Compact mode -----------------------------------------------
+        // On a laptop the Mapping row asks for more width than the window
+        // has, and `shrink` paid for the difference by scaling everything -
+        // including the text - until nothing could be read. Shrinking a long
+        // word is the worst way to save width: the honest way is to use a
+        // shorter word. Below the width where the full labels fit, the row
+        // switches to abbreviations and the narrower slots that go with them,
+        // which buys back enough that what remains renders near full size.
+        struct MapWidths
+        {
+            int rays, lock, type, interdist, values, pill;
+            int usePlane, listen, virt, arch, seated, standing;
+            int range, shown, chip, coord;
+        };
+        static constexpr MapWidths kFull    { 92, 86, 116, 142, 96, kOptionPillW,
+                                              72, 70, 58, 86, 54, 66, 72, 54, 54, 56 };
+        static constexpr MapWidths kCompact { 62, 58,  96,  88, 64, 44,
+                                              46, 58, 52, 52, 48, 54, 62, 50, 44, 48 };
+
+        auto mapDemand = [&] (const MapWidths& w)
+        {
+            const int rays  = w.rays + 6 + w.lock;
+            const int opts  = w.interdist + 6 + w.values + 12 + w.pill * 2 + kOptionPillGap;
+            const int plane = w.usePlane + w.listen + w.virt + w.arch
+                            + w.seated + w.standing + 5 * 5;
+            const int mic   = kPitch + 6 + (12 + 3 + w.coord + 6) * 2 + 8
+                            + w.range + 4 + w.shown;
+            // The range chips share the cluster, so the row grows as ranges
+            // are added and has to shrink to match - otherwise adding a third
+            // range walks the row back over the pill.
+            const int chips = rangeChips_.isEmpty()
+                ? 0 : (int) rangeChips_.size() * w.chip
+                      + ((int) rangeChips_.size() - 1) * 4;
+            return kPlateLeft + rays + kMapGap
+                 + kMapGap + w.type + kMapGap
+                 + kMapGap + opts   + kMapGap
+                 + kMapGap + plane  + kMapGap
+                 + kMapGap + juce::jmax (mic, chips) + kMapGap;
+        };
+
+        const int fullDemandX = mapDemand (kFull);
+        // Compared against the same magnified grid the row is actually laid
+        // out on - see gridUp below - or the test would say the full labels
+        // fit when they do not.
+        const int fullBaseIcon = juce::jmax (1, UiConfig::Scale::px (L::ribbonIconSize));
+        const float fullGridUp = juce::jmax (1.0f, 21.0f / (float) fullBaseIcon);
+        const int fullDesignW = juce::roundToInt (
+            UiConfig::Scale::px (fullDemandX + L::ribbonReadyRightPad + 100) * fullGridUp);
+        // Abbreviate only when the full name genuinely cannot be READ, not
+        // merely when the row is narrower than its design width. The first
+        // version asked the second question and so shortened every label the
+        // moment the window was not enormous - at 1493 px "Show Interdistance"
+        // still renders near 13 px with room to spare, and there is no reason
+        // to call it "Interdist" there. The row shrinks to about 0.62 before
+        // the longest label stops fitting its pill at a readable size; below
+        // that the choice is a short word or an unreadable one, and a short
+        // word wins.
+        const float fullShrink = juce::jlimit (0.45f, 1.0f,
+            fullDesignW > 0 ? (float) getWidth() / (float) fullDesignW : 1.0f);
+        const bool mapCompact = (! homeTab) && (fullShrink < 0.62f);
+        const MapWidths& MW = mapCompact ? kCompact : kFull;
+
+        const int mappingDividerX = mapDemand (MW);
 
         const int lastDividerX = (ribbonTab_ != 0)
             ? mappingDividerX
             : (textTargetActive_ ? kText.dividerX : kHelp.dividerX);
-        const int designW = UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100);
+        // The icon buttons have a floor in real pixels (see `tool` below): the
+        // global UI factor bottoms out at 0.78 on a laptop, which would leave
+        // them 14 px tall and cap their own text at about 10 px. Raising the
+        // icon alone would break the row, because every cluster's x comes from
+        // a design grid that assumes the icon is px(ribbonIconSize) - the
+        // icons simply grew into their neighbours. So the floor is expressed
+        // as a magnification of the WHOLE grid, and `shrink` then pulls the
+        // magnified row back to the window. Proportions hold either way.
+        const int   baseIcon = juce::jmax (1, UiConfig::Scale::px (L::ribbonIconSize));
+        const float gridUp   = juce::jmax (1.0f, 21.0f / (float) baseIcon);
+        const int designW = juce::roundToInt (
+            UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100) * gridUp);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
-        auto px2 = [&] (int v) { return juce::jmax (1, juce::roundToInt ((float) UiConfig::Scale::px (v) * shrink)); };
+        auto px2 = [&] (int v)
+        {
+            return juce::jmax (1, juce::roundToInt ((float) UiConfig::Scale::px (v)
+                                                     * gridUp * shrink));
+        };
 
         // `shrink` is a HORIZONTAL remedy - it exists because the clusters do
         // not fit the window's width. It used to be applied to the vertical
@@ -1651,15 +1809,22 @@ private:
         // window size. Heights now stay at full scale and only x moves.
         // `pitch` already takes jmax (tool + 1, ...), so wider icons spread
         // out rather than overlapping when the row is tight.
-        const int tool       = juce::jmax (12, UiConfig::Scale::px (L::ribbonIconSize));
+        // Floors are in real pixels, not design units. The global UI factor
+        // bottoms out at 0.78 on a laptop-sized window, which left the icon
+        // buttons 14 px tall - and a pill that short caps its own text at
+        // about 10 px however large a font it is given. These are the sizes
+        // below which the row stops being readable, so they do not scale.
+        // Magnified with the grid, then held to the floor: on a wide window
+        // gridUp is 1 and this is simply the design size.
+        const int tool       = juce::jmax (14, juce::roundToInt (baseIcon * gridUp * shrink));
         const int pitch      = juce::jmax (tool + 1, px2 (kPitch));
         // The controls keep their Figma geometry; the whole row just starts
         // below the tab strip instead of at the top of the band.
-        const int tabStrip   = UiConfig::Scale::px (L::ribbonTabStripH);
+        const int tabStrip   = juce::jmax (24, UiConfig::Scale::px (L::ribbonTabStripH));
         tabStripH_ = tabStrip;
         const int iconTop    = tabStrip + juce::jmax (2, UiConfig::Scale::px (L::ribbonIconTop));
         const int labelTop   = tabStrip + juce::jmax (tool + 2, UiConfig::Scale::px (L::ribbonLabelTop));
-        const int labelH     = juce::jmax (8, UiConfig::Scale::px (L::ribbonLabelH));
+        const int labelH     = juce::jmax (19, UiConfig::Scale::px (L::ribbonLabelH));
         // Colours palette: 14px dots on a 20x16 grid in the Figma mock.
         const int swatch     = juce::jmax (6, px2 (L::ribbonSwatch));
         const int pitchX     = juce::jmax (swatch + 1, px2 (L::ribbonSwatchPitchX));
@@ -1682,6 +1847,15 @@ private:
         for (auto* hc : helpIcons_)
             if (auto* hb = dynamic_cast<juce::DrawableButton*> (hc))
                 hb->setEdgeIndent (edgeIndent);
+
+        // The neighbours in View are raster glyphs with their own transparent
+        // margin baked in, so at edge indent 0 they draw about 16 px of ink in
+        // a 21 px button. A vector has no such margin: ImageFitted scales its
+        // content bounds to fill the button, so the magnifier came out a size
+        // larger than the row. Scaling the SVG's own coordinates does nothing
+        // for the same reason - the fit is to the ink, not the viewBox. The
+        // margin has to come from the button, so it is given here.
+        btnMagnify_.setEdgeIndent (edgeIndent + juce::jmax (1, tool / 16));
 
         dividerX_.clear();
 
@@ -1707,8 +1881,14 @@ private:
             // their full size: a cluster's name is the thing you read to find
             // the control, and shrinking it was saving width it does not use
             // (captions are centred on a plate, not laid end to end).
-            const auto capFont = Brand::tech (
-                Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel));
+            const auto capFont = Brand::tech (juce::jmax (12.5f,
+                Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel)));
+            const auto coordFont = Brand::tech (juce::jmax (12.0f,
+                Brand::UI::scaledFont (Brand::Type::ribbonPillText)));
+            micXLabel_.setFont (coordFont);
+            micYLabel_.setFont (coordFont);
+            micXBox_.setFont (coordFont);
+            micYBox_.setFont (coordFont);
             for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
                              &lblColours_, &lblHelp_, &lblOptions_, &lblMapping_,
                              &lblMappingType_, &lblDistance_, &lblPlane_, &lblMic_ })
@@ -1894,8 +2074,20 @@ private:
         if (! homeTab)
         {
             dividerX_.clear();
-            const int bw = px2 (92);
-            const int lw = px2 (86);
+            // Labels follow the slot they have to live in. A pill that says
+            // "Lock" and can be read beats one that says "Lock Rays" and
+            // cannot; the tooltip still carries the full wording.
+            btnShowRays_.setButtonText (mapCompact ? "Rays"   : "Show Rays");
+            btnLockRays_.setButtonText (mapCompact ? "Lock"   : "Lock Rays");
+            btnInterdist_.setButtonText (mapCompact ? "Interdist" : "Show Interdistance");
+            btnShowValues_.setButtonText (mapCompact ? "Values" : "Show Values");
+            btnUsePlane_.setButtonText (mapCompact ? "Use"    : "Use as Plane");
+            btnPlaneListen_.setButtonText (mapCompact ? "Listen" : "Listening");
+            btnPlaneArch_.setButtonText (mapCompact ? "Arch"   : "Architectural");
+            btnPlaneStanding_.setButtonText (mapCompact ? "Stand" : "Standing");
+
+            const int bw = px2 (MW.rays);
+            const int lw = px2 (MW.lock);
             const int mx = px2 (kPlateLeft);
             btnShowRays_.setBounds (mx, iconTop, bw, tool);
             btnLockRays_.setBounds (mx + bw + px2 (6), iconTop, lw, tool);
@@ -1906,7 +2098,7 @@ private:
             // Mapping Type: its own cluster, because it governs the canvas
             // rather than the rays.
             const int mx2 = plateRight + px2 (14);
-            const int cw  = px2 (116);
+            const int cw  = px2 (MW.type);
             mappingTypeBox_.setBounds (mx2, iconTop, cw, tool);
             const int plateRight2 = mx2 + cw + px2 (14);
             lblMappingType_.setBounds (mx2, labelTop,
@@ -1921,20 +2113,27 @@ private:
             // Caption  : "Options", then Ortho's H / V / Gap to its right.
             // The H / V / Gap row is always laid out, greyed when Ortho is
             // off, so nothing shifts when you switch Ortho on.
-            const int pillW   = juce::jmax (24, px2 (kOptionPillW));
+            const int pillW   = juce::jmax (24, px2 (MW.pill));
             const int pillGap = juce::jmax (2,  px2 (kOptionPillGap));
             const int ox0 = plateRight2 + px2 (14);
-            const int dw  = px2 (142);        // Show Interdistance
-            const int vw  = px2 (96);         // Show Values
+            const int dw  = px2 (MW.interdist);   // Show Interdistance
+            const int vw  = px2 (MW.values);      // Show Values
 
             const int sq = juce::jmax (12, juce::jmin (labelH,
                                        getHeight() - labelTop - px2 (3)));
-            const int gapLblW = juce::jmax (12, px2 (20));
+            // Floored in real pixels for the same reason as tbW below: the
+            // word "Gap" either fits or it says "G...".
+            const int gapLblW = juce::jmax (30, px2 (20));
             // The read-out box is sized HERE, not in the constructor: at
             // construction Brand::UI::scale is still 1.0, so the 44x18 set
             // there stayed at its base size and ate most of the slot, leaving
             // a stub of a track that jumped to its end on the first click.
-            const int tbW = juce::jmax (34, px2 (44));
+            // Floor is in real pixels, not design units: the box has to hold
+            // "3.0 m" whatever the row's horizontal shrink is doing, and a
+            // read-out that says "3...." is worse than no read-out. The
+            // cluster widens to suit, because capRowW below is summed from
+            // this.
+            const int tbW = juce::jmax (46, px2 (44));
             const int sliderW = juce::jmax (px2 (150), tbW + px2 (56));
 
             // The caption shares its row with the Ortho extras, so the cluster
@@ -1973,9 +2172,12 @@ private:
                 int px0 = plateRight3 + px2 (14);
                 const int clusterLeft = px0;
                 struct Slot { juce::TextButton* b; int w; };
-                const Slot slots[] = { { &btnUsePlane_, 72 }, { &btnPlaneListen_, 70 },
-                                       { &btnPlaneVirt_, 58 }, { &btnPlaneArch_, 86 },
-                                       { &btnPlaneSeated_, 54 }, { &btnPlaneStanding_, 66 } };
+                const Slot slots[] = { { &btnUsePlane_, MW.usePlane },
+                                       { &btnPlaneListen_, MW.listen },
+                                       { &btnPlaneVirt_, MW.virt },
+                                       { &btnPlaneArch_, MW.arch },
+                                       { &btnPlaneSeated_, MW.seated },
+                                       { &btnPlaneStanding_, MW.standing } };
                 for (const auto& sl : slots)
                 {
                     const int w = px2 (sl.w);
@@ -1996,16 +2198,27 @@ private:
                 const int mx0 = plateRightP + px2 (14);
                 btnMic_.setBounds (mx0, iconTop, tool, tool);
 
-                const int addW  = px2 (72);
-                const int showW = px2 (54);
-                const int rx0 = mx0 + tool + px2 (8);
+                // The selected mic's X / Y, typed here rather than only in the
+                // sidebar: the mic lives in this cluster, so the numbers that
+                // place it belong beside it.
+                const int coordW = px2 (MW.coord);
+                const int coordLblW = juce::jmax (12, px2 (12));
+                int cxp = mx0 + tool + px2 (6);
+                micXLabel_.setBounds (cxp, iconTop, coordLblW, tool); cxp += coordLblW + px2 (3);
+                micXBox_.setBounds   (cxp, iconTop, coordW, tool);    cxp += coordW + px2 (6);
+                micYLabel_.setBounds (cxp, iconTop, coordLblW, tool); cxp += coordLblW + px2 (3);
+                micYBox_.setBounds   (cxp, iconTop, coordW, tool);    cxp += coordW + px2 (8);
+
+                const int addW  = px2 (MW.range);
+                const int showW = px2 (MW.shown);
+                const int rx0 = cxp;
                 btnRangeAdd_.setBounds (rx0, iconTop, addW, tool);
                 btnRangeShow_.setBounds (rx0 + addW + px2 (4), iconTop, showW, tool);
 
                 // The ranges already added sit on the caption row, each one
                 // carrying its own delete, so you can see and remove them
                 // without going looking.
-                const int chipW = px2 (54);     // kMapMicRange assumes this
+                const int chipW = px2 (MW.chip);   // mapDemand assumes this
                 const int chipGap = juce::jmax (2, px2 (4));
                 int cx = mx0;
                 for (auto* c : rangeChips_)
@@ -2190,11 +2403,25 @@ private:
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M5 3l14 9.5-6.2 1.4L16.5 21l-2.2 1.2-3.6-7.2L5 19.5V3z"/></svg>)SVG";
     static constexpr const char* kShapeSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M3 5h8v6H3z" opacity=".45"/><path fill="#fff" d="M3 5h8v2H3zm0 4h8v2H3zM3 5h2v6H3zm6 0h2v6H9z"/><path fill="#fff" d="M14 4l6 4-6 4V4z"/><circle cx="17" cy="17" r="4" fill="#fff" opacity=".45"/><circle cx="17" cy="17" r="4" fill="none" stroke="#fff" stroke-width="2"/></svg>)SVG";
-    // Plain magnifying glass - no + or -, because it does not change the zoom.
+    // A loupe, not a third zoom button. Zoom In and Zoom Out already sit in
+    // this cluster as a magnifier with a + and a -, so a plain magnifier read
+    // as another one of those - and drawn at twice their stroke weight it
+    // looked permanently pressed. Same lens and handle as its neighbours at
+    // their weight, with a small frame inside it: this one does not change the
+    // zoom, it shows you a patch of the plot enlarged where it is.
     static constexpr const char* kMagnifySVG =
-        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2"/><path stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M15.4 15.4L21 21"/></svg>)SVG";
+        // The group transform is what holds it to the same ink box as its
+        // neighbours. Drawn flat it measured 17x18 px against Zoom In's
+        // 16x16, which is small enough to be hard to name and plain enough
+        // to see - the glyph sat a size larger than the row it is part of.
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="10.2" cy="10.2" r="6.2" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="10.2" cy="10.2" r="2.1" fill="#fff"/><path stroke="#fff" stroke-width="1.6" stroke-linecap="round" d="M14.8 14.8L20 20"/></svg>)SVG";
+    // Wider and heavier than it was. The glyph is taller than it is wide, so
+    // ImageFitted scales it to the button's HEIGHT and the spare width is
+    // simply empty - which is why it read as the smallest thing in the row
+    // next to the pills beside it. Broadening the capsule, the cradle and the
+    // base fills the slot it already had.
     static constexpr const char* kMicSVG =
-        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path fill="none" stroke="#fff" stroke-width="2" d="M6 11a6 6 0 0 0 12 0"/><path fill="#fff" d="M11 17h2v3h-2z"/><path fill="#fff" d="M8 20h8v2H8z"/></svg>)SVG";
+        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="12.5" rx="4" fill="#fff"/><path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M4.6 10.6a7.4 7.4 0 0 0 14.8 0"/><path fill="#fff" d="M10.6 17.6h2.8v3.1h-2.8z"/><path fill="#fff" d="M6.6 20.4h10.8v2.4H6.6z"/></svg>)SVG";
     // Figma ribbon icons: the Shapes cluster.
     static constexpr const char* kShapeLineSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M3.6 19l15.4-15.4 1.4 1.4L5 20.4z"/></svg>)SVG";

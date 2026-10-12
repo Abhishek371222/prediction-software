@@ -115,7 +115,10 @@ namespace UiConfig
         // Title above heatmap: "SPL Heatmap | 2 devices | 50 Hz | ..."
         constexpr float plotTitle           = 11.5f;
         // Axis tick numbers along plot edges (0 m, 10 m, 20 m ...)
-        constexpr float plotGridNumber      = 11.5f;
+        // Axis numbers on the plot ("70 m"). Raised from 11.5: these are read
+        // off the canvas at a glance while placing a box, and they were the
+        // smallest type in the app.
+        constexpr float plotGridNumber      = 14.0f;
         // Secondary plot axis / annotation text
         constexpr float plotAxis            = 11.5f;
         // Colour-bar dB tick labels and "Rel. SPL" caption
@@ -137,7 +140,7 @@ namespace UiConfig
         // General TextButton captions elsewhere in the app
         constexpr float button              = 12.5f;
         // Bottom-bar Export / View Mode pill captions (compact v1.1)
-        constexpr float bottomBarButton       = 11.5f;
+        constexpr float bottomBarButton       = 13.0f;
         // View tile captions (legacy icon tiles)
         constexpr float viewTileCaption       = 11.0f;
         // Status strip: "Ready", "Last run: ...", "Elapsed: ..."
@@ -208,7 +211,7 @@ namespace UiConfig
         // converting a CSS px value - JUCE's Font height is the whole line box,
         // so it needs a larger number than the design's nominal font-size to
         // put the same amount of ink on screen.
-        constexpr float ribbonClusterLabel    = 16.5f;
+        constexpr float ribbonClusterLabel    = 18.0f;
         // Ribbon tab labels ("Home" / "Mapping") and the text on the ribbon's
         // pill buttons ("Show Rays", "Show Interdistance", ...). These used to
         // borrow sidebarMainValue, which is sized for a sidebar field value
@@ -297,13 +300,21 @@ namespace UiConfig
         // Was 56 (Figma row 2 alone). The ribbon now carries a tab strip
         // above the controls, Word-style, so the band is taller by exactly
         // ribbonTabStripH and the cluster row below it is unchanged.
-        constexpr int plotHeaderHeight        = 80;
+        // Was 80. The caption row below the icons was only 16 units tall, and
+        // a juce::Label fits its text to its box - so raising the caption font
+        // did nothing at all until the row it sits in had somewhere to put the
+        // extra ink. The band grows by the 5 units the caption row gains plus
+        // a little air, which is the honest cost of a legible ribbon.
+        constexpr int plotHeaderHeight        = 88;
         constexpr int ribbonTabStripH         = 24;   // -> ~28px tab row
         constexpr int ribbonIconSize          = 18;   // -> 24px icon buttons
         constexpr int ribbonIconGap           = 5;    // -> 6px  (30px pitch)
         constexpr int ribbonIconTop           = 8;    // -> 11px below row top
-        constexpr int ribbonLabelTop          = 32;   // -> 42px below row top
-        constexpr int ribbonLabelH            = 16;   // -> 21px label row
+        constexpr int ribbonLabelTop          = 34;   // -> 45px below row top
+        // Tall enough to hold ribbonClusterLabel without JUCE squeezing it to
+        // fit: a Label shrinks its font to its bounds, so this is what
+        // actually governs how big a cluster caption can be.
+        constexpr int ribbonLabelH            = 21;   // -> 28px label row
         constexpr int ribbonEdgePad           = 15;   // -> 20px left margin
         constexpr int ribbonClusterPad        = 9;    // -> 12px each side of a divider
         constexpr int ribbonSwatch            = 11;   // -> 14px colour dot

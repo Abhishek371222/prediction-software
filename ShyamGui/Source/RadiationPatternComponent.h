@@ -67,6 +67,9 @@ public:
         enlarged, without changing the view everyone else is looking at. */
     void setMagnifier (bool on);
     bool magnifierOn() const noexcept { return magnifierOn_; }
+    /** Fired whenever the glass turns itself off - Esc, or picking a tool -
+        so the ribbon button does not stay lit over a glass that is gone. */
+    std::function<void(bool)> onMagnifierChanged;
 
     /** Print each mic's X, Y beside its marker, in the unit on show. */
     void setShowMicCoords (bool b) { showMicCoords_ = b; repaint(); }
@@ -196,6 +199,9 @@ public:
     std::vector<MicReceiver> getMics() const { return mics_; }
     void setMics (std::vector<MicReceiver> m);
     int  getSelectedMic() const noexcept { return selectedMic_; }
+    /** Move the selected mic to an exact world point - the sidebar's X / Y
+        fields, which is the only way to place one to the centimetre. */
+    void setSelectedMicPosition (float x, float y);
     void setSelectedMic (int index);
     bool placeMicAtWorld (float wx, float wy);
     /** Indices of speakers currently selected on the plot (may be empty). */

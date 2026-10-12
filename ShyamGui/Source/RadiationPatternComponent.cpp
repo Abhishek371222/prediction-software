@@ -226,6 +226,12 @@ void RadiationPatternComponent::setShowSplProbe (bool on)
     showSplProbe_ = on;
     if (! showSplProbe_)
         splProbeValid_ = false;
+    // The pointer says which mode you are in. Reading a level is a measuring
+    // gesture, so it gets the crosshair every measuring tool uses; without it
+    // the only clue the mode is on is the readout itself, which is not there
+    // until you are already over the map.
+    setMouseCursor (on ? juce::MouseCursor::CrosshairCursor
+                       : juce::MouseCursor::NormalCursor);
     repaint();
 }
 
@@ -825,6 +831,28 @@ bool RadiationPatternComponent::placeMicOnRing (int micIndex, int speakerIndex, 
     return true;
 }
 
+void RadiationPatternComponent::setSelectedMicPosition (float x, float y)
+{
+    if (selectedMic_ < 0 || selectedMic_ >= (int) mics_.size()) return;
+
+    auto& m = mics_[(size_t) selectedMic_];
+    const float nx = juce::jlimit (0.0f, (float) result_.worldW, x);
+    const float ny = juce::jlimit (0.0f, (float) result_.worldH, y);
+    if (std::abs (nx - m.x) < 1.0e-4f && std::abs (ny - m.y) < 1.0e-4f) return;
+
+    if (onWillEdit) onWillEdit();
+    m.x = nx;
+    m.y = ny;
+    // Typed placement is deliberate, so it leaves any ring lock behind - the
+    // number you entered is the number you get.
+    m.ringLocked = false;
+    m.ringSpeaker = -1;
+    refreshMicLevels();
+    if (onMicsChanged) onMicsChanged();
+    if (onEditCommitted) onEditCommitted();
+    repaint();
+}
+
 int RadiationPatternComponent::micHitTest (juce::Point<float> worldPt, float radiusM) const
 {
     for (int i = (int) mics_.size() - 1; i >= 0; --i)
@@ -880,19 +908,22 @@ int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) co
     {
         const auto& m = mics_[(size_t) i];
         const auto s = worldToScreen (m.x, m.y);
-        const auto glyph = juce::Rectangle<float> (s.x - 14.0f, s.y - 16.0f, 28.0f, 32.0f);
+        const float ms = 1.0f;   // marker stays the size it has always been
+        const auto glyph = juce::Rectangle<float> (s.x - 14.0f * ms, s.y - 16.0f * ms,
+                                                   28.0f * ms, 32.0f * ms);
         if (glyph.contains (screenPt))
             return i;
 
         // Same flip the painter applies, or the label you can see beside a
         // mic at the right-hand edge would not be the label you can click.
         const juce::String label = micLabelText (m);
-        const float tw = juce::jmax (40.0f, (float) label.length() * 7.0f + 12.0f);
+        const float fh = juce::jmax (13.0f, Brand::UI::scaledFont (15.0f));
+        const float tw = juce::jmax (40.0f, (float) label.length() * fh * 0.56f + fh);
         const auto pb = plotArea().toFloat();
-        float boxX = s.x + 8.0f;
+        float boxX = s.x + 8.0f * ms;
         if (boxX + tw > pb.getRight() - 2.0f)
-            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f - tw);
-        const auto box = juce::Rectangle<float> (boxX, s.y - 12.0f, tw, 20.0f);
+            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f * ms - tw);
+        const auto box = juce::Rectangle<float> (boxX, s.y - fh, tw, fh * 1.7f);
         if (box.contains (screenPt))
             return i;
     }
@@ -907,16 +938,22 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
         const auto& m = mics_[(size_t) i];
         auto s = worldToScreen (m.x, m.y);
         const bool sel = isMicSelected (i);
+        // The marker on the map is deliberately NOT scaled: it is a position
+        // pin, and it was readable at the size it has always been. The mic
+        // control that needed to be bigger is the one in the ribbon.
+        const float ms = 1.0f;
         g.setColour (sel ? Brand::accent() : Brand::white());
         // Simple mic glyph: capsule + stand
-        g.fillEllipse (s.x - 5.0f, s.y - 8.0f, 10.0f, 12.0f);
-        g.drawLine (s.x, s.y + 4.0f, s.x, s.y + 10.0f, 1.5f);
-        g.drawLine (s.x - 4.0f, s.y + 10.0f, s.x + 4.0f, s.y + 10.0f, 1.5f);
+        g.fillEllipse (s.x - 5.0f * ms, s.y - 8.0f * ms, 10.0f * ms, 12.0f * ms);
+        g.drawLine (s.x, s.y + 4.0f * ms, s.x, s.y + 10.0f * ms, 1.5f * ms);
+        g.drawLine (s.x - 4.0f * ms, s.y + 10.0f * ms,
+                    s.x + 4.0f * ms, s.y + 10.0f * ms, 1.5f * ms);
         if (sel)
-            g.drawEllipse (s.x - 9.0f, s.y - 11.0f, 18.0f, 18.0f, 1.4f);
+            g.drawEllipse (s.x - 9.0f * ms, s.y - 11.0f * ms,
+                           18.0f * ms, 18.0f * ms, 1.4f * ms);
 
         const juce::String label = micLabelText (m);
-        const float fh = juce::jmax (11.0f, Brand::UI::scaledFont (12.5f));
+        const float fh = juce::jmax (13.0f, Brand::UI::scaledFont (15.0f));
         g.setFont (Brand::tech (fh, true));
         // Charcoal, not panelDark: this pill sits on the canvas, which is
         // always dark, while panelDark follows the THEME and is plain white in
@@ -930,9 +967,9 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
         // label long enough for that to be the common case rather than a rare
         // one. It flips to the left when it does not fit.
         const auto pb = plotArea().toFloat();
-        float boxX = s.x + 10.0f;
+        float boxX = s.x + 10.0f * ms;
         if (boxX + tw > pb.getRight() - 2.0f)
-            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f - tw);
+            boxX = juce::jmax (pb.getX() + 2.0f, s.x - 10.0f * ms - tw);
         auto box = juce::Rectangle<float> (boxX, s.y - th * 0.5f, tw, th);
         g.fillRoundedRectangle (box, 3.0f);
         // A hairline in the mic's own colour keeps the reading tied to its
@@ -3124,12 +3161,21 @@ void RadiationPatternComponent::drawSplProbe (juce::Graphics& g)
         return;
 
     // Crosshair at sample point
-    g.setColour (Brand::white().withAlpha (0.85f));
-    g.drawLine (splProbeScreen_.x - 7.0f, splProbeScreen_.y,
-                splProbeScreen_.x + 7.0f, splProbeScreen_.y, 1.2f);
-    g.drawLine (splProbeScreen_.x, splProbeScreen_.y - 7.0f,
-                splProbeScreen_.x, splProbeScreen_.y + 7.0f, 1.2f);
-    g.drawEllipse (splProbeScreen_.x - 4.0f, splProbeScreen_.y - 4.0f, 8.0f, 8.0f, 1.2f);
+    const float cs = juce::jmax (1.0f, Brand::UI::scale);
+    // A dark liner under the white, so the crosshair holds over a bright peak
+    // as well as over the floor.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        g.setColour (pass == 0 ? juce::Colours::black.withAlpha (0.55f)
+                               : Brand::white().withAlpha (0.95f));
+        const float t = (pass == 0 ? 3.2f : 1.3f) * cs;
+        g.drawLine (splProbeScreen_.x - 8.0f * cs, splProbeScreen_.y,
+                    splProbeScreen_.x + 8.0f * cs, splProbeScreen_.y, t);
+        g.drawLine (splProbeScreen_.x, splProbeScreen_.y - 8.0f * cs,
+                    splProbeScreen_.x, splProbeScreen_.y + 8.0f * cs, t);
+        g.drawEllipse (splProbeScreen_.x - 4.5f * cs, splProbeScreen_.y - 4.5f * cs,
+                       9.0f * cs, 9.0f * cs, t);
+    }
 
     juce::String line1;
     if (result_.hasAbsoluteSpl)
@@ -3144,10 +3190,19 @@ void RadiationPatternComponent::drawSplProbe (juce::Graphics& g)
                                     ? ("   " + juce::String (splProbeRelDb_, 1) + " dB rel")
                                     : juce::String());
 
-    g.setFont (Brand::tech (Brand::UI::scaledFont (11.0f), true));
-    const float pad = 8.0f;
-    const float tw = (float) juce::jmax (line1.length(), line2.length()) * 7.2f + pad * 2.0f;
-    const float th = 36.0f;
+    // Sized from the UI scale, with a floor: this is a measurement you read
+    // off the screen, and it was the smallest type on the plot.
+    const float fh1 = juce::jmax (13.0f, Brand::UI::scaledFont (14.0f));
+    const float fh2 = juce::jmax (11.5f, Brand::UI::scaledFont (12.0f));
+    g.setFont (Brand::tech (fh1, true));
+    const float pad = fh1 * 0.8f;
+    // Measured, not guessed from the character count: the old estimate of
+    // 7.2 px a character was wrong in both directions as the font changed,
+    // leaving the panel either padded out or clipping its own reading.
+    const float w1 = (float) g.getCurrentFont().getStringWidth (line1);
+    const float w2 = (float) Brand::tech (fh2, false).getStringWidth (line2);
+    const float tw = juce::jmax (w1, w2) + pad * 2.0f;
+    const float th = (fh1 + fh2) * 1.55f;
     float lx = splProbeScreen_.x + 14.0f;
     float ly = splProbeScreen_.y - th - 8.0f;
     const auto pb = plotArea().toFloat();
@@ -3157,16 +3212,21 @@ void RadiationPatternComponent::drawSplProbe (juce::Graphics& g)
         ly = splProbeScreen_.y + 14.0f;
 
     auto box = juce::Rectangle<float> (lx, ly, tw, th);
-    g.setColour (Brand::panelDark().withAlpha (0.92f));
+    // Charcoal, not panelDark: this panel sits on the canvas, which is always
+    // dark, while panelDark follows the THEME and is plain white in the light
+    // one - so the white reading below was being drawn white on white, and the
+    // number you turned the probe on to read was the one thing you could not
+    // see.
+    g.setColour (Brand::charcoal().withAlpha (0.94f));
     g.fillRoundedRectangle (box, 5.0f);
-    g.setColour (Brand::accent().withAlpha (0.7f));
-    g.drawRoundedRectangle (box, 5.0f, 1.0f);
+    g.setColour (Brand::accent().withAlpha (0.8f));
+    g.drawRoundedRectangle (box, 5.0f, 1.2f);
     g.setColour (Brand::white());
-    g.drawText (line1, box.withTrimmedTop (2.0f).withTrimmedBottom (th * 0.45f).toNearestInt(),
+    g.drawText (line1, box.withTrimmedBottom (th * 0.42f).toNearestInt(),
                 juce::Justification::centred, false);
-    g.setColour (Brand::muted());
-    g.setFont (Brand::tech (Brand::UI::scaledFont (10.0f), false));
-    g.drawText (line2, box.withTrimmedTop (th * 0.48f).withTrimmedBottom (2.0f).toNearestInt(),
+    g.setColour (Brand::white().withAlpha (0.75f));
+    g.setFont (Brand::tech (fh2, false));
+    g.drawText (line2, box.withTrimmedTop (th * 0.5f).toNearestInt(),
                 juce::Justification::centred, false);
 }
 
@@ -5245,8 +5305,18 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     forTicks (visY0, visY1, majorStep, [&] (double y) { hline (y, true); });
 
     // Axis labels follow major spacing so zoom reveals 62, 63, 64... then cm/mm.
-    g.setFont (Brand::techMed (Brand::Type::gridNum));
-    const int labelW = Units::imperial() ? 72 : 56;
+    // The axis numbers took Type::gridNum RAW - no UI scale at all - so they
+    // were the same handful of pixels on a 13" laptop and on a 4K display,
+    // and the one thing on the plot that never got any bigger. Scaled like
+    // everything else now, with a floor so they stay readable when the global
+    // factor bottoms out on a small window.
+    const float gridNumPx = juce::jmax (12.5f,
+                                        Brand::UI::scaledFont (Brand::Type::gridNum));
+    g.setFont (Brand::techMed (gridNumPx));
+    // The label slot grows with the text, or longer readings ("100 m", and
+    // every imperial one) get clipped the moment the font goes up.
+    const int labelW = juce::roundToInt ((Units::imperial() ? 72 : 56)
+                                         * (gridNumPx / Brand::Type::gridNum));
 
     // Anchor the numbers to the WORLD's edges, not the component's. Now that
     // the view fits the whole field, the world is usually narrower than the
@@ -5570,7 +5640,10 @@ bool RadiationPatternComponent::aimHandleVisibleFor (int i) const noexcept
     // control drawn twice.
     if (! isSubwooferModel (spk.model)) return false;
     if (! spk.showAimLine) return false;
-    return showRays_ || (i == selected_) || isSpeakerSelected (i);
+    // Show Rays is for mids and tops only. A sub's stalk is a rotation
+    // control, governed by selection and its right-click Show / Hide aim
+    // line, so the ray toggle must not light it up on every sub at once.
+    return (i == selected_) || isSpeakerSelected (i);
 }
 
 int RadiationPatternComponent::aimHandleHitTest (juce::Point<float> p) const
@@ -5769,7 +5842,8 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                 const float ry = rm * worldScaleY();
                 g.setColour (Brand::white().withAlpha (0.55f));
                 g.drawEllipse (c.x - rx, c.y - ry, rx * 2.0f, ry * 2.0f, 1.0f);
-                g.setFont (Brand::mono (Brand::Type::gridNum));
+                g.setFont (Brand::mono (juce::jmax (12.5f,
+                               Brand::UI::scaledFont (Brand::Type::gridNum))));
                 g.setColour (Brand::white().withAlpha (0.75f));
                 const juce::String lab = rangeRingLabel (rm);
                 g.drawText (lab,
@@ -7758,6 +7832,7 @@ void RadiationPatternComponent::setMagnifier (bool on)
     if (magnifierOn_ == on) return;
     magnifierOn_ = on;
     if (! on) { magImage_ = juce::Image(); magValid_ = false; }
+    if (onMagnifierChanged) onMagnifierChanged (on);
     repaint();
 }
 
@@ -7786,7 +7861,26 @@ void RadiationPatternComponent::updateMagnifierImage()
                     .constrainedWithin (getLocalBounds());
 
     magBusy_ = true;      // suppresses the loupe inside its own snapshot
-    magImage_ = createComponentSnapshot (area, false, kMagnifyFactor);
+
+    // Painted into an RGB (no alpha) image over an opaque base rather than
+    // taken with createComponentSnapshot. The snapshot keeps the component's
+    // alpha, and drawing that back over the plot blended it with the field
+    // already underneath - the glass came out visibly paler than the map it
+    // was supposed to be showing faithfully, which is the one thing a
+    // magnifier may not do.
+    const int iw = juce::jmax (1, juce::roundToInt (area.getWidth()  * kMagnifyFactor));
+    const int ih = juce::jmax (1, juce::roundToInt (area.getHeight() * kMagnifyFactor));
+    juce::Image img (juce::Image::RGB, iw, ih, true);
+    {
+        juce::Graphics ig (img);
+        ig.fillAll (Brand::charcoal());
+        ig.addTransform (juce::AffineTransform::translation ((float) -area.getX(),
+                                                             (float) -area.getY())
+                             .scaled (kMagnifyFactor, kMagnifyFactor));
+        paintEntireComponent (ig, false);
+    }
+    magImage_ = img;
+
     magBusy_ = false;
 }
 
@@ -7796,9 +7890,18 @@ void RadiationPatternComponent::drawMagnifier (juce::Graphics& g)
 
     const float r = magnifierRadiusPx();
     const auto  c = magPoint_;
+    const float sc = juce::jmax (0.5f, Brand::UI::scale);
 
     juce::Path circle;
     circle.addEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r);
+
+    // A soft drop shadow, so the glass reads as something held ABOVE the plot
+    // rather than a hole cut into it.
+    {
+        juce::DropShadow sh (juce::Colours::black.withAlpha (0.45f),
+                             (int) (10.0f * sc), { 0, (int) (2.0f * sc) });
+        sh.drawForPath (g, circle);
+    }
 
     {
         juce::Graphics::ScopedSaveState ss (g);
@@ -7812,21 +7915,30 @@ void RadiationPatternComponent::drawMagnifier (juce::Graphics& g)
             false);
     }
 
-    // A rim, so the glass reads as an instrument held over the plot rather
-    // than as part of the prediction.
-    g.setColour (Brand::charcoal().withAlpha (0.85f));
-    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 3.0f);
-    g.setColour (Brand::white().withAlpha (0.9f));
-    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 1.2f);
+    // Rim: one hairline in the brand red so it belongs to this app, over a
+    // dark liner that holds it against both a bright peak and a black floor.
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 3.0f * sc);
+    g.setColour (Brand::accent());
+    g.drawEllipse (c.x - r, c.y - r, 2.0f * r, 2.0f * r, 1.6f * sc);
 
-    // Say how much it is enlarging, or the reading means nothing.
-    const float fh = juce::jmax (10.0f, 11.5f * juce::jmax (0.5f, Brand::UI::scale));
+    // A small crosshair at the centre: the glass covers the very point you
+    // are asking about, so it has to say which point that is.
+    const float k = 5.0f * sc;
+    g.setColour (Brand::white().withAlpha (0.75f));
+    g.drawLine (c.x - k, c.y, c.x + k, c.y, 1.0f);
+    g.drawLine (c.x, c.y - k, c.x, c.y + k, 1.0f);
+
+    // The factor, on the rim rather than floating below it - a label that is
+    // not attached to the glass just looks like more plot furniture.
+    const float fh = juce::jmax (10.0f, 11.0f * sc);
     g.setFont (Brand::tech (fh, true));
     const juce::String tag = juce::String (kMagnifyFactor, 1) + "x";
-    juce::Rectangle<float> pill (c.x - 18.0f, c.y + r + 4.0f, 36.0f, fh * 1.5f);
-    g.setColour (Brand::charcoal().withAlpha (0.85f));
-    g.fillRoundedRectangle (pill, 3.0f);
-    g.setColour (Brand::white());
+    const float tw = (float) g.getCurrentFont().getStringWidth (tag) + fh;
+    juce::Rectangle<float> pill (c.x - tw * 0.5f, c.y + r - fh * 0.9f, tw, fh * 1.45f);
+    g.setColour (Brand::accent());
+    g.fillRoundedRectangle (pill, pill.getHeight() * 0.5f);
+    g.setColour (Brand::onAccent());
     g.drawText (tag, pill.toNearestInt(), juce::Justification::centred, false);
 }
 
@@ -7975,6 +8087,8 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
             setAddMicArmed (false);
         if (addSpeakerArmed_)
             setAddSpeakerArmed (false);
+        // The glass is a mode like any other, so Esc puts it away too.
+        setMagnifier (false);
         cancelDrawSession();
         clearPlotSelection();
         if (tool_ != Tool::Select)

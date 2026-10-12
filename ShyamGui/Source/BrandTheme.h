@@ -867,8 +867,9 @@ namespace Brand
             const auto id = btn.getComponentID();
             if (id == "bottomBtn")
             {
-                const float h = juce::jmin (UI::scaledFont (Type::bottomBarButton),
-                                            (float) buttonHeight * 0.55f);
+                const float h = juce::jmax (12.0f,
+                                juce::jmin (UI::scaledFont (Type::bottomBarButton),
+                                            (float) buttonHeight * 0.62f));
                 const auto txt = btn.getButtonText();
                 const bool isExport = txt.containsIgnoreCase ("SAVE")
                                    || txt.containsIgnoreCase ("EXPORT");
@@ -895,9 +896,28 @@ namespace Brand
                 // letting the cap run the text into the ground. Over-asking is
                 // safe: JUCE fits the text to the button and shrinks it again
                 // if a label is too long for its slot.
-                return techMed (juce::jmax (11.0f,
-                                juce::jmin (UI::scaledFont (Type::ribbonPillText),
-                                            (float) buttonHeight * 0.95f)));
+            {
+                float h = juce::jmax (12.5f,
+                          juce::jmin (UI::scaledFont (Type::ribbonPillText),
+                                      (float) buttonHeight * 0.95f));
+
+                // ...and then down again if the label is too long for its own
+                // pill. JUCE would otherwise wrap it onto a second line -
+                // "Use as Plane" became "Use as / Plane" the moment the text
+                // got big enough to be worth reading. A pill is one line or it
+                // is not a pill, so the size is fitted to the width here and
+                // the longest labels simply come out a little smaller.
+                const auto text = btn.getButtonText();
+                const int avail = btn.getWidth() - 10;
+                if (text.isNotEmpty() && avail > 20)
+                {
+                    const auto probe = techMed (h);
+                    const float w = (float) probe.getStringWidth (text);
+                    if (w > (float) avail)
+                        h = juce::jmax (10.0f, h * (float) avail / w);
+                }
+                return techMed (h);
+            }
             if (id == "plotFit")
                 return techMed (UI::scaledFont (Type::plotFitButton));
             if (id == "headerStats" || id == "headerNewProject")
@@ -1250,7 +1270,12 @@ namespace Brand
                 button.getToggleState() ? juce::TextButton::textColourOnId
                                         : juce::TextButton::textColourOffId);
             if (! button.isEnabled())
-                col = text().withAlpha (0.58f);
+                // Dim enough to read as inactive, dark enough to still READ.
+                // At 0.58 the ribbon's greyed pills - the whole Plane cluster
+                // whenever no shape is selected, which is most of the time -
+                // were pale grey on pale grey and could not be made out at
+                // all, so you could not tell what the cluster even offered.
+                col = text().withAlpha (0.78f);
 
             g.setColour (col);
 
