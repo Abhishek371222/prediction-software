@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "publish": "node publish-version.mjs",
+    "publish-all": "node publish-all.mjs",
     "start": "node serve.mjs",
     "sync": "node sync-versions-json.mjs"
   },

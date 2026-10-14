@@ -82,7 +82,7 @@ to be read.
 
 - Version strings, file version resource (string and numeric `FILEVERSION`),
   installer and the macOS build scripts -> **v1.4.4**.
-- **Windows Release** `Atomik Integral.exe`, archived as
+- **Windows Release** `Atomik Integral v1.4.4.exe`, archived as
   `AtomikIntegral-Windows-v1.4.4.exe` (Q21S + BEM 2inch + UI and ribbon icon
   assets embedded).
 

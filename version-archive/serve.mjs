@@ -103,7 +103,8 @@ const server = http.createServer(async (req, res) => {
       versions.sort((a, b) => {
         const pa = a.version.split('.').map(Number);
         const pb = b.version.split('.').map(Number);
-        for (let i = 0; i < 3; i++) if ((pb[i] || 0) !== (pa[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
+        const n = Math.max(pa.length, pb.length);   // 1.4.0.9 has four parts
+        for (let i = 0; i < n; i++) if ((pb[i] || 0) !== (pa[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
         return 0;
       });
       return send(res, 200, JSON.stringify({ versions }), 'application/json');
