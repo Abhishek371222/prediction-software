@@ -1,6 +1,25 @@
 {
-    "generatedAt": "2026-10-09T19:30:00.000Z",
+    "generatedAt": "2026-10-14T15:40:00.000Z",
     "versions": [
+        {
+            "version": "1.4.4",
+            "notes": "First archived build under the Atomik Integral name. The Mapping ribbon is drawn from the Figma icon set - Show Rays, Lock Rays, SPL Mapping / Mapping Off, Show Interdistance, Show Values, Snap, Ortho with its Horizontal / Vertical / Gap, then Use as Plane, Virtual, Architectural, Listening, Seated, Standing, Mic, + Range and Show / Hide ranges - in three states: grey when unavailable, black when available and off, red when on. Hovering shows the name the button used to carry, in bold, over its description. The Mapping icons are a third larger, and the status message moved into the tab strip so it shows in full instead of being cut to 'Project...'. The mic X / Y boxes name their axis inside the field. The mouse wheel now sets numbers: hover over any sidebar number box - position, gain, delay, rotation, height, tilt, crossover, band top, resolution, floor, layout - or the mic X / Y and the wheel steps it, Shift for ten; elsewhere it still scrolls the panel. New shapes are light blue #A9C7FF at 100% opacity instead of yellow at 35%. Carries v1.4.3, which had no archive build: renamed Atomik Integral; mics placed by typing X / Y; Show Values as a live crosshair probe; magnifier rebuilt; readability pass; Show Rays for mids and tops only.",
+            "createdAt": "2026-10-14T15:40:00.000Z",
+            "updatedAt": "2026-10-14T15:40:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.4/AtomikIntegral-Windows-v1.4.4.exe",
+                    "size": 6593928
+                }
+            }
+        },
         {
             "version": "1.4.2",
             "notes": "The crossover now reaches every view: it was applied inside the smoothed band sum the SPL map is built from and nowhere else, leaving the single-frequency pressure field, the incoherent sum and the Directivity polar drawn from the unfiltered signal. It is also taken at the frequency actually being propagated rather than the browsed model's own catalogue frequency, which only matched in a single-model scene. Both frequency-response displays now read calibrated dB SPL on an axis anchored when the first curve arrives, instead of a map-relative figure on a scale that re-centred on every solve - so a filter, a gain or a delay is visible as a change in level. The Listen window's probe was running with no directivity tables and no calibration and now gets the real ones. The view no longer snaps back to the same framing after every edit. Subs carry no aiming ray, as ArrayCalc and EASE Focus steer low end by array geometry and delay rather than by pointing a cabinet. Added: each mic prints its X, Y beside its marker in the unit on show, with a Show Coordinates toggle; right-click the plot to copy the canvas to the clipboard at 2x, caption included, ready to paste anywhere. The Frequency Response window is laid out from its own size - the dB span fits the data, gridlines and ticks thin themselves, the legend steps aside when narrow - and the crossover row labels scale like every other sidebar label.",

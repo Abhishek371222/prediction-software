@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-VERSION="1.3.6"
+VERSION="1.4.4"
 APP_NAME="Atomik Integral"
 DMG_NAME="Atomik_Integral_v${VERSION}_macOS"
 OUT_DIR="$ROOT/dist/mac"

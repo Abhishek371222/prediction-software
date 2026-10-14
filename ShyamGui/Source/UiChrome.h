@@ -277,6 +277,272 @@ private:
     juce::String label_;
 };
 
+/** A ribbon toggle that shows the designer's glyph (Assets/RibbonIcons)
+    instead of a word, in the three Figma states: grey when disabled (the
+    black art at half strength), black when available, and the red art when
+    activated. The word is kept as the button text and leads the tooltip, so
+    hovering still names the control. Layers sit in a 24-unit slot so every
+    glyph keeps its drawn size against the others, and a badge (Lock Rays'
+    padlock) can overhang the main glyph the way the design places it. */
+class RibbonIconButton : public juce::Button
+{
+public:
+    struct Layer
+    {
+        const char* file;          // under Assets/RibbonIcons
+        const char* activeFile;    // the red art; nullptr keeps `file` (the padlock)
+        float x, y, w, h;          // frame in the 24-unit slot
+        bool tint = true;          // false keeps the black art's own colours
+    };
+
+    RibbonIconButton (const juce::String& label, std::initializer_list<Layer> layers)
+        : juce::Button (label)
+    {
+        setClickingTogglesState (true);
+        for (const auto& l : layers)
+            load (l);
+    }
+
+    /** A caption drawn as a glyph: no hover, no press, no toggle. Its
+        "on" state just says whether the control it labels is live. */
+    void setGlyphOnly (bool g)
+    {
+        glyphOnly_ = g;
+        setClickingTogglesState (! g);
+        setTriggeredOnMouseDown (false);
+        repaint();
+    }
+
+    juce::String getTooltip() override
+    {
+        const auto tip = juce::Button::getTooltip();
+        if (tip.isEmpty() || tip == getButtonText())
+            return getButtonText();
+        return getButtonText() + "\n" + tip;
+    }
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat();
+        if (! glyphOnly_ && isEnabled() && (over || down))
+        {
+            g.setColour (Brand::border().withAlpha (down ? 0.45f : 0.28f));
+            g.fillRoundedRectangle (r.reduced (1.0f), 3.0f);
+        }
+
+        // Disabled wins over on: a greyed control shows grey even if its
+        // setting is kept (Show Interdistance while Ortho is off).
+        // A one-shot button (+ Range, Mic's menu) has no on state of its
+        // own, so it shows red while it is held.
+        const bool  momentary = ! glyphOnly_ && ! getClickingTogglesState();
+        const bool  active = isEnabled() && (getToggleState() || (momentary && down));
+        const float alpha  = isEnabled() ? 1.0f : 0.5f;
+        const auto  ink = AppSettings::get().isDark() ? juce::Colours::white
+                                                      : juce::Colours::black;
+        // The slot IS the Figma frame: ribbonIconSize is the 24 px frame
+        // on the ribbon's grid, so no inset.
+        const float side = juce::jmin (r.getWidth(), r.getHeight());
+        if (side <= 2.0f) return;
+        const float u = side / 24.0f;
+        const auto origin = r.getCentre() - juce::Point<float> (side, side) * 0.5f;
+        const float pixelScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+
+        for (auto& l : layers_)
+        {
+            const juce::Rectangle<float> dest (origin.x + l.frame.getX() * u,
+                                               origin.y + l.frame.getY() * u,
+                                               l.frame.getWidth() * u,
+                                               l.frame.getHeight() * u);
+            const bool red = active && l.active.isValid();
+            auto& art = red ? l.active : l.normal;
+            const bool tinted = ! red && l.tint;
+
+            if (art.svg != nullptr)
+            {
+                if (tinted && art.inked != ink)
+                {
+                    for (auto from : { art.inked, juce::Colour (0xff2c2c2c) })
+                        art.svg->replaceColour (from, ink);
+                    art.inked = ink;
+                }
+                art.svg->drawWithin (g, dest, juce::RectanglePlacement::stretchToFit, alpha);
+            }
+            else if (art.png.isValid())
+            {
+                const auto& img = art.sized (juce::roundToInt (dest.getWidth()  * pixelScale),
+                                             juce::roundToInt (dest.getHeight() * pixelScale));
+                if (tinted)
+                {
+                    g.setColour (ink.withAlpha (alpha));
+                    g.drawImage (img, dest, juce::RectanglePlacement::stretchToFit, true);
+                }
+                else
+                {
+                    g.setOpacity (alpha);
+                    g.drawImage (img, dest, juce::RectanglePlacement::stretchToFit, false);
+                }
+            }
+        }
+    }
+
+private:
+    struct Art
+    {
+        std::unique_ptr<juce::Drawable> svg;
+        juce::Image png, cached;
+        juce::Colour inked { juce::Colours::black };
+
+        bool isValid() const noexcept { return svg != nullptr || png.isValid(); }
+
+        /** The 90 px art stepped down by halves to the drawn size: a single
+            large jump in the renderer aliases thin strokes into dashes. */
+        const juce::Image& sized (int w, int h)
+        {
+            w = juce::jmax (1, w);
+            h = juce::jmax (1, h);
+            if (cached.isValid() && cached.getWidth() == w && cached.getHeight() == h)
+                return cached;
+            auto img = png;
+            while (img.getWidth() > w * 2 && img.getHeight() > h * 2)
+                img = img.rescaled (img.getWidth() / 2, img.getHeight() / 2,
+                                    juce::Graphics::highResamplingQuality);
+            cached = img.rescaled (w, h, juce::Graphics::highResamplingQuality);
+            return cached;
+        }
+    };
+
+    struct Loaded
+    {
+        Art normal, active;
+        juce::Rectangle<float> frame;
+        bool tint = true;
+    };
+
+    static Art loadArt (const juce::String& file)
+    {
+        Art art;
+        const auto mb = Brand::assetBytes ("RibbonIcons/" + file);
+        if (mb.getSize() == 0)
+            return art;
+        if (file.endsWithIgnoreCase (".svg"))
+        {
+            if (auto xml = juce::XmlDocument::parse (
+                    juce::String::createStringFromData (mb.getData(), (int) mb.getSize())))
+                art.svg = juce::Drawable::createFromSVG (*xml);
+        }
+        else
+        {
+            art.png = juce::ImageFileFormat::loadFrom (mb.getData(), mb.getSize());
+        }
+        return art;
+    }
+
+    void load (const Layer& l)
+    {
+        Loaded out;
+        out.frame  = { l.x, l.y, l.w, l.h };
+        out.tint   = l.tint;
+        out.normal = loadArt (l.file);
+        if (! out.normal.isValid())
+            return;
+        if (l.activeFile != nullptr)
+            out.active = loadArt (l.activeFile);
+        layers_.push_back (std::move (out));
+    }
+
+    std::vector<Loaded> layers_;
+    bool glyphOnly_ = false;
+};
+
+/** A ribbon number box that names its axis inside the field ("X 00.0"), as
+    the Figma ribbon draws it. Click to type; the mouse wheel steps the value
+    by 0.1 a notch, or by 1 with Shift held. Changes notify like typing does. */
+class RibbonCoordBox : public juce::Label
+{
+public:
+    explicit RibbonCoordBox (const juce::String& axis) : axis_ (axis)
+    {
+        setEditable (true, true, false);
+        setJustificationType (juce::Justification::centredLeft);
+        setColour (backgroundWhenEditingColourId, juce::Colours::transparentBlack);
+        setColour (outlineWhenEditingColourId,    juce::Colours::transparentBlack);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (Brand::exportPill());
+        g.fillRect (r);
+        g.setColour (Brand::text().withAlpha (0.12f));
+        g.drawRect (r, 1.0f);
+
+        const auto ink = Brand::text().withMultipliedAlpha (isEnabled() ? 1.0f : 0.5f);
+        g.setFont (getFont());
+        g.setColour (ink);
+        g.drawText (axis_, getLocalBounds().withTrimmedLeft (pad()).withWidth (captionW()),
+                    juce::Justification::centredLeft, false);
+        if (! isBeingEdited())
+            g.drawText (getText(), getLocalBounds().withTrimmedLeft (valueLeft()).withTrimmedRight (pad()),
+                        juce::Justification::centredLeft, true);
+    }
+
+    void resized() override
+    {
+        if (auto* ed = getCurrentTextEditor())
+            ed->setBounds (getLocalBounds().withTrimmedLeft (valueLeft() - 2));
+    }
+
+    void editorShown (juce::TextEditor* ed) override
+    {
+        ed->setColour (juce::TextEditor::textColourId, Brand::text());
+        ed->setColour (juce::TextEditor::highlightColourId, Brand::accent().withAlpha (0.3f));
+        ed->setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+        ed->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        ed->setBorder ({});
+        ed->setIndents (2, 0);
+        ed->setJustification (juce::Justification::centredLeft);
+        resized();
+    }
+
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        if (! isEnabled() || isBeingEdited())
+        {
+            juce::Label::mouseWheelMove (e, w);
+            return;
+        }
+        // Shift turns a vertical wheel horizontal on some systems.
+        float d = w.deltaY != 0.0f ? w.deltaY : w.deltaX;
+        if (w.isReversed) d = -d;
+        int steps = 0;
+        if (w.isSmooth)
+        {
+            // Trackpads send a stream of small deltas; a step per quarter
+            // "notch" keeps a flick from running the value away.
+            wheelAcc_ += d;
+            steps = (int) (wheelAcc_ / 0.25f);
+            wheelAcc_ -= (float) steps * 0.25f;
+        }
+        else if (d != 0.0f)
+        {
+            steps = d > 0.0f ? 1 : -1;
+        }
+        if (steps == 0)
+            return;
+        const double step = e.mods.isShiftDown() ? 1.0 : 0.1;
+        const double v = getText().getDoubleValue() + steps * step;
+        setText (juce::String (v, 1), juce::sendNotificationSync);
+    }
+
+private:
+    int pad() const       { return juce::jmax (3, juce::roundToInt (getHeight() * 0.25f)); }
+    int captionW() const  { return juce::roundToInt (getFont().getStringWidthFloat (axis_)) + 1; }
+    int valueLeft() const { return pad() + captionW() + juce::jmax (3, getHeight() / 5); }
+
+    juce::String axis_;
+    float wheelAcc_ = 0.0f;
+};
+
 class PlotHeaderBar : public juce::Component
 {
 public:
@@ -351,41 +617,24 @@ public:
         styleToolFile (btnEraser_,  "Eraser.svg",       "Eraser: scrub to remove drawings", true);
         styleToolFile (btnRuler_,   "Ruler.svg",        "Ruler: click two points to measure distance", true);
         styleTool (btnShape_,   kShapeSVG,   "Shape: Line, Polyline, Circle, Arc, Rectangle, Square, or Text Box", true);
-        styleTool (btnMic_,     kMicSVG,     "Mic: add virtual receivers on the gradient plot", false);
+        btnMic_.setClickingTogglesState (false);
+        btnMic_.setTooltip ("Add virtual receivers on the gradient plot");
+        addAndMakeVisible (btnMic_);
 
-        // X / Y for the selected mic, typed in the ribbon. Styled like the
-        // Ortho gap read-out, which is the other number you type into up here.
+        // X / Y for the selected mic, typed in the ribbon or rolled with the
+        // wheel. Each box names its own axis.
         {
-            auto styleCoord = [this] (juce::Label& l, const juce::String& tip)
+            auto styleCoord = [this] (RibbonCoordBox& l, const juce::String& tip)
             {
-                l.setEditable (true, true, false);
-                l.setJustificationType (juce::Justification::centred);
                 l.setTooltip (tip);
-                l.setColour (juce::Label::backgroundColourId, Brand::plotToolbar());
-                l.setColour (juce::Label::textColourId,       Brand::text());
-                l.setColour (juce::Label::outlineColourId,    Brand::border().withAlpha (0.35f));
-                l.setColour (juce::Label::backgroundWhenEditingColourId, Brand::plotToolbar());
-                l.setColour (juce::Label::textWhenEditingColourId,       Brand::text());
                 l.onTextChange = [this] { pushMicCoords(); };
                 addAndMakeVisible (l);
             };
             styleCoord (micXBox_, "X of the selected mic, in the unit on show. "
-                                  "Select a mic on the plot to type its position.");
-            styleCoord (micYBox_, "Y of the selected mic, in the unit on show.");
-
-            // Two bare numbers say nothing about which is which. Named, the
-            // same way Gap names the box beside it.
-            auto styleCoordCaption = [this] (juce::Label& l, const juce::String& t)
-            {
-                l.setText (t, juce::dontSendNotification);
-                l.setJustificationType (juce::Justification::centredRight);
-                l.setColour (juce::Label::textColourId, Brand::muted());
-                l.setBorderSize ({});
-                l.setInterceptsMouseClicks (false, false);
-                addAndMakeVisible (l);
-            };
-            styleCoordCaption (micXLabel_, "X");
-            styleCoordCaption (micYLabel_, "Y");
+                                  "Select a mic on the plot, then type or scroll "
+                                  "(Shift for steps of 1).");
+            styleCoord (micYBox_, "Y of the selected mic, in the unit on show. "
+                                  "Type or scroll (Shift for steps of 1).");
             setMicCoords (false, 0.0f, 0.0f);
         }
         styleToolFile (btnZoomIn_,  "Zoom In.svg",  "Zoom in");
@@ -541,31 +790,17 @@ public:
         styleClusterLabel (lblMapping_, "Rays");
         addAndMakeVisible (lblMapping_);
 
-        btnShowRays_.setButtonText ("Show Rays");
         btnShowRays_.setTooltip ("Draw the aiming ray out of every mid and top. "
                                  "Subs have no ray; select one to turn it, or "
                                  "right-click it to show or hide its aim line.");
-        btnShowRays_.setClickingTogglesState (true);
-        btnShowRays_.setComponentID ("ribbonStyle");
-        btnShowRays_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btnShowRays_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
-        btnShowRays_.setColour (juce::TextButton::textColourOffId, Brand::heading());
-        btnShowRays_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
         btnShowRays_.onClick = [this]
         {
             if (onShowRays) onShowRays (btnShowRays_.getToggleState());
         };
         addAndMakeVisible (btnShowRays_);
 
-        btnLockRays_.setButtonText ("Lock Rays");
         btnLockRays_.setTooltip ("Lock the rays: they stay on screen but cannot be "
                                  "grabbed, so a finished aim cannot be nudged.");
-        btnLockRays_.setClickingTogglesState (true);
-        btnLockRays_.setComponentID ("ribbonStyle");
-        btnLockRays_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btnLockRays_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
-        btnLockRays_.setColour (juce::TextButton::textColourOffId, Brand::heading());
-        btnLockRays_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
         btnLockRays_.onClick = [this]
         {
             if (onLockRays) onLockRays (btnLockRays_.getToggleState());
@@ -578,35 +813,27 @@ public:
         styleClusterLabel (lblPlane_, "Plane");
         addAndMakeVisible (lblPlane_);
 
-        auto planeBtn = [this] (juce::TextButton& b, const juce::String& t,
-                                const juce::String& tip)
+        auto planeBtn = [this] (RibbonIconButton& b, const juce::String& tip)
         {
-            b.setButtonText (t);
             b.setTooltip (tip);
-            b.setClickingTogglesState (true);
-            b.setComponentID ("ribbonStyle");
-            b.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-            b.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
-            b.setColour (juce::TextButton::textColourOffId, Brand::heading());
-            b.setColour (juce::TextButton::textColourOnId,  Brand::accent());
             addAndMakeVisible (b);
         };
-        planeBtn (btnUsePlane_,    "Use as Plane",
+        planeBtn (btnUsePlane_,
                   "Treat this shape as a surface in the venue rather than a note on it.");
-        planeBtn (btnPlaneListen_, "Listening",
+        planeBtn (btnPlaneListen_,
                   "Audience: the surface people are on.");
-        planeBtn (btnPlaneVirt_,   "Virtual",
+        planeBtn (btnPlaneVirt_,
                   "A reference surface nobody occupies - a construction line.");
-        planeBtn (btnPlaneArch_,   "Architectural",
+        planeBtn (btnPlaneArch_,
                   "Structure: a wall, a balcony front, the stage edge.");
-        planeBtn (btnRangeAdd_, "+ Range",
+        planeBtn (btnRangeAdd_,
                   "Draw reference rings at the distances you choose, around every "
                   "speaker. Type one or several at once in metres or feet - "
                   "2, 4, 8 or 5m, 20ft.");
         btnRangeAdd_.setClickingTogglesState (false);
         btnRangeAdd_.onClick = [this] { if (onAddRange) onAddRange(); };
 
-        planeBtn (btnRangeShow_, "Shown",
+        planeBtn (btnRangeShow_,
                   "Put the rings away without forgetting them. Hidden rings are "
                   "not drawn, and a mic will not snap to them.");
         btnRangeShow_.setToggleState (true, juce::dontSendNotification);
@@ -620,11 +847,11 @@ public:
         styleClusterLabel (lblRange_, "Range");
         addAndMakeVisible (lblRange_);
 
-        planeBtn (btnPlaneSeated_,   "Seated",
+        planeBtn (btnPlaneSeated_,
                   "Ears at 1.2 m. Records the listening height on this plane - "
                   "the engine has no vertical directivity, so it does not "
                   "change the predicted levels.");
-        planeBtn (btnPlaneStanding_, "Standing",
+        planeBtn (btnPlaneStanding_,
                   "Ears at 1.7 m. Records the listening height on this plane - "
                   "the engine has no vertical directivity, so it does not "
                   "change the predicted levels.");
@@ -641,35 +868,21 @@ public:
         styleClusterLabel (lblDistance_, "Options");
         addAndMakeVisible (lblDistance_);
 
-        btnInterdist_.setButtonText ("Show Interdistance");
         btnInterdist_.setTooltip ("Show the gap Ortho is linking, between the "
                                   "selected speakers. Needs Ortho on.");
-        btnInterdist_.setClickingTogglesState (true);
         // On by default, so switching Ortho on reads exactly as it used to.
         btnInterdist_.setToggleState (true, juce::dontSendNotification);
-        btnInterdist_.setComponentID ("ribbonStyle");
-        btnInterdist_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btnInterdist_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
-        btnInterdist_.setColour (juce::TextButton::textColourOffId, Brand::heading());
-        btnInterdist_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
         btnInterdist_.onClick = [this]
         {
             if (onShowInterdistance) onShowInterdistance (btnInterdist_.getToggleState());
         };
         addAndMakeVisible (btnInterdist_);
 
-        btnShowValues_.setButtonText ("Show Values");
         btnShowValues_.setTooltip ("Read the level anywhere: the pointer becomes "
                                    "a crosshair and shows the predicted dB at "
                                    "whatever it is over. A colour tells you "
                                    "roughly; a number tells you.");
-        btnShowValues_.setClickingTogglesState (true);
         btnShowValues_.setEnabled (false);   // no map yet, nothing to label
-        btnShowValues_.setComponentID ("ribbonStyle");
-        btnShowValues_.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btnShowValues_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.16f));
-        btnShowValues_.setColour (juce::TextButton::textColourOffId, Brand::heading());
-        btnShowValues_.setColour (juce::TextButton::textColourOnId,  Brand::accent());
         btnShowValues_.onClick = [this]
         {
             if (onShowSplValues) onShowSplValues (btnShowValues_.getToggleState());
@@ -679,18 +892,25 @@ public:
         styleClusterLabel (lblMappingType_, "Mapping Type");
         addAndMakeVisible (lblMappingType_);
 
-        mappingTypeBox_.setComponentID ("ctrlCombo");
-        mappingTypeBox_.setTooltip ("What the canvas paints under the speakers.");
-        mappingTypeBox_.addItem ("Mapping Off", 1);
-        mappingTypeBox_.addItem ("SPL Mapping", 2);
-        // Off by default - the map is opt-in now.
-        mappingTypeBox_.setSelectedId (1, juce::dontSendNotification);
-        mappingTypeBox_.onChange = [this]
+        // What the canvas paints under the speakers: one of two, like the
+        // combo it replaces. Off by default - the map is opt-in now.
+        btnMapSpl_.setTooltip ("Paint the predicted SPL across the field.");
+        btnMapOff_.setTooltip ("Paint nothing under the speakers.");
+        for (auto* b : { &btnMapSpl_, &btnMapOff_ })
         {
-            setShowValuesAvailable (mappingTypeBox_.getSelectedId() == 2);
-            if (onMappingType) onMappingType (mappingTypeBox_.getSelectedId() - 1);
+            b->setRadioGroupId (44010);
+            addAndMakeVisible (*b);
+        }
+        btnMapOff_.setToggleState (true, juce::dontSendNotification);
+        auto pickMapping = [this] (int type)
+        {
+            if (type == mappingType_) return;   // re-clicking the live one
+            mappingType_ = type;
+            setShowValuesAvailable (type == 1);
+            if (onMappingType) onMappingType (type);
         };
-        addAndMakeVisible (mappingTypeBox_);
+        btnMapSpl_.onClick = [this, pickMapping] { if (btnMapSpl_.getToggleState()) pickMapping (1); };
+        btnMapOff_.onClick = [this, pickMapping] { if (btnMapOff_.getToggleState()) pickMapping (0); };
 
         setTextControlsEnabled (false);
         styleClusterLabel (lblOptions_, "Options");
@@ -748,48 +968,29 @@ public:
                                                                                            : Brand::onBtnIn());
             addAndMakeVisible (b);
         };
-        styleMod (btnOrtho_,
-                  "Ortho: align selected speakers horizontally or vertically "
-                  "with linked centre-to-centre spacing (Figma-style). Off = normal.");
-        styleMod (btnSnap_,
-                  "Snap: lock to " + juce::String (Units::snapStepLabel())
-                      + " steps and to nearby edges/corners "
-                        "(other shapes, mics, speakers). Turn on before drawing or moving.");
-        // These two were built for the old plot toolbar and never carried the
-        // ribbon's id, so they kept the generic (much smaller) button font
-        // while everything beside them grew. The id only picks the font.
-        btnSnap_.setComponentID ("ribbonStyle");
-        btnOrtho_.setComponentID ("ribbonStyle");
+        btnOrtho_.setTooltip ("Align selected speakers horizontally or vertically "
+                              "with linked centre-to-centre spacing. Off = normal.");
+        btnSnap_.setTooltip ("Lock to " + juce::String (Units::snapStepLabel())
+                                 + " steps and to nearby edges/corners "
+                                   "(other shapes, mics, speakers). Turn on before drawing or moving.");
+        addAndMakeVisible (btnOrtho_);
+        addAndMakeVisible (btnSnap_);
         styleMod (btnSplProbe_,
                   "SPL: show dB SPL under the cursor on the gradient plot "
                   "(Select tool). Turn off for a cleaner view.");
         btnSplProbe_.setToggleState (false, juce::dontSendNotification);
 
-        auto styleOrthoOpt = [&] (juce::TextButton& b, const juce::String& tip)
-        {
-            b.setTooltip (tip);
-            b.setClickingTogglesState (true);
-            b.setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());
-            b.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.45f));
-            b.setColour (juce::TextButton::textColourOffId,  AppSettings::get().isDark() ? Brand::white()
-                                                                                           : Brand::onBtnIn());
-            b.setColour (juce::TextButton::textColourOnId,   AppSettings::get().isDark() ? Brand::white()
-                                                                                           : Brand::onBtnIn());
-            b.setVisible (false);
-            addChildComponent (b);
-        };
-        styleOrthoOpt (btnOrthoHoriz_, "Align selected speakers in a horizontal row");
-        styleOrthoOpt (btnOrthoVert_,  "Align selected speakers in a vertical column");
+        btnOrthoHoriz_.setTooltip ("Align selected speakers in a horizontal row");
+        btnOrthoVert_.setTooltip  ("Align selected speakers in a vertical column");
         btnOrthoHoriz_.setToggleState (true, juce::dontSendNotification);
-
-        orthoGapLabel_.setText ("Gap", juce::dontSendNotification);
-        orthoGapLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::sidebarMainValue)));
-        orthoGapLabel_.setColour (juce::Label::textColourId, Brand::muted());
-        orthoGapLabel_.setJustificationType (juce::Justification::centredRight);
-        orthoGapLabel_.setBorderSize ({});
-        orthoGapLabel_.setInterceptsMouseClicks (false, false);
-        orthoGapLabel_.setVisible (false);
-        addChildComponent (orthoGapLabel_);
+        orthoGapLabel_.setTooltip ("Linked centre-to-centre spacing between the "
+                                   "aligned speakers");
+        orthoGapLabel_.setGlyphOnly (true);
+        for (auto* b : { &btnOrthoHoriz_, &btnOrthoVert_, &orthoGapLabel_ })
+        {
+            b->setVisible (false);
+            addChildComponent (*b);
+        }
 
         orthoGapSlider_.setRange (0.5, 20.0, 0.1);
         orthoGapSlider_.setValue (3.0, juce::dontSendNotification);
@@ -868,7 +1069,7 @@ public:
         addAndMakeVisible (alphaValueLabel_);
 
         fillAlpha_.setRange (0.0, 100.0, 1.0);
-        fillAlpha_.setValue (35.0, juce::dontSendNotification);
+        fillAlpha_.setValue (100.0, juce::dontSendNotification);
         fillAlpha_.setSliderStyle (juce::Slider::LinearHorizontal);
         // The percentage is its own top-right label in the Figma layout, so the
         // slider itself carries no text box.
@@ -916,9 +1117,10 @@ public:
         addAndMakeVisible (rangeBtn_);
 
         for (auto* tb : { &btnSelect_, &btnPan_, &btnPencil_, &btnEraser_,
-                          &btnRuler_, &btnShape_, &btnMic_, &btnZoomIn_, &btnZoomOut_,
+                          &btnRuler_, &btnShape_, &btnZoomIn_, &btnZoomOut_,
                           &btnMagnify_ })
             tb->toFront (false);
+        btnMic_.toFront (false);
         for (auto* fb : { &btnFileNew_, &btnFileOpen_, &btnFileSave_, &btnFileSaveAs_, &btnFileExport_ })
             fb->toFront (false);
         btnOrtho_.toFront (false);
@@ -1016,16 +1218,12 @@ public:
         micHasSelection_ = hasMic;
         updatingMicCoords_ = true;
         micXBox_.setText (hasMic ? juce::String (Units::metresToDisplay ((double) x), 1)
-                                 : juce::String ("-"), juce::dontSendNotification);
+                                 : juce::String ("00.0"), juce::dontSendNotification);
         micYBox_.setText (hasMic ? juce::String (Units::metresToDisplay ((double) y), 1)
-                                 : juce::String ("-"), juce::dontSendNotification);
+                                 : juce::String ("00.0"), juce::dontSendNotification);
         updatingMicCoords_ = false;
         micXBox_.setEnabled (hasMic);
         micYBox_.setEnabled (hasMic);
-        micXBox_.setAlpha (hasMic ? 1.0f : 0.75f);
-        micYBox_.setAlpha (hasMic ? 1.0f : 0.75f);
-        micXLabel_.setAlpha (hasMic ? 1.0f : 0.75f);
-        micYLabel_.setAlpha (hasMic ? 1.0f : 0.75f);
     }
 
     /** Typed X / Y for the selected mic, in METRES. */
@@ -1040,19 +1238,16 @@ public:
         btnShowValues_.setTooltip (mapOn
             ? "Read the level anywhere: the pointer becomes a crosshair and "
               "shows the predicted dB at whatever it is over."
-            : "Read the level under the pointer - switch Mapping Type to SPL "
-              "Mapping first, otherwise there is no field to read.");
+            : "Read the level under the pointer - pick SPL Mapping under "
+              "Mapping Type first, otherwise there is no field to read.");
     }
 
     void setMicArmed (bool armed)
     {
         btnMic_.setToggleState (armed, juce::dontSendNotification);
-        btnMic_.setColour (juce::DrawableButton::backgroundOnColourId,
-                           armed ? Brand::accent().withAlpha (0.45f)
-                                 : Brand::accent().withAlpha (0.28f));
         btnMic_.setTooltip (armed
-            ? "Mic: placement armed - click the field to place (Esc cancels)"
-            : "Mic: add virtual receivers on the gradient plot");
+            ? "Placement armed - click the field to place (Esc cancels)"
+            : "Add virtual receivers on the gradient plot");
         btnMic_.repaint();
     }
 
@@ -1081,7 +1276,7 @@ public:
     juce::DrawableButton btnEraser_ { "ers", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnRuler_  { "rul", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnShape_  { "shp", juce::DrawableButton::ImageFitted };
-    juce::DrawableButton btnMic_    { "mic", juce::DrawableButton::ImageFitted };
+    RibbonIconButton     btnMic_    { "Mic", { { "Mic.png", "Mic Active.png", 2, 2, 20, 20 } } };
     void pushMicCoords()
     {
         if (updatingMicCoords_ || ! micHasSelection_ || ! onMicCoordsEntered) return;
@@ -1092,8 +1287,7 @@ public:
 
     bool                 micHasSelection_   = false;
     bool                 updatingMicCoords_ = false;
-    juce::Label          micXLabel_, micYLabel_;
-    juce::Label          micXBox_, micYBox_;
+    RibbonCoordBox       micXBox_ { "X" }, micYBox_ { "Y" };
     juce::DrawableButton btnMagnify_{ "mag", juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomIn_ { "zi",  juce::DrawableButton::ImageFitted };
     juce::DrawableButton btnZoomOut_{ "zo",  juce::DrawableButton::ImageFitted };
@@ -1329,7 +1523,7 @@ public:
         orthoGapSlider_.setTextValueSuffix (" " + juce::String (Units::lengthUnit()));
         orthoGapSlider_.updateText();
         btnSnap_.setTooltip (
-            "Snap: lock to " + juce::String (Units::snapStepLabel())
+            "Lock to " + juce::String (Units::snapStepLabel())
                 + " steps and to nearby edges/corners "
                   "(other shapes, mics, speakers). Turn on before drawing or moving.");
     }
@@ -1361,12 +1555,14 @@ public:
     /** Figma Colours cluster: one of the 8 palette dots was clicked. */
     std::function<void (juce::Colour)> onSwatchPicked;
 
-    juce::TextButton     btnOrtho_  { "Ortho" };
-    juce::TextButton     btnOrthoHoriz_ { "H" };
-    juce::TextButton     btnOrthoVert_  { "V" };
-    juce::Label          orthoGapLabel_;
+    RibbonIconButton     btnOrtho_       { "Ortho",      { { "Ortho.svg", "Ortho Active.svg", 0, 0, 24, 24 } } };
+    RibbonIconButton     btnOrthoHoriz_  { "Horizontal", { { "Align Horizontally.png",
+                                                             "Align Horizontally Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton     btnOrthoVert_   { "Vertical",   { { "Align Vertically.png",
+                                                             "Align Vertically Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton     orthoGapLabel_  { "Gap",        { { "Gap.svg", "Gap Active.svg", 3, 4.5f, 18, 15 } } };
     juce::Slider         orthoGapSlider_;
-    juce::TextButton     btnSnap_   { "Snap" };
+    RibbonIconButton     btnSnap_        { "Snap",       { { "Snap.svg", "Snap Active.svg", 2, 2, 20, 20 } } };
     juce::TextButton     btnSplProbe_ { "SPL" };
     juce::Label          promptLabel_;
     juce::TextButton     colourSwatch_;
@@ -1404,16 +1600,39 @@ public:
     RibbonTabButton  btnTabHome_ { "Home" }, btnTabMapping_ { "Mapping" };
     int              ribbonTab_  = 0;        // 0 Home, 1 Mapping
     int              tabStripH_  = 0;        // resolved in resized(), read by paint()
-    juce::TextButton btnShowRays_;
+    RibbonIconButton btnShowRays_ { "Show Rays", { { "Show Rays.png", "Show Rays Active.png",
+                                                     0, 0, 24, 24 } } };
+    // The padlock overhangs the fan's top-right corner as drawn; the fan
+    // shifts down-left so both stay inside the slot at Show Rays' size. The
+    // red set keeps the padlock black, so it has no active art.
+    RibbonIconButton btnLockRays_ { "Lock Rays", { { "Show Rays.png", "Show Rays Active.png",
+                                                     -1.5f, 2.5f, 24, 24 },
+                                                   { "Lock Badge.png", nullptr, 13.5f, -1.1f, 12, 12 } } };
     juce::Label      lblMapping_;
-    juce::ComboBox   mappingTypeBox_;
+    RibbonIconButton btnMapSpl_ { "SPL Mapping", { { "SPL Mapping.svg", "SPL Mapping Active.svg",
+                                                     1, 1, 22, 22, false } } };
+    RibbonIconButton btnMapOff_ { "Mapping Off", { { "Mapping Off.svg", "Mapping Off Active.svg",
+                                                     1, 1, 22, 22 } } };
+    int              mappingType_ = 0;       // 0 Off, 1 SPL
     juce::Label      lblMappingType_;
-    juce::TextButton btnInterdist_;
-    juce::TextButton btnShowValues_;
-    juce::TextButton btnLockRays_;
-    juce::TextButton btnUsePlane_, btnPlaneListen_, btnPlaneVirt_, btnPlaneArch_;
-    juce::TextButton btnPlaneSeated_, btnPlaneStanding_;
-    juce::TextButton btnRangeAdd_, btnRangeShow_;
+    RibbonIconButton btnInterdist_  { "Show Interdistance", { { "Show Interdistance.png",
+                                                                "Show Interdistance Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton btnShowValues_ { "Show Values",        { { "Show Values.png",
+                                                                "Show Values Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton btnUsePlane_     { "Use as Plane",  { { "Use as Plane.png", "Use as Plane Active.png",
+                                                             0, 0, 24, 24 } } };
+    RibbonIconButton btnPlaneVirt_    { "Virtual",       { { "Virtual Plane.png", "Virtual Plane Active.png",
+                                                             0, 0, 24, 24 } } };
+    RibbonIconButton btnPlaneArch_    { "Architectural", { { "Architectural Plane.png",
+                                                             "Architectural Plane Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton btnPlaneListen_  { "Listening",     { { "Listening Plane.png", "Listening Plane Active.png",
+                                                             0, 0, 24, 24 } } };
+    RibbonIconButton btnPlaneSeated_  { "Seated",        { { "Seated.png", "Seated Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton btnPlaneStanding_ { "Standing",     { { "Standing.png", "Standing Active.png", 0, 0, 24, 24 } } };
+    RibbonIconButton btnRangeAdd_     { "+ Range",       { { "Add Range.png", "Add Range Active.png",
+                                                             0, 0, 24, 24 } } };
+    RibbonIconButton btnRangeShow_    { "Shown",         { { "Show Ranges.png", "Show Ranges Active.png",
+                                                             0, 0, 24, 24 } } };
     juce::Label      lblRange_;
     // One chip per range the user has added, each with its own delete.
     juce::OwnedArray<juce::TextButton> rangeChips_;
@@ -1480,8 +1699,7 @@ public:
     juce::Component* helpIcons_[3] = { nullptr, nullptr, nullptr };
 
     // "Ready" pill (also owned by MainComponent, reparented) - sits at the
-    // far right of this same ribbon row, exactly matching the Figma mock
-    // (it is NOT in the title row above).
+    // right end of the tab strip, where long status messages have room.
     juce::Component* readyPill_ = nullptr;
     std::function<int()> readyPillWidth_;
 
@@ -1559,7 +1777,8 @@ private:
                 || c == (juce::Component*) &btnTabMapping_
                 || c == (juce::Component*) &btnShowRays_
                 || c == (juce::Component*) &lblMapping_
-                || c == (juce::Component*) &mappingTypeBox_
+                || c == (juce::Component*) &btnMapSpl_
+                || c == (juce::Component*) &btnMapOff_
                 || c == (juce::Component*) &lblMappingType_
                 || c == (juce::Component*) &btnInterdist_
                 || c == (juce::Component*) &btnLockRays_
@@ -1596,12 +1815,11 @@ private:
         }
         micXBox_.setVisible         (! homeTab);
         micYBox_.setVisible         (! homeTab);
-        micXLabel_.setVisible       (! homeTab);
-        micYLabel_.setVisible       (! homeTab);
         btnShowRays_.setVisible     (! homeTab);
         btnLockRays_.setVisible     (! homeTab);
         lblMapping_.setVisible      (! homeTab);
-        mappingTypeBox_.setVisible  (! homeTab);
+        btnMapSpl_.setVisible       (! homeTab);
+        btnMapOff_.setVisible       (! homeTab);
         lblMappingType_.setVisible  (! homeTab);
         btnInterdist_.setVisible    (! homeTab);
         // Nothing to show without Ortho, and a live-looking button that does
@@ -1621,9 +1839,8 @@ private:
         btnOrthoHoriz_.setEnabled  (orthoExtras_);
         btnOrthoVert_.setEnabled   (orthoExtras_);
         orthoGapSlider_.setEnabled (orthoExtras_);
-        orthoGapLabel_.setColour (juce::Label::textColourId,
-                                  orthoExtras_ ? Brand::muted()
-                                               : Brand::muted().withAlpha (0.45f));
+        orthoGapLabel_.setEnabled  (orthoExtras_);
+        orthoGapLabel_.setToggleState (orthoExtras_, juce::dontSendNotification);
         lblOptions_.setVisible     (false);   // merged into the Options cluster
         btnRangeAdd_.setVisible (! homeTab);
         // Nothing to show or hide until there is a range.
@@ -1697,7 +1914,6 @@ private:
         // the preceding rule, three alignment glyphs on the icon pitch, then
         // the size box, then the closing rule.
         static constexpr Cluster kText    { 811, 1109 };
-        static constexpr int kOptionPillW = 50;           // "Snap" / "Ortho" pills
         static constexpr int kOptionPillGap = 6;
         static constexpr int kPlateLeft = 15;             // Figma  20
         static constexpr int kPitch     = 23;             // Figma  30 icon pitch
@@ -1720,25 +1936,32 @@ private:
         // shorter word. Below the width where the full labels fit, the row
         // switches to abbreviations and the narrower slots that go with them,
         // which buys back enough that what remains renders near full size.
+        // Every Mapping control but the mic's X / Y and the range chips is a
+        // glyph on the icon pitch now. `type` is the room the "Mapping Type"
+        // caption needs over its two glyphs.
         struct MapWidths
         {
-            int rays, lock, type, interdist, values, pill;
-            int usePlane, listen, virt, arch, seated, standing;
-            int range, shown, chip, coord;
+            int type, chip, coord;
         };
-        static constexpr MapWidths kFull    { 92, 86, 116, 142, 96, kOptionPillW,
-                                              72, 70, 58, 86, 54, 66, 72, 54, 54, 56 };
-        static constexpr MapWidths kCompact { 62, 58,  96,  88, 64, 44,
-                                              46, 58, 52, 52, 48, 54, 62, 50, 44, 48 };
+        static constexpr MapWidths kFull    { 116, 54, 56 };
+        static constexpr MapWidths kCompact {  96, 44, 48 };
+        constexpr int kIconW    = L::ribbonIconSize;
+        // The Mapping glyphs carry no word beside them, so they are drawn a
+        // third larger than Home's tools, on a pitch to match.
+        constexpr int kMapIconW = 24;
+        constexpr int kMapPitch = 31;
+        constexpr int kSubGroup = 8;                                    // Values | Snap
 
         auto mapDemand = [&] (const MapWidths& w)
         {
-            const int rays  = w.rays + 6 + w.lock;
-            const int opts  = w.interdist + 6 + w.values + 12 + w.pill * 2 + kOptionPillGap;
-            const int plane = w.usePlane + w.listen + w.virt + w.arch
-                            + w.seated + w.standing + 5 * 5;
-            const int mic   = kPitch + 6 + (12 + 3 + w.coord + 6) * 2 + 8
-                            + w.range + 4 + w.shown;
+            const int rays  = kMapPitch + kMapIconW;
+            // Top row of glyphs, or the caption row (Options, H, V, Gap and
+            // the spacing slider) - whichever is wider sets the cluster.
+            const int opts  = juce::jmax (kMapPitch * 3 + kSubGroup + kMapIconW,
+                                          54 + 8 + kIconW * 3 + 150 + kOptionPillGap * 3);
+            const int plane = kMapPitch * 5 + kMapIconW;
+            const int mic   = kMapIconW + 6 + (12 + 3 + w.coord + 6) * 2 + 8
+                            + kMapPitch + kMapIconW;
             // The range chips share the cluster, so the row grows as ranges
             // are added and has to shrink to match - otherwise adding a third
             // range walks the row back over the pill.
@@ -1746,7 +1969,7 @@ private:
                 ? 0 : (int) rangeChips_.size() * w.chip
                       + ((int) rangeChips_.size() - 1) * 4;
             return kPlateLeft + rays + kMapGap
-                 + kMapGap + w.type + kMapGap
+                 + kMapGap + juce::jmax (w.type, kMapPitch + kMapIconW) + kMapGap
                  + kMapGap + opts   + kMapGap
                  + kMapGap + plane  + kMapGap
                  + kMapGap + juce::jmax (mic, chips) + kMapGap;
@@ -1758,8 +1981,10 @@ private:
         // fit when they do not.
         const int fullBaseIcon = juce::jmax (1, UiConfig::Scale::px (L::ribbonIconSize));
         const float fullGridUp = juce::jmax (1.0f, 21.0f / (float) fullBaseIcon);
+        // The status pill lives in the tab strip, so the row only keeps a
+        // right margin to match its left one.
         const int fullDesignW = juce::roundToInt (
-            UiConfig::Scale::px (fullDemandX + L::ribbonReadyRightPad + 100) * fullGridUp);
+            UiConfig::Scale::px (fullDemandX + kPlateLeft) * fullGridUp);
         // Abbreviate only when the full name genuinely cannot be READ, not
         // merely when the row is narrower than its design width. The first
         // version asked the second question and so shortened every label the
@@ -1790,7 +2015,7 @@ private:
         const int   baseIcon = juce::jmax (1, UiConfig::Scale::px (L::ribbonIconSize));
         const float gridUp   = juce::jmax (1.0f, 21.0f / (float) baseIcon);
         const int designW = juce::roundToInt (
-            UiConfig::Scale::px (lastDividerX + L::ribbonReadyRightPad + 100) * gridUp);
+            UiConfig::Scale::px (lastDividerX + kPlateLeft) * gridUp);
         const float shrink = juce::jlimit (0.45f, 1.0f,
                                            designW > 0 ? (float) getWidth() / (float) designW : 1.0f);
         auto px2 = [&] (int v)
@@ -1860,6 +2085,7 @@ private:
         dividerX_.clear();
 
         // Tab strip, left-aligned on the same margin the clusters start from.
+        int tabsRight = 0;
         {
             int tx = px2 (kPlateLeft);
             const int th = juce::jmax (12, tabStrip - px2 (2));
@@ -1869,6 +2095,7 @@ private:
             {
                 const int w = px2 (sl.w);
                 sl.b->setBounds (tx, px2 (1), w, th);
+                tabsRight = tx + w;
                 tx += w + px2 (4);
             }
         }
@@ -1885,8 +2112,6 @@ private:
                 Brand::UI::scaledFont (Brand::Type::ribbonClusterLabel)));
             const auto coordFont = Brand::tech (juce::jmax (12.0f,
                 Brand::UI::scaledFont (Brand::Type::ribbonPillText)));
-            micXLabel_.setFont (coordFont);
-            micYLabel_.setFont (coordFont);
             micXBox_.setFont (coordFont);
             micYBox_.setFont (coordFont);
             for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
@@ -1978,16 +2203,14 @@ private:
             cluster (kHelp, lblHelp_, { helpIcons_[0], helpIcons_[1], helpIcons_[2] });
 
         // Options: Snap and Ortho, plus Ortho's H / V / Gap extras once it is
-        // on. These are text pills rather than glyphs, so they get their own
-        // widths instead of riding the icon pitch.
+        // on, as glyphs on the icon pitch.
         if (kShowOptionsCluster)
         {
-            const int pillW = juce::jmax (24, px2 (kOptionPillW));
             const int pillGap = juce::jmax (2, px2 (kOptionPillGap));
             int x = px2 (kOptions.iconX);
 
-            btnSnap_.setBounds  (x, iconTop, pillW, tool); x += pillW + pillGap;
-            btnOrtho_.setBounds (x, iconTop, pillW, tool); x += pillW + pillGap;
+            btnSnap_.setBounds  (x, iconTop, tool, tool); x += pitch;
+            btnOrtho_.setBounds (x, iconTop, tool, tool); x += pitch;
 
             // H / V / Gap sit on the caption row beneath the two pills so the
             // cluster keeps its width when Ortho is switched on.
@@ -1997,8 +2220,7 @@ private:
                 int ex = px2 (kOptions.iconX);
                 btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
                 btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
-                const int gapLblW = juce::jmax (10, px2 (18));
-                orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
+                orthoGapLabel_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
                 orthoGapSlider_.setBounds (ex, labelTop,
                                            juce::jmax (20, px2 (kOptions.dividerX) - pillGap - ex), sq);
                 lblOptions_.setBounds (0, 0, 0, 0);
@@ -2074,32 +2296,28 @@ private:
         if (! homeTab)
         {
             dividerX_.clear();
-            // Labels follow the slot they have to live in. A pill that says
-            // "Lock" and can be read beats one that says "Lock Rays" and
-            // cannot; the tooltip still carries the full wording.
-            btnShowRays_.setButtonText (mapCompact ? "Rays"   : "Show Rays");
-            btnLockRays_.setButtonText (mapCompact ? "Lock"   : "Lock Rays");
-            btnInterdist_.setButtonText (mapCompact ? "Interdist" : "Show Interdistance");
-            btnShowValues_.setButtonText (mapCompact ? "Values" : "Show Values");
-            btnUsePlane_.setButtonText (mapCompact ? "Use"    : "Use as Plane");
-            btnPlaneListen_.setButtonText (mapCompact ? "Listen" : "Listening");
-            btnPlaneArch_.setButtonText (mapCompact ? "Arch"   : "Architectural");
-            btnPlaneStanding_.setButtonText (mapCompact ? "Stand" : "Standing");
+            // The glyphs are larger than Home's tools but share their centre
+            // line with the mic's X / Y boxes, and stop short of the captions.
+            const int mIcon  = juce::jlimit (tool, juce::jmax (tool, labelTop - tabStrip - 4),
+                                             px2 (kMapIconW));
+            const int mPitch = juce::jmax (mIcon + 2, px2 (kMapPitch));
+            const int mTop   = juce::jmax (tabStrip + 2, iconTop + tool / 2 - mIcon / 2);
 
-            const int bw = px2 (MW.rays);
-            const int lw = px2 (MW.lock);
             const int mx = px2 (kPlateLeft);
-            btnShowRays_.setBounds (mx, iconTop, bw, tool);
-            btnLockRays_.setBounds (mx + bw + px2 (6), iconTop, lw, tool);
-            const int plateRight = mx + bw + px2 (6) + lw + px2 (14);
+            btnShowRays_.setBounds (mx, mTop, mIcon, mIcon);
+            btnLockRays_.setBounds (mx + mPitch, mTop, mIcon, mIcon);
+            const int plateRight = mx + mPitch + mIcon + px2 (14);
             lblMapping_.setBounds (mx, labelTop, juce::jmax (10, plateRight - mx), labelH);
             dividerX_.push_back (plateRight);
 
             // Mapping Type: its own cluster, because it governs the canvas
-            // rather than the rays.
+            // rather than the rays. Two glyphs, one of them always live; the
+            // slot keeps the caption's width and the pair starts at its left
+            // edge like every other cluster.
             const int mx2 = plateRight + px2 (14);
-            const int cw  = px2 (MW.type);
-            mappingTypeBox_.setBounds (mx2, iconTop, cw, tool);
+            const int cw  = juce::jmax (px2 (MW.type), mPitch + mIcon);
+            btnMapSpl_.setBounds (mx2,          mTop, mIcon, mIcon);
+            btnMapOff_.setBounds (mx2 + mPitch, mTop, mIcon, mIcon);
             const int plateRight2 = mx2 + cw + px2 (14);
             lblMappingType_.setBounds (mx2, labelTop,
                                        juce::jmax (10, plateRight2 - mx2), labelH);
@@ -2113,17 +2331,11 @@ private:
             // Caption  : "Options", then Ortho's H / V / Gap to its right.
             // The H / V / Gap row is always laid out, greyed when Ortho is
             // off, so nothing shifts when you switch Ortho on.
-            const int pillW   = juce::jmax (24, px2 (MW.pill));
             const int pillGap = juce::jmax (2,  px2 (kOptionPillGap));
             const int ox0 = plateRight2 + px2 (14);
-            const int dw  = px2 (MW.interdist);   // Show Interdistance
-            const int vw  = px2 (MW.values);      // Show Values
 
             const int sq = juce::jmax (12, juce::jmin (labelH,
                                        getHeight() - labelTop - px2 (3)));
-            // Floored in real pixels for the same reason as tbW below: the
-            // word "Gap" either fits or it says "G...".
-            const int gapLblW = juce::jmax (30, px2 (20));
             // The read-out box is sized HERE, not in the constructor: at
             // construction Brand::UI::scale is still 1.0, so the 44x18 set
             // there stayed at its base size and ate most of the slot, leaving
@@ -2140,15 +2352,16 @@ private:
             // is cut to whichever row is wider and the closing rule can never
             // land inside a control.
             const int capW    = px2 (54);     // room for the word "Options"
-            const int topRowW = dw + px2 (6) + vw + px2 (12) + pillW * 2 + pillGap;
-            const int capRowW = capW + px2 (8) + sq * 2 + gapLblW + sliderW + pillGap * 3;
+            const int subGroup = px2 (kSubGroup);
+            const int topRowW = mPitch * 3 + subGroup + mIcon;
+            const int capRowW = capW + px2 (8) + sq * 3 + sliderW + pillGap * 3;
             const int plateRight3 = ox0 + juce::jmax (topRowW, capRowW) + px2 (14);
 
             int ox = ox0;
-            btnInterdist_.setBounds  (ox, iconTop, dw, tool); ox += dw + px2 (6);
-            btnShowValues_.setBounds (ox, iconTop, vw, tool); ox += vw + px2 (12);
-            btnSnap_.setBounds  (ox, iconTop, pillW, tool); ox += pillW + pillGap;
-            btnOrtho_.setBounds (ox, iconTop, pillW, tool);
+            btnInterdist_.setBounds  (ox, mTop, mIcon, mIcon); ox += mPitch;
+            btnShowValues_.setBounds (ox, mTop, mIcon, mIcon); ox += mPitch + subGroup;
+            btnSnap_.setBounds       (ox, mTop, mIcon, mIcon); ox += mPitch;
+            btnOrtho_.setBounds      (ox, mTop, mIcon, mIcon);
 
             if (orthoGapSlider_.getTextBoxWidth() != tbW
                 || orthoGapSlider_.getTextBoxHeight() != sq)
@@ -2159,7 +2372,7 @@ private:
             int ex = ox0 + capW + px2 (8);
             btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
             btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
-            orthoGapLabel_.setBounds (ex, labelTop, gapLblW, sq); ex += gapLblW + pillGap;
+            orthoGapLabel_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
             orthoGapSlider_.setBounds (ex, labelTop, sliderW, sq);
 
             dividerX_.push_back (plateRight3);
@@ -2168,23 +2381,17 @@ private:
             // Plane: always present on this tab, greyed until the selection is
             // a shape that could be a surface.
             {
-                const int gapP = juce::jmax (2, px2 (5));
                 int px0 = plateRight3 + px2 (14);
                 const int clusterLeft = px0;
-                struct Slot { juce::TextButton* b; int w; };
-                const Slot slots[] = { { &btnUsePlane_, MW.usePlane },
-                                       { &btnPlaneListen_, MW.listen },
-                                       { &btnPlaneVirt_, MW.virt },
-                                       { &btnPlaneArch_, MW.arch },
-                                       { &btnPlaneSeated_, MW.seated },
-                                       { &btnPlaneStanding_, MW.standing } };
-                for (const auto& sl : slots)
+                // Figma order: Use as Plane, Virtual, Architectural,
+                // Listening, Seated, Standing.
+                for (auto* b : { &btnUsePlane_, &btnPlaneVirt_, &btnPlaneArch_,
+                                 &btnPlaneListen_, &btnPlaneSeated_, &btnPlaneStanding_ })
                 {
-                    const int w = px2 (sl.w);
-                    sl.b->setBounds (px0, iconTop, w, tool);
-                    px0 += w + gapP;
+                    b->setBounds (px0, mTop, mIcon, mIcon);
+                    px0 += mPitch;
                 }
-                const int plateRightP = px0 - gapP + px2 (14);
+                const int plateRightP = px0 - mPitch + mIcon + px2 (14);
                 lblPlane_.setBounds (clusterLeft, labelTop,
                                      juce::jmax (10, plateRightP - clusterLeft), labelH);
                 dividerX_.push_back (plateRightP);
@@ -2196,24 +2403,19 @@ private:
                 // rather than drawing ones, and giving each its own rule cost
                 // more width than the row has.
                 const int mx0 = plateRightP + px2 (14);
-                btnMic_.setBounds (mx0, iconTop, tool, tool);
+                btnMic_.setBounds (mx0, mTop, mIcon, mIcon);
 
                 // The selected mic's X / Y, typed here rather than only in the
                 // sidebar: the mic lives in this cluster, so the numbers that
                 // place it belong beside it.
-                const int coordW = px2 (MW.coord);
-                const int coordLblW = juce::jmax (12, px2 (12));
-                int cxp = mx0 + tool + px2 (6);
-                micXLabel_.setBounds (cxp, iconTop, coordLblW, tool); cxp += coordLblW + px2 (3);
-                micXBox_.setBounds   (cxp, iconTop, coordW, tool);    cxp += coordW + px2 (6);
-                micYLabel_.setBounds (cxp, iconTop, coordLblW, tool); cxp += coordLblW + px2 (3);
-                micYBox_.setBounds   (cxp, iconTop, coordW, tool);    cxp += coordW + px2 (8);
+                const int coordW = px2 (12 + 3 + MW.coord);   // mapDemand assumes this
+                int cxp = mx0 + mIcon + px2 (6);
+                micXBox_.setBounds (cxp, iconTop, coordW, tool); cxp += coordW + px2 (6);
+                micYBox_.setBounds (cxp, iconTop, coordW, tool); cxp += coordW + px2 (8);
 
-                const int addW  = px2 (MW.range);
-                const int showW = px2 (MW.shown);
                 const int rx0 = cxp;
-                btnRangeAdd_.setBounds (rx0, iconTop, addW, tool);
-                btnRangeShow_.setBounds (rx0 + addW + px2 (4), iconTop, showW, tool);
+                btnRangeAdd_.setBounds  (rx0,          mTop, mIcon, mIcon);
+                btnRangeShow_.setBounds (rx0 + mPitch, mTop, mIcon, mIcon);
 
                 // The ranges already added sit on the caption row, each one
                 // carrying its own delete, so you can see and remove them
@@ -2226,7 +2428,7 @@ private:
                     c->setBounds (cx, labelTop, chipW, juce::jmax (12, labelH));
                     cx += chipW + chipGap;
                 }
-                const int iconRowRight = rx0 + addW + px2 (4) + showW;
+                const int iconRowRight = rx0 + mPitch + mIcon;
                 const int chipRowRight = rangeChips_.isEmpty() ? mx0 : (cx - chipGap);
                 const int plateRightM = juce::jmax (iconRowRight, chipRowRight) + px2 (14);
                 if (rangeChips_.isEmpty())
@@ -2245,24 +2447,21 @@ private:
             }
         }
 
-        // "Ready" pill - far right of this same ribbon row (Figma puts it
-        // here, not in the title row above).
+        // Status pill ("Ready", "Project saved: ...") - right end of the tab
+        // strip, between its two hairlines. In the control row it competed
+        // with the clusters for width and the longer messages were cut to
+        // "Project..."; the strip is empty past the two tabs, so the whole
+        // message fits and the clusters keep the row to themselves.
         if (readyPill_ != nullptr)
         {
-            // Grow to fit longer status text, but never past the clusters.
+            const int rightPad = px2 (kPlateLeft);
             int readyW = px2 (100);
             if (readyPillWidth_)
                 readyW = juce::jmax (readyW, readyPillWidth_());
-            const int maxW = juce::jmax (px2 (60), getWidth() - fullReadyPad - plateLeft - px2 (12));
+            const int maxW = juce::jmax (px2 (60), getWidth() - rightPad - tabsRight - px2 (24));
             readyW = juce::jmin (readyW, maxW);
-            // Vertically centred in the row, which is also where Figma puts it
-            // (y=87 inside the 58..132 band). Sharing the icons' top edge left
-            // it riding high with the whole caption row empty beneath it.
-            // Centred in the CONTROL row, not the whole band - the tab strip
-            // above is not part of the row it belongs to.
-            readyPill_->setBounds (juce::jmax (plateLeft, getWidth() - fullReadyPad - readyW),
-                                   tabStrip + juce::jmax (0, (getHeight() - tabStrip - tool) / 2),
-                                   readyW, tool);
+            readyPill_->setBounds (getWidth() - rightPad - readyW, 1,
+                                   readyW, juce::jmax (12, tabStrip - 2));
         }
 
         // Draw prompts share the caption row, to the right of the clusters.
@@ -2285,15 +2484,12 @@ private:
                              AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
         rangeBtn_.setColour (juce::TextButton::textColourOnId,
                              AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
-        for (auto* b : { &btnOrtho_, &btnOrthoHoriz_, &btnOrthoVert_, &btnSnap_, &btnSplProbe_ })
-        {
-            b->setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());
-            b->setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.35f));
-            b->setColour (juce::TextButton::textColourOffId,
-                          AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
-            b->setColour (juce::TextButton::textColourOnId,
-                          AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
-        }
+        btnSplProbe_.setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());
+        btnSplProbe_.setColour (juce::TextButton::buttonOnColourId, Brand::accent().withAlpha (0.35f));
+        btnSplProbe_.setColour (juce::TextButton::textColourOffId,
+                                AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
+        btnSplProbe_.setColour (juce::TextButton::textColourOnId,
+                                AppSettings::get().isDark() ? Brand::white() : Brand::onBtnIn());
         colourSwatch_.setColour (juce::TextButton::buttonColourId, drawColour_);
         promptLabel_.setColour (juce::Label::textColourId, Brand::accent());
         promptLabel_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::plotToolbarLabel)));
@@ -2339,7 +2535,6 @@ private:
         restyleFile (btnEraser_,  "Eraser.svg");
         restyleFile (btnRuler_,   "Ruler.svg");
         restyle (btnShape_,   kShapeSVG);
-        restyle (btnMic_,     kMicSVG);
         restyle (btnMagnify_, kMagnifySVG);
         restyleFile (btnZoomIn_,  "Zoom In.svg");
         restyleFile (btnZoomOut_, "Zoom Out.svg");
@@ -2355,7 +2550,7 @@ private:
 
 private:
     juce::Label title_;
-    juce::Colour drawColour_ { 0xffffcc00 };
+    juce::Colour drawColour_ { 0xffa9c7ff };
 
     // Pan / Pencil / Eraser / Ruler / Zoom / Full-screen ship as reference art
     // in the project's /Icons folder (flat pre-coloured glyphs) - load them
@@ -2415,13 +2610,6 @@ private:
         // 16x16, which is small enough to be hard to name and plain enough
         // to see - the glyph sat a size larger than the row it is part of.
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="10.2" cy="10.2" r="6.2" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="10.2" cy="10.2" r="2.1" fill="#fff"/><path stroke="#fff" stroke-width="1.6" stroke-linecap="round" d="M14.8 14.8L20 20"/></svg>)SVG";
-    // Wider and heavier than it was. The glyph is taller than it is wide, so
-    // ImageFitted scales it to the button's HEIGHT and the spare width is
-    // simply empty - which is why it read as the smallest thing in the row
-    // next to the pills beside it. Broadening the capsule, the cradle and the
-    // base fills the slot it already had.
-    static constexpr const char* kMicSVG =
-        R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="12.5" rx="4" fill="#fff"/><path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M4.6 10.6a7.4 7.4 0 0 0 14.8 0"/><path fill="#fff" d="M10.6 17.6h2.8v3.1h-2.8z"/><path fill="#fff" d="M6.6 20.4h10.8v2.4H6.6z"/></svg>)SVG";
     // Figma ribbon icons: the Shapes cluster.
     static constexpr const char* kShapeLineSVG =
         R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="M3.6 19l15.4-15.4 1.4 1.4L5 20.4z"/></svg>)SVG";

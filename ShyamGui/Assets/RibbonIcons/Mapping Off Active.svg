@@ -1,0 +1,23 @@
+<svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<clipPath id="mapOffDiscOn">
+<circle cx="11" cy="11" r="11"/>
+</clipPath>
+</defs>
+<g clip-path="url(#mapOffDiscOn)">
+<line x1="2.3" y1="0" x2="2.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="5.3" y1="0" x2="5.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="8.3" y1="0" x2="8.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="11.3" y1="0" x2="11.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="14.3" y1="0" x2="14.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="17.3" y1="0" x2="17.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="20.3" y1="0" x2="20.3" y2="22" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="2.3" x2="22" y2="2.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="5.3" x2="22" y2="5.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="8.3" x2="22" y2="8.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="11.3" x2="22" y2="11.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="14.3" x2="22" y2="14.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="17.3" x2="22" y2="17.3" stroke="#ED2227" stroke-width="0.6"/>
+<line x1="0" y1="20.3" x2="22" y2="20.3" stroke="#ED2227" stroke-width="0.6"/>
+</g>
+</svg>

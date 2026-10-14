@@ -944,6 +944,50 @@ namespace Brand
 
         juce::Font getSliderPopupFont (juce::Slider&) override { return mono (UI::scaledFont (Type::input)); }
 
+        // A tip whose first line is a control's name (the ribbon glyphs put
+        // their old caption there) sets that line heavier than the
+        // explanation under it. One-line tips keep JUCE's own layout.
+        static juce::TextLayout layoutTitledTip (const juce::String& text, juce::Colour c)
+        {
+            const float size = juce::jmax (12.0f, UI::scaledFont (13.0f));
+            juce::AttributedString s;
+            s.setJustification (juce::Justification::topLeft);
+            s.append (text.upToFirstOccurrenceOf ("\n", false, false), techSemi (size), c);
+            s.append (text.fromFirstOccurrenceOf ("\n", true, false), tech (size), c);
+            juce::TextLayout tl;
+            tl.createLayoutWithBalancedLineLengths (s, juce::jmax (240.0f, size * 26.0f));
+            return tl;
+        }
+
+        juce::Rectangle<int> getTooltipBounds (const juce::String& tip, juce::Point<int> pos,
+                                               juce::Rectangle<int> parent) override
+        {
+            if (! tip.containsChar ('\n'))
+                return LookAndFeel_V4::getTooltipBounds (tip, pos, parent);
+            const auto tl = layoutTitledTip (tip, juce::Colours::black);
+            const int w = (int) std::ceil (tl.getWidth())  + 18;
+            const int h = (int) std::ceil (tl.getHeight()) + 10;
+            return juce::Rectangle<int> (pos.x > parent.getCentreX() ? pos.x - (w + 12) : pos.x + 24,
+                                         pos.y > parent.getCentreY() ? pos.y - (h + 6)  : pos.y + 6,
+                                         w, h).constrainedWithin (parent);
+        }
+
+        void drawTooltip (juce::Graphics& g, const juce::String& tip, int width, int height) override
+        {
+            if (! tip.containsChar ('\n'))
+            {
+                LookAndFeel_V4::drawTooltip (g, tip, width, height);
+                return;
+            }
+            const auto r = juce::Rectangle<int> (width, height).toFloat();
+            g.setColour (findColour (juce::TooltipWindow::backgroundColourId));
+            g.fillRoundedRectangle (r, 5.0f);
+            g.setColour (findColour (juce::TooltipWindow::outlineColourId));
+            g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+            layoutTitledTip (tip, findColour (juce::TooltipWindow::textColourId))
+                .draw (g, r.reduced (9.0f, 5.0f));
+        }
+
         void drawButtonBackground (juce::Graphics& g, juce::Button& button,
                                    const juce::Colour& backgroundColour,
                                    bool highlighted, bool down) override

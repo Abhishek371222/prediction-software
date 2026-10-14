@@ -40,7 +40,8 @@ PATTERNS = [
     "FigmaRedesign/figma_icon_file_save_as.png",
     "FigmaRedesign/figma_icon_file_export_pdf.png",
 ]
-GLOBS = ["ToolIcons/*.png", "ToolIcons/*.svg"]
+GLOBS = ["ToolIcons/*.png", "ToolIcons/*.svg",
+         "RibbonIcons/*.png", "RibbonIcons/*.svg"]
 
 
 def c_ident(rel: str) -> str:

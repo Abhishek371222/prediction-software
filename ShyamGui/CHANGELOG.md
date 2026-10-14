@@ -29,13 +29,74 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.0.9** | 2026-10-06 | Home / Mapping ribbon; aiming rays; planes that act on rays and own the map; listen at a mic as you move it; range rings; shape rotation; text box rebuild |
 | **1.4.1** | 2026-10-08 | Crossover filters on any cabinet (Butterworth / Linkwitz-Riley), applied to the complex pressure; ranges can be hidden; mic ring snap no longer pulls on invisible rings |
 | **1.4.2** | 2026-10-09 | Filters reach every view and are taken at the right frequency; both frequency-response plots read real dB SPL; the view stops snapping back; subs carry no ray; mic coordinates on the map; copy the plot to the clipboard |
+| **1.4.3** | 2026-10-12 | Renamed Atomik Integral; mic X / Y typed in; live SPL probe; magnifier rebuilt; readability pass |
+| **1.4.4** | 2026-10-14 | Mapping ribbon drawn as Figma icons in grey / black / red; status pill in the tab strip; mic X / Y boxes; the mouse wheel sets any number box; new shapes light blue |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
 
-## [Unreleased]
+## [1.4.4] - 2026-10-14
+
+**Atomik Integral v1.4.4** - the Mapping ribbon is drawn from the Figma icon
+set, every number box takes the mouse wheel, and the status message has room
+to be read.
+
+### Added
+
+- **The mouse wheel sets numbers.** Hover over any number box in the sidebar -
+  X / Y position, gain, delay, rotation, height, tilt, crossover, band top,
+  resolution, floor, and the layout width, rotation and opacity - and the
+  wheel steps it by the box's own increment, ten at a time with Shift.
+  Anywhere else on the sidebar the wheel still scrolls the panel, so running
+  down it never changes a value by accident; a clicked slider takes the wheel
+  over its whole width, as before.
+- **Mic X / Y boxes name their axis inside the field** (`X 00.0`, `Y 00.0`),
+  as the Figma ribbon draws them, and take the wheel the same way: 0.1 a notch,
+  1 with Shift. Greyed until a mic is selected.
+
+### Changed
+
+- **The Mapping ribbon is icons, not words.** Show Rays, Lock Rays, SPL Mapping,
+  Mapping Off, Show Interdistance, Show Values, Snap, Ortho and Ortho's
+  Horizontal / Vertical / Gap, then Use as Plane, Virtual, Architectural,
+  Listening, Seated, Standing, Mic, + Range and Show / Hide ranges - each the
+  glyph from the Figma file. Hovering shows the name the button used to carry,
+  in bold, over its description.
+- **Three states, one reading.** Grey is unavailable, black is available and
+  off, red is on. The Mic turns red while placement is armed and + Range while
+  it is pressed; a Plane icon stays grey until the selection is a shape that
+  can be a surface, and the ranges eye until there is a range to show.
+- **The Mapping icons are about a third larger** and share a centre line with
+  the mic boxes, now that the space they gave up to the status message is
+  theirs again.
+- **The status message moved into the tab strip**, between the two rules,
+  right-aligned. It had been squeezed in at the end of the ribbon and cut off
+  to `Project...`; it now shows the whole message (`Project saved:
+  FilterTest.atmk`).
+- **New shapes are light blue** (`#A9C7FF`) at 100% opacity, in place of
+  yellow at 35%. Shapes already in a project keep their colour and opacity.
+
+### Packaging
+
+- Version strings, file version resource (string and numeric `FILEVERSION`),
+  installer and the macOS build scripts -> **v1.4.4**.
+- **Windows Release** `Atomik Integral.exe`, archived as
+  `AtomikIntegral-Windows-v1.4.4.exe` (Q21S + BEM 2inch + UI and ribbon icon
+  assets embedded).
+
+---
+
+## [1.4.3] - 2026-10-12
+
+**Atomik Integral v1.4.3** - the first cut under the new name. Mics can be
+placed by typing, and Show Values reads the level live under the pointer.
+
+### Added
+
+- **Mics can be placed by typing.** The Selected panel's X / Y and the
+  ribbon's coordinate fields follow the selected mic and move it.
 
 ### Changed
 
@@ -47,6 +108,24 @@ this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack,
 - Directivity CSV exports are now named
   `Atomik_Directivity_<Hz>Hz_<dist>(AtomikIntegral).csv` and carry
   `Author='Atomik Integral'`.
+- **Show Values is a live probe.** The pointer becomes a crosshair and reads
+  the predicted dB at whatever it is over; the readout panel is charcoal so it
+  stays legible in the light theme.
+- **Magnifier rebuilt.** An opaque snapshot (no washed-out glass), a shadow,
+  an accent rim and a centre crosshair. Esc or picking a tool puts it away,
+  and the ribbon button follows.
+- **Readability pass.** Axis numbers, range-ring labels, ribbon and bottom-bar
+  buttons, the Frequency Response plot and the ref-level rows scale with the
+  UI and have pixel floors; ribbon pill text shrinks to fit its button.
+- **Floating windows** keep Keep on top in a taller strip; the Full screen
+  button is dropped in favour of the native maximise.
+- **Show Rays applies to mids and tops only.** A sub's rotation stalk shows
+  when the sub is selected, per its right-click Show / Hide aim line.
+
+### Packaging
+
+- Version strings, file version resource and installer -> **v1.4.3**. No
+  archive build was cut for this version; v1.4.4 carries all of it.
 
 ---
 

@@ -58,7 +58,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.3", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.4", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -3736,7 +3736,7 @@ void MainComponent::exportCSV()
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.4.3");
+            line ("# Atomik Integral v1.4.4");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

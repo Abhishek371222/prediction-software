@@ -769,8 +769,8 @@ private:
     int                cycleCandidate_ = -1;
     juce::Point<float> cycleAnnotPt_;
     float              cycleRadius_ = 0.0f;
-    juce::Colour            drawColour_ { 0xffffcc00 };
-    float                   drawFillAlpha_ = 0.35f;
+    juce::Colour            drawColour_ { 0xffa9c7ff };
+    float                   drawFillAlpha_ = 1.0f;
 
     // In-place TextBox editor (Word / PowerPoint style)
     std::unique_ptr<juce::TextEditor> textEdit_;

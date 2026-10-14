@@ -109,6 +109,20 @@ banner(ws, "Atomik Integral - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.4.4", "2026-10-14", "Figma icon ribbon; mouse wheel sets any number box",
+     "Mapping ribbon drawn from the Figma icon set - Rays, Mapping Type, Options, "
+     "Plane, Mic and Range - in three states: grey unavailable, black available, red "
+     "on; hover shows the old button name in bold over its description; Mapping icons "
+     "a third larger; status message moved into the tab strip so it shows in full; "
+     "mic X / Y boxes name their axis inside the field; the mouse wheel steps any "
+     "sidebar number box under the pointer (Shift for ten) and the mic X / Y boxes; "
+     "new shapes light blue #A9C7FF at 100% opacity"],
+    ["1.4.3", "2026-10-12", "Renamed Atomik Integral; mic X / Y typed in",
+     "Product renamed Atomik Integral across titles, reports, exports, EXE, installer "
+     "and archive names; mics placed by typing X / Y in the Selected panel or ribbon; "
+     "Show Values a live crosshair probe; magnifier rebuilt opaque with rim and "
+     "crosshair; readability pass on axis numbers, ring labels, ribbon and FR plot; "
+     "Show Rays for mids and tops only. No archive build - carried by 1.4.4"],
     ["1.4.2", "2026-10-09", "Filters reach every view; real dB SPL on both FR plots",
      "The crossover was applied inside the smoothed band sum the SPL map is built from "
      "and nowhere else, so the single-frequency pressure field, the incoherent sum and "

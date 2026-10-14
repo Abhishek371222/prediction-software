@@ -1331,7 +1331,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.4.3'");
+        line ("Version='v1.4.4'");
         line ("Author='Atomik Integral'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

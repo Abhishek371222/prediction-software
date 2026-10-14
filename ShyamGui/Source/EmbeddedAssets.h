@@ -12,7 +12,7 @@ namespace EmbeddedAssets
         int         size;
     };
 
-    static constexpr int numFiles = 42;
+    static constexpr int numFiles = 81;
     const Entry* getFiles() noexcept;
     /** Exact match on the relative path, e.g. "ToolIcons/Pencil.png". */
     const Entry* find (const char* name) noexcept;

@@ -79,12 +79,17 @@
       Standalone backup index (not part of the simulation app).
       Starting at <strong>v1.3.0</strong> &mdash; download source, macOS DMG, or Windows
       installer / ZIP for any saved release. Current product cut is
-      <strong>v1.4.2</strong> (the crossover now reaches every view and is taken at the
-      frequency actually being propagated; both frequency-response plots read calibrated
-      dB SPL on an anchored axis, so a filter, a gain or a delay shows as a change in
-      level; the view stops snapping back to the same framing; subs carry no aiming ray;
-      each mic prints its X, Y on the map; right-click to copy the plot to the clipboard.
-      Carried forward from v1.4.1 and v1.4.0.9: crossover filters on any cabinet &mdash;
+      <strong>v1.4.4</strong> (the Mapping ribbon drawn from the Figma icon set, grey when
+      unavailable, black when available, red when on, with the old button name on hover;
+      the status message in the tab strip, shown in full; the mouse wheel steps any number
+      box under the pointer, Shift for ten; mic X / Y boxes that name their axis; new
+      shapes light blue. Carried forward from v1.4.3: renamed Atomik Integral; mics placed
+      by typing X / Y; Show Values as a live crosshair probe; magnifier rebuilt. From
+      v1.4.2: the crossover reaches every view and is taken at the frequency actually being
+      propagated; both frequency-response plots read calibrated dB SPL on an anchored axis;
+      the view stops snapping back; subs carry no aiming ray; each mic prints its X, Y on
+      the map; right-click to copy the plot to the clipboard.
+      From v1.4.1 and v1.4.0.9: crossover filters on any cabinet &mdash;
       Butterworth or Linkwitz-Riley, low or high pass, 2nd or 4th order, at a corner you
       choose &mdash; applied to the complex pressure so they move phase as well as level,
       and heard at a mic as well as seen on the map; Home / Mapping ribbon tabs; aiming
@@ -135,7 +140,7 @@
           <article class="card">
             <div class="row">
               <span class="ver">v${v.version}</span>
-              ${v.version === '1.4.2' ? '<span class="tag">latest</span>' : ''}
+              ${v.version === '1.4.4' ? '<span class="tag">latest</span>' : ''}
               ${v.version === '1.3.0' ? '<span class="tag">baseline</span>' : ''}
               <span class="notes">${(v.notes || '').replace(/</g, '&lt;')}</span>
               <span class="date">${created}</span>

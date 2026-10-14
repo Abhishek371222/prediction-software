@@ -9,10 +9,12 @@
 #include <functional>
 
 // ---------------------------------------------------------------------------
-// WheelSlider - a sidebar slider the mouse wheel can nudge once it has been
-// clicked. Until then the wheel scrolls the panel as before, so running the
-// wheel down the sidebar never changes a value by accident. Each notch is one
-// step of the slider's own interval; Shift makes it ten.
+// WheelSlider - a sidebar slider the mouse wheel can nudge. The wheel adjusts
+// the value while the pointer is over its number box, or anywhere on the
+// slider once it has been clicked. Elsewhere it scrolls the panel as before,
+// so running the wheel down the track side of the sidebar never changes a
+// value by accident. Each notch is one step of the slider's own interval;
+// Shift makes it ten.
 // ---------------------------------------------------------------------------
 class WheelSlider : public juce::Slider
 {
@@ -27,7 +29,9 @@ public:
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
-        if (! armed_ || ! isEnabled() || getMaximum() <= getMinimum())
+        const auto box = getLookAndFeel().getSliderLayout (*this).textBoxBounds;
+        const bool overBox = box.contains (e.getEventRelativeTo (this).getPosition());
+        if (! (armed_ || overBox) || ! isEnabled() || getMaximum() <= getMinimum())
         {
             juce::Component::mouseWheelMove (e, w);   // hand it on: the panel scrolls
             return;
