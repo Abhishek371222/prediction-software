@@ -80,7 +80,9 @@ static double dirFactor (const DirectivityPattern* pat, double k,
 // Table to search for a given speaker's own model - never blends devices.
 static const std::vector<DirectivityPattern>& tableFor (const SimParams& p, int model)
 {
-    return (model == 2) ? p.directivityBEM2inch : p.directivity;
+    if (model == 2) return p.directivityBEM2inch;
+    if (model == 3) return p.directivityQ212P;
+    return p.directivity;
 }
 
 // This speaker's OWN model's currently-selected frequency (never the other
@@ -90,7 +92,9 @@ static const std::vector<DirectivityPattern>& tableFor (const SimParams& p, int 
 // model's frequency cannot change what this returns for the other model.
 static double ownFrequency (const SimParams& p, int model)
 {
-    return std::max (1.0, (model == 2) ? p.frequencyBEM2inch : p.frequencyQ21S);
+    if (model == 2) return std::max (1.0, p.frequencyBEM2inch);
+    if (model == 3) return std::max (1.0, p.frequencyQ212P);
+    return std::max (1.0, p.frequencyQ21S);
 }
 
 SimResult AcousticEngine::compute (const SimParams& p)

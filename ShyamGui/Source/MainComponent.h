@@ -231,7 +231,7 @@ private:
     // the "Measurement set" Measured Polar reference view - they no longer
     // gate what the engine uses (see AcousticEngine::Speaker::model).
     MeasuredSet  measured_;
-    MeasuredSet  measuredQ21S_, measuredBEM2inch_;
+    MeasuredSet  measuredQ21S_, measuredBEM2inch_, measuredQ212P_;
     juce::File   measDir_;
     juce::int64  measSignature_ = 0;
     int          measSource_ = 1;    // reference-view selector: 0 = Q21S, 1 = Room, 2 = BEM2inch
@@ -247,7 +247,9 @@ private:
     // fed into SimParams together every recompute (see run()) so each speaker
     // can pick its own model's table; never merged into one shared table.
     std::vector<DirectivityPattern> directivityQ21STables_, directivityBEM2inchTables_;
+    std::vector<DirectivityPattern> directivityQ212PTables_;
     std::vector<BemFieldPattern>    bemFieldTablesQ21S_, bemFieldTablesBEM2inch_;
+    std::vector<BemFieldPattern>    bemFieldTablesQ212P_;
     juce::CriticalSection           measLock_;
 
     // Lightweight second timer for polling the measurement files (the class's

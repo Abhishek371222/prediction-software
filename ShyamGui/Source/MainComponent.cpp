@@ -58,7 +58,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.4", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.5", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -2388,6 +2388,7 @@ void MainComponent::run()
         juce::ScopedLock sl (measLock_);
         p.directivity       = directivityQ21STables_;
         p.directivityBEM2inch = directivityBEM2inchTables_;
+        p.directivityQ212P  = directivityQ212PTables_;
         p.bemFields         = bemFieldTablesQ21S_;
     }
 
@@ -2959,6 +2960,7 @@ void MainComponent::refreshFrequencyResponse()
         base = controlPanel_.getParams();
         base.directivity       = directivityQ21STables_;
         base.directivityBEM2inch = directivityBEM2inchTables_;
+        base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields         = bemFieldTablesQ21S_;
     }
 
@@ -3019,6 +3021,7 @@ bool MainComponent::buildMicCurve (int micIndex,
         base = controlPanel_.getParams();
         base.directivity         = directivityQ21STables_;
         base.directivityBEM2inch = directivityBEM2inchTables_;
+        base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields           = bemFieldTablesQ21S_;
     }
     const int browsedModel = controlPanel_.getBrowsedModel();
@@ -3538,6 +3541,8 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
     SimParams base = controlPanel_.getParams();
     { juce::ScopedLock sl (measLock_);
       base.directivity = directivityQ21STables_; base.directivityBEM2inch = directivityBEM2inchTables_;
+      base.directivityQ212P = directivityQ212PTables_;
+        base.directivityQ212P    = directivityQ212PTables_;
       base.bemFields = bemFieldTablesQ21S_; }
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
@@ -3718,9 +3723,17 @@ void MainComponent::exportCSV()
 
             const auto now = juce::Time::getCurrentTime();
             int nDev = 0;
-            int nQ21S = 0, nBEM2inch = 0;
+            // Counted per model, with an explicit case each. "anything that is
+            // not the horn is a Q21S" labelled a Q212P-only export "Q21S(1)".
+            int nQ21S = 0, nBEM2inch = 0, nQ212P = 0;
             for (const auto& s : pr.speakers)
-                if (s.enabled) { ++nDev; if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
+                if (s.enabled)
+                {
+                    ++nDev;
+                    if      (s.model == 2) ++nBEM2inch;
+                    else if (s.model == 3) ++nQ212P;
+                    else                   ++nQ21S;
+                }
 
             const bool absOk = r.hasAbsoluteSpl
                 && r.splAbsDB.size() == (size_t) W * (size_t) H;
@@ -3734,9 +3747,10 @@ void MainComponent::exportCSV()
             juce::String product;
             if (nQ21S > 0)   product << "Q21S(" << nQ21S << ")";
             if (nBEM2inch > 0) product << (product.isEmpty() ? "" : "+") << "BEM2inch(" << nBEM2inch << ")";
+            if (nQ212P > 0)    product << (product.isEmpty() ? "" : "+") << "Q212P(" << nQ212P << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.4.4");
+            line ("# Atomik Integral v1.4.5");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));
@@ -3807,16 +3821,21 @@ void MainComponent::reloadAllMeasurements()
         MeasurementData::folderForSource (MeasurementData::OpenField), MeasurementData::OpenField);
     MeasuredSet mBEM2inch = MeasurementData::loadMeasurements (
         MeasurementData::folderForSource (MeasurementData::BEM2in), MeasurementData::BEM2in);
+    MeasuredSet mQ212P = MeasurementData::loadMeasurements (
+        MeasurementData::folderForSource (MeasurementData::Q212P), MeasurementData::Q212P);
 
     // Heatmap / array sim: far-field BEM arc (not 0.5 m near-field lobes),
     // computed independently per model.
     const float distQ21S   = MeasurementData::farFieldDirectivityDistance (mQ21S,   1.0f);
     const float distBEM2inch = MeasurementData::farFieldDirectivityDistance (mBEM2inch, 1.0f);
+    const float distQ212P    = MeasurementData::farFieldDirectivityDistance (mQ212P,    1.0f);
 
     auto dirQ21S   = MeasurementData::buildDirectivityTables (mQ21S,   distQ21S);
     auto dirBEM2inch = MeasurementData::buildDirectivityTables (mBEM2inch, distBEM2inch);
     auto bemQ21S   = MeasurementData::loadBemFieldTables (mQ21S);
     auto bemBEM2inch = MeasurementData::loadBemFieldTables (mBEM2inch);
+    auto dirQ212P  = MeasurementData::buildDirectivityTables (mQ212P, distQ212P);
+    auto bemQ212P  = MeasurementData::loadBemFieldTables (mQ212P);
 
     {
         juce::ScopedLock sl (measLock_);
@@ -3826,6 +3845,9 @@ void MainComponent::reloadAllMeasurements()
         directivityBEM2inchTables_ = std::move (dirBEM2inch);
         bemFieldTablesQ21S_      = std::move (bemQ21S);
         bemFieldTablesBEM2inch_    = std::move (bemBEM2inch);
+        measuredQ212P_             = std::move (mQ212P);
+        directivityQ212PTables_    = std::move (dirQ212P);
+        bemFieldTablesQ212P_       = std::move (bemQ212P);
 
         measured_ = referenceSetFor (measSource_);
     }

@@ -3,7 +3,7 @@
 ; EXE (no Excel / MeasurementIntegrationPack shipped).
 
 #define MyAppName "Atomik Integral"
-#define MyAppVersion "1.4.4"
+#define MyAppVersion "1.4.5"
 #define MyAppPublisher "Atomik"
 #define MyAppExeName "Atomik Integral.exe"
 #define RepoRoot "D:\WORKING_LATESTSHYAM_GUI"

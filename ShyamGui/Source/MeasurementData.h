@@ -3,6 +3,7 @@
 #include "AcousticEngine.h"
 #include "EmbeddedQ21SData.h"
 #include "EmbeddedBEM2inchData.h"
+#include "EmbeddedQ212PData.h"
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -379,7 +380,8 @@ namespace MeasurementData
     // BEM2in = BEM2inch (15" sealed) BEM polars - a fully separate device: its own
     // CSV file prefix, frequency catalogue and embedded pack, never merged
     // with Q21S. Values match AcousticEngine::MeasurementSourceId.
-    enum Source { OpenField = 0, Gylt = 1, BEM2in = 2 };   // Q21S / Room (legacy) / BEM2inch
+    enum Source { OpenField = 0, Gylt = 1, BEM2in = 2, Q212P = 3 };
+    // Q21S / Room (legacy) / BEM2inch / Q212P
 
     /** Filename prefix for this set's pack CSVs -- NOT a display name. Must
         match what the exporter writes (docs/bem2inch_plots/...), so it carries
@@ -387,6 +389,7 @@ namespace MeasurementData
     inline const char* packSetName (int source)
     {
         if (source == BEM2in) return "BEM2inch";
+        if (source == Q212P)  return "Q212P";
         return source == Gylt ? "ShyamGuild" : "Q21S";
     }
 
@@ -424,6 +427,17 @@ namespace MeasurementData
     // Flip to true once kBEM2inchSensitivityDb holds a real figure.
     constexpr bool   kBEM2inchCalibrated = false;
 
+    // Mean on-axis level of the Q212P pack at 1 m across its 6 bands, i.e.
+    // what the raw unit-drive solve produces. Measured from the exported CSVs
+    // (22.5 / 36.2 / 38.3 / 37.2 / 38.0 / 39.6 dB).
+    constexpr double kQ212PRawOnAxisDb = 35.3;
+
+    // Published sensitivity of the Q212P, dB SPL @ 1 W / 1 m. Unknown.
+    constexpr double kQ212PSensitivityDb = 0.0;
+
+    // Flip to true once kQ212PSensitivityDb holds a real figure.
+    constexpr bool   kQ212PCalibrated = false;
+
     struct Calibration
     {
         double offsetDb = 0.0;   // added to on-axis dB to reach real dB SPL
@@ -436,6 +450,15 @@ namespace MeasurementData
             return { kBEM2inchCalibrated
                        ? (kBEM2inchSensitivityDb - kBEM2inchRawOnAxisDb) : 0.0,
                      kBEM2inchCalibrated };
+        // Q212P's BEM run is unit-drive normalised exactly like the horn's:
+        // on-axis at 1 m lands in the 20-40 dB range where Q21S measures ~123.
+        // Those are a valid RELATIVE pattern and meaningless as absolute SPL,
+        // so the set is declared not-absolute until a real sensitivity figure
+        // arrives. Set kQ212PSensitivityDb and flip kQ212PCalibrated.
+        if (source == Q212P)
+            return { kQ212PCalibrated
+                       ? (kQ212PSensitivityDb - kQ212PRawOnAxisDb) : 0.0,
+                     kQ212PCalibrated };
         return { 0.0, true };     // Q21S / legacy room sets are real levels
     }
 
@@ -502,6 +525,12 @@ namespace MeasurementData
                 return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
             return {};
         }
+        if (source == Q212P)
+        {
+            if (auto* e = EmbeddedQ212P::find (fileName))
+                return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
+            return {};
+        }
         if (auto* e = EmbeddedQ21S::find (fileName))
             return loadCsvSweepText (juce::String::fromUTF8 (e->data, e->size));
         return {};
@@ -514,6 +543,7 @@ namespace MeasurementData
         if (packDir.isDirectory() && packDir.getChildFile (csvName).existsAsFile())
             return true;
         if (source == BEM2in) return EmbeddedBEM2inch::hasFile (csvName.toRawUTF8());
+        if (source == Q212P)  return EmbeddedQ212P::hasFile (csvName.toRawUTF8());
         return EmbeddedQ21S::hasFile (csvName.toRawUTF8());
     }
 
@@ -688,6 +718,7 @@ namespace MeasurementData
     inline const char* sourceName (int source)
     {
         if (source == BEM2in) return "BEM 2inch";
+        if (source == Q212P)  return "Q212P";
         // Product UI: Ground Plane measured set (Room removed from UI).
         return "Ground Plane";
     }
@@ -809,6 +840,14 @@ namespace MeasurementData
                 juce::File ("D:\\shayam gui\\BEM_Data_2inch_10m"),
                 { "BEM_Data_2inch_10m", "../BEM_Data_2inch_10m", "ShyamGui/../BEM_Data_2inch_10m" },
                 "64Hz.xlsx");
+
+        if (source == Q212P)
+            // Q212P: its own raw-BEM folder, never Q21S's or the horn's.
+            return resolveSourceFolder (
+                juce::File ("D:\\shayam gui\\BEM_Data_Q212P_10m"),
+                { "BEM_Data_Q212P_10m", "../BEM_Data_Q212P_10m",
+                  "ShyamGui/../BEM_Data_Q212P_10m" },
+                "484Hz.xlsx");
 
         // Q21S: canonical BEM 10 m workbook folder (per-Hz xlsx pack).
         return resolveSourceFolder (
@@ -1331,7 +1370,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.4.4'");
+        line ("Version='v1.4.5'");
         line ("Author='Atomik Integral'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

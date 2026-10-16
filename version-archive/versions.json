@@ -1,6 +1,25 @@
 {
-    "generatedAt": "2026-10-14T15:40:00.000Z",
+    "generatedAt": "2026-10-16T12:00:00.000Z",
     "versions": [
+        {
+            "version": "1.4.5",
+            "notes": "The Q212P joins the Q21S and the BEM 2inch as a cabinet you can place. Pick it in the cabinet list and the frequency catalogue switches to its six measured bands - 484, 1088, 2078, 3969, 8909 and 17013 Hz - taken from the supplied BEM field export of 41,185 points over a 10 m forward hemisphere. Units name themselves Q212P_1, Q212P_2 and carry an aiming ray, as a top should. Polars are published at 0.5, 1.0 and 2.0 m and embedded in the binary, so the model works from a portable copy with no data folder beside it. Two caveats travel with the set: the export mesh covers the front hemisphere only, so the rear is synthesised by holding the 90 degree value and readings behind a Q212P are a floor rather than a measurement; and no sensitivity figure was supplied, so the set is relative dB like the horn - coverage and directivity are right, absolute SPL is not claimed. Cabinet size, 400 x 700 x 450 mm, is provisional until a spec sheet arrives. Show Values is now a probe rather than a grid: arming it turns the cursor into a crosshair and reads the SPL at whatever point it hovers, so a value can be taken anywhere on the map instead of only where a label fits. Fixes: subs no longer answer Show Rays, since a Q21S is aimed with the right-click rotation handle and rays are for mids and tops; the 'is this a subwoofer' test was written backwards as 'is not the horn', which would have filed every model added after it - the Q212P first - as a sub and taken its ray away; CSV exports count each cabinet in their own right instead of heading a Q212P-only scene Product,Q21S(1); and the Q212P absolute raw-data fallback path was mis-escaped, so the last-resort folder never resolved.",
+            "createdAt": "2026-10-16T12:00:00.000Z",
+            "updatedAt": "2026-10-16T12:00:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.5/AtomikIntegral-Windows-v1.4.5.exe",
+                    "size": 6714760
+                }
+            }
+        },
         {
             "version": "1.4.4",
             "notes": "First archived build under the Atomik Integral name. The Mapping ribbon is drawn from the Figma icon set - Show Rays, Lock Rays, SPL Mapping / Mapping Off, Show Interdistance, Show Values, Snap, Ortho with its Horizontal / Vertical / Gap, then Use as Plane, Virtual, Architectural, Listening, Seated, Standing, Mic, + Range and Show / Hide ranges - in three states: grey when unavailable, black when available and off, red when on. Hovering shows the name the button used to carry, in bold, over its description. The Mapping icons are a third larger, and the status message moved into the tab strip so it shows in full instead of being cut to 'Project...'. The mic X / Y boxes name their axis inside the field. The mouse wheel now sets numbers: hover over any sidebar number box - position, gain, delay, rotation, height, tilt, crossover, band top, resolution, floor, layout - or the mic X / Y and the wheel steps it, Shift for ten; elsewhere it still scrolls the panel. New shapes are light blue #A9C7FF at 100% opacity instead of yellow at 35%. Carries v1.4.3, which had no archive build: renamed Atomik Integral; mics placed by typing X / Y; Show Values as a live crosshair probe; magnifier rebuilt; readability pass; Show Rays for mids and tops only.",

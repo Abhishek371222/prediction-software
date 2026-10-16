@@ -124,6 +124,7 @@ ControlPanel::ControlPanel()
     // already carries BEM units opens and solves exactly as before. Put the
     // line back to offer it again.
     // speakerModelBox_.addItem ("BEM 2inch", 3);   // source 2
+    speakerModelBox_.addItem ("Q212P", 4);       // source 3
     speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     speakerModelBox_.setComponentID ("ctrlCombo");
     speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
@@ -131,7 +132,9 @@ ControlPanel::ControlPanel()
     speakerModelBox_.onChange = [this]
     {
         if (updatingUI_) return;
-        const int src = speakerModelBox_.getSelectedId() - 1;  // 0 = Q21S, 2 = BEM2inch
+        // Item ids are 1-based and the gap at 2 is the legacy Room source:
+        // 1 -> 0 (Q21S), 3 -> 2 (BEM 2inch), 4 -> 3 (Q212P).
+        const int src = speakerModelBox_.getSelectedId() - 1;
         // This picker says what the NEXT unit placed will be, and repoints the
         // Frequency dropdown to that model's own bands for reference. It does
         // NOT re-solve: the units already in the scene have not changed, so
@@ -578,7 +581,10 @@ void ControlPanel::setMeasurementSource (int idx)
 // ---------------------------------------------------------------------------
 juce::String ControlPanel::activeModelName() const
 {
-    return (speakerModelBox_.getSelectedId() == 3) ? "BEM 2inch" : "Q21S";
+    const int id = speakerModelBox_.getSelectedId();
+    if (id == 3) return "BEM 2inch";
+    if (id == 4) return "Q212P";
+    return "Q21S";
 }
 
 void ControlPanel::updateModelDependentLabels()
@@ -1305,6 +1311,7 @@ SimParams ControlPanel::getParams() const
                                                   : kSupportedFrequencies[fi];
     p.frequencyQ21S     = resolvedFrequencyFor (0);
     p.frequencyBEM2inch   = resolvedFrequencyFor (2);
+    p.frequencyQ212P      = resolvedFrequencyFor (3);
     // Fixed domain. Tying it to the visible region instead made every zoom and
     // pan a re-solve, which was slow and moved the goalposts for placement and
     // for the Rel. SPL normalisation. The view's job is to show this field

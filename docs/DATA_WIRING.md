@@ -70,6 +70,11 @@ Derived from maths BEM workbook `Q21S_PolarPlot_Data_10M.xlsx` via
 | `Q21S_<Hz>Hz_1p0m.csv` | native bands | 1.0 m | 360 | Yes |
 | `Q21S_<Hz>Hz_2p0m.csv` | native bands | 2.0 m | 360 | Far-field prefer for SPL sim |
 
+Q212P catalogue = `kQ212PFrequencies` in `AcousticEngine.h`:
+**484, 1088, 2078, 3969, 8909, 17013** - the six bands its BEM run was solved
+at. Its rear hemisphere is synthesised, not measured; see the change log entry
+for 2026-10-16.
+
 Catalogue Hz list = `kQ21SFrequencies` in `AcousticEngine.h` (**xlsx only, extras hidden**):
 **20, 29, 52, 60, 81, 98, 153, 198, 256, 309, 352, 400, 401**
 
@@ -221,6 +226,7 @@ Always **mirror opposite side → complete** before arcs / maps. See prior analy
 
 | Date | Change | Files |
 |------|--------|-------|
+| 2026-10-16 | **Q212P added as a third speaker model** (model id 3, source 3). Six native BEM bands 484 / 1088 / 2078 / 3969 / 8909 / 17013 Hz from `BEM_Data_Q212P_10m/<Hz>Hz.xlsx`, exported to `Q212P_<Hz>Hz_{0p5,1p0,2p0}m.csv` + `Q212P_Field_<Hz>Hz.q21f` and embedded in the EXE. Mesh is a HALF-PLANE (z = 0..10, source at the edge), so the rear hemisphere is **not measured**: it holds the measured +/-90 deg grazing level flat around the back (`REAR_FLOOR_DB = 0`), unlike the 2-inch set which tapers to -25 dB. Unit-drive normalised like the horn, so **not absolute** - `kQ212PCalibrated = false`. Cabinet W x H x D is PROVISIONAL (no spec sheet supplied). | `BEM_Data_Q212P_10m/`, `export_q212p_pack.py`, `embed_q212p_pack.py`, `AcousticEngine.h/.cpp`, `MeasurementData.h`, `ControlPanel.cpp`, `MainComponent.cpp/.h`, `EmbeddedQ212PData.*` |
 | 2026-10-10 | Native BEM band **60 Hz** added (native 59.10 Hz) from `BEM_Data_10m/60Hz.xlsx` - polars at 0.5 / 1.0 / 2.0 m + `Q21S_Field_60Hz.q21f`, embedded into the EXE | `60Hz.xlsx`, `export_q21s_native_hz_pack.py`, `AcousticEngine.h`, `Q21S_60Hz_*.csv`, `EmbeddedQ21SData.cpp` |
 | 2026-08-13 | UI frequencies = **xlsx only** (hid 25 / 40 / 63 / 125 / 500) | `AcousticEngine.h` |
 | 2026-08-13 | Remaining native BEM bands **20 / 29 / 81 / 98 / 256 / 309 / 352 / 400 / 401** wired like 52 Hz (single-sub exact; multi-sub predicted) | `export_q21s_native_hz_pack.py`, `AcousticEngine.h`, pack CSVs |

@@ -184,6 +184,7 @@ if errorlevel 1 exit /B 0</Command>
     <ClCompile Include="Source\EmbeddedAssets.cpp" />
     <ClCompile Include="Source\EmbeddedQ21SData.cpp" />
     <ClCompile Include="Source\EmbeddedBEM2inchData.cpp" />
+    <ClCompile Include="Source\EmbeddedQ212PData.cpp" />
   </ItemGroup>
 
   <!-- ======================================================================
@@ -207,6 +208,7 @@ if errorlevel 1 exit /B 0</Command>
     <ClInclude Include="Source\EmbeddedAssets.h" />
     <ClInclude Include="Source\EmbeddedQ21SData.h" />
     <ClInclude Include="Source\EmbeddedBEM2inchData.h" />
+    <ClInclude Include="Source\EmbeddedQ212PData.h" />
     <ClInclude Include="Source\UiTextConfig.h" />
     <ClInclude Include="Source\BrandTheme.h" />
     <ClInclude Include="Source\RadiationPatternComponent.h" />

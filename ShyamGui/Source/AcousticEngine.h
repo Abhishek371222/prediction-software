@@ -173,14 +173,19 @@ struct Speaker
 // than by pointing a cabinet.
 inline bool isSubwooferModel (int model) noexcept
 {
-    return model != 2;      // 0 = Q21S (sub); 2 = BEM 2inch
+    // Written as "is the Q21S", not "is not the horn". The old form asked the
+    // question backwards, so every model added after it - Q212P included -
+    // would have been treated as a subwoofer and lost its aiming ray.
+    return model == 0;      // 0 = Q21S (sub); 2 = BEM 2inch; 3 = Q212P
 }
 
 // Display name for a Speaker::model / MeasurementData::Source value. Single
 // canonical spot so UI labels, dialogs, and reports never disagree.
 inline const char* speakerModelName (int model) noexcept
 {
-    return (model == 2) ? "BEM 2inch" : "Q21S";
+    if (model == 2) return "BEM 2inch";
+    if (model == 3) return "Q212P";
+    return "Q21S";
 }
 
 // Identifier form of the model name, for labelling an individual unit
@@ -188,7 +193,9 @@ inline const char* speakerModelName (int model) noexcept
 // product text and keeps its space; a unit's name is a token, so it does not.
 inline const char* speakerModelTag (int model) noexcept
 {
-    return (model == 2) ? "BEM2inch" : "Q21S";
+    if (model == 2) return "BEM2inch";
+    if (model == 3) return "Q212P";
+    return "Q21S";
 }
 
 // 1-based position of this unit among units of the SAME model. A mixed scene
@@ -245,6 +252,23 @@ namespace BEM2inchCabinet
     constexpr float halfExtentM = depthM * 0.5f;
 }
 
+// Q212P enclosure (metres).
+//
+// PROVISIONAL. No spec sheet was supplied with the BEM run, and the mesh
+// carries no box geometry to measure - it is a field export with points right
+// up to the origin. These are typical dual-12 point-source proportions, and
+// they are used for two things only: the size of the plan marker, and the
+// near-field 1/r floor (anything closer than halfExtentM stops getting louder).
+// Neither touches the far field. Replace all three the moment the real W x H x D
+// is known; nothing else needs to change.
+namespace Q212PCabinet
+{
+    constexpr float widthM  = 0.400f;    // 400 mm - left/right, across the baffle
+    constexpr float heightM = 0.700f;    // 700 mm - vertical
+    constexpr float depthM  = 0.450f;    // 450 mm - front/back (firing axis)
+    constexpr float halfExtentM = depthM * 0.5f;
+}
+
 // Physical enclosure of one model, so plan markers, reported dimensions and
 // the engine's near-field floor all read from one place.
 struct CabinetDims
@@ -257,6 +281,9 @@ inline CabinetDims cabinetFor (int model) noexcept
     if (model == 2)
         return { BEM2inchCabinet::widthM, BEM2inchCabinet::heightM,
                  BEM2inchCabinet::depthM, BEM2inchCabinet::halfExtentM };
+    if (model == 3)
+        return { Q212PCabinet::widthM, Q212PCabinet::heightM,
+                 Q212PCabinet::depthM, Q212PCabinet::halfExtentM };
     return { Q21SCabinet::widthM, Q21SCabinet::heightM,
              Q21SCabinet::depthM, Q21SCabinet::halfExtentM };
 }
@@ -301,14 +328,26 @@ static constexpr double kBEM2inchFrequencies[] = {
 static constexpr int kNumBEM2inchFrequencies =
     (int) (sizeof (kBEM2inchFrequencies) / sizeof (kBEM2inchFrequencies[0]));
 
+// Q212P: the six native bands its BEM run was solved at.
+static constexpr double kQ212PFrequencies[] = {
+    484, 1088, 2078, 3969, 8909, 17013
+};
+static constexpr int kNumQ212PFrequencies =
+    (int) (sizeof (kQ212PFrequencies) / sizeof (kQ212PFrequencies[0]));
+
 // Measurement source ids (mirror MeasurementData::Source; duplicated here so
 // this header doesn't need to include MeasurementData.h).
-enum class MeasurementSourceId { Q21S = 0, Room = 1, BEM2in = 2 };
+enum class MeasurementSourceId { Q21S = 0, Room = 1, BEM2in = 2, Q212P = 3 };
 
 // Isolated per-model catalogue lookup - never returns a blended list.
 inline void frequencyCatalogue (int source, const double*& freqs, int& count) noexcept
 {
-    if (source == (int) MeasurementSourceId::BEM2in)
+    if (source == (int) MeasurementSourceId::Q212P)
+    {
+        freqs = kQ212PFrequencies;
+        count = kNumQ212PFrequencies;
+    }
+    else if (source == (int) MeasurementSourceId::BEM2in)
     {
         freqs = kBEM2inchFrequencies;
         count = kNumBEM2inchFrequencies;
@@ -362,6 +401,7 @@ struct SimParams
     // speakers' rendered pattern. Populated by ControlPanel::getParams().
     double frequencyQ21S   = 20.0;
     double frequencyBEM2inch = 64.0;
+    double frequencyQ212P    = 484.0;
     // Region solved for: [worldX0, worldX0+worldW] x [worldY0, worldY0+worldH].
     // The origin exists so the view can pan the solved region around rather
     // than sliding a fixed box that always started at (0, 0).
@@ -384,6 +424,7 @@ struct SimParams
     // directivityBEM2inch = source 2); the engine never blends the two.
     std::vector<DirectivityPattern> directivity;
     std::vector<DirectivityPattern> directivityBEM2inch;
+    std::vector<DirectivityPattern> directivityQ212P;
     // Absolute BEM mid-plane fields (Heatmap.m / Q21F). Loaded for tooling;
     // the live SPL heatmap uses measured polar directivity across the full world
     // (not a stamped ±5 m island).

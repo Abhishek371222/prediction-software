@@ -31,9 +31,62 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.2** | 2026-10-09 | Filters reach every view and are taken at the right frequency; both frequency-response plots read real dB SPL; the view stops snapping back; subs carry no ray; mic coordinates on the map; copy the plot to the clipboard |
 | **1.4.3** | 2026-10-12 | Renamed Atomik Integral; mic X / Y typed in; live SPL probe; magnifier rebuilt; readability pass |
 | **1.4.4** | 2026-10-14 | Mapping ribbon drawn as Figma icons in grey / black / red; status pill in the tab strip; mic X / Y boxes; the mouse wheel sets any number box; new shapes light blue |
+| **1.4.5** | 2026-10-16 | Q212P as a third cabinet, measured at six bands; Show Values follows the cursor as an SPL probe; subs ignore Show Rays |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.5] - 2026-10-16
+
+**Atomik Integral v1.4.5** - the Q212P joins the Q21S and the BEM 2inch as a
+cabinet you can place, and Show Values reads the map under the cursor.
+
+### Added
+
+- **Q212P, a third speaker model.** Pick it in the cabinet list and the
+  frequency catalogue switches to its six measured bands - 484, 1088, 2078,
+  3969, 8909 and 17013 Hz - taken from the supplied BEM field export
+  (41,185 points over a 10 m forward hemisphere). Units name themselves
+  `Q212P_1`, `Q212P_2`, and carry an aiming ray, as a top should.
+  - Polars are published at 0.5, 1.0 and 2.0 m and embedded in the binary, so
+    the model works from a portable copy with no data folder beside it.
+  - The export mesh covers the front hemisphere only. The rear is synthesised
+    by holding the 90 degree value, so readings behind a Q212P are a floor,
+    not a measurement.
+  - The set is **relative dB**, not absolutely calibrated: no sensitivity
+    figure was supplied, so a Q212P reads like the horn - coverage and
+    directivity are right, absolute SPL is not claimed. Cabinet size
+    (400 x 700 x 450 mm) is provisional until a spec sheet arrives.
+
+### Changed
+
+- **Show Values is a probe, not a grid.** Arming it turns the cursor into a
+  crosshair and the SPL at whatever point it hovers is read out beside it, so
+  a value can be taken anywhere on the map instead of only where a label fits.
+
+### Fixed
+
+- **Subs no longer answer Show Rays.** A Q21S is aimed with the right-click
+  rotation handle; rays are for mids and tops, so Show Rays leaves subs alone
+  and the handle appears only on the selection.
+- **"Is this a subwoofer" was asked backwards.** The test read "is not the
+  horn", so every model added after it - the Q212P first - would have been
+  filed as a sub and lost its aiming ray. It now names the Q21S.
+- **CSV exports label the cabinets they contain.** A Q212P-only scene was
+  headed `Product,Q21S(1)`; each model is counted in its own right.
+- **The Q212P raw-data fallback path was mis-escaped**, so the absolute
+  `D:\shayam gui\...` fallback never resolved. The folder beside the project
+  always worked; this fixes the last resort.
+
+### Packaging
+
+- Version strings, file version resource (string and numeric `FILEVERSION`),
+  installer and report headers -> **v1.4.5**.
+- **Windows Release** `Atomik Integral v1.4.5.exe`, archived as
+  `AtomikIntegral-Windows-v1.4.5.exe` (Q21S + BEM 2inch + Q212P and the UI /
+  ribbon icon assets embedded).
 
 ---
 

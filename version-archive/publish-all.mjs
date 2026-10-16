@@ -6,7 +6,7 @@
  * is refreshed from the database.
  *
  * Usage: node publish-all.mjs            (all versions)
- *        node publish-all.mjs 1.4.4 1.4.2 (just these)
+ *        node publish-all.mjs 1.4.5 1.4.4 (just these)
  *
  * Unlike publish-version.mjs this packages nothing; it ships the files that
  * are already under artifacts/. A kind whose file is missing locally is left
