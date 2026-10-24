@@ -9,6 +9,25 @@
 #include "DxfImport.h"
 #include <algorithm>
 
+// Points ONE model's own resolved frequency at hz and leaves every other
+// model's alone - for the sweeps and report renders that walk a single
+// device's catalogue.
+//
+// Written as a switch over the model ids rather than "if it is the 2 inch,
+// else it is the Q21S": that if/else quietly sent a Q212P sweep into the
+// Q21S's frequency field, so a Q212P's response curve was drawn by moving
+// the sub's frequency. Every model added from here needs a case, and a
+// missing one is now visible rather than absorbed by the else.
+static void setModelFrequency (SimParams& p, int model, double hz)
+{
+    switch (model)
+    {
+        case MeasurementData::BEM2in: p.frequencyBEM2inch = hz; break;
+        case MeasurementData::Q212P:  p.frequencyQ212P    = hz; break;
+        default:                      p.frequencyQ21S     = hz; break;   // Q21S
+    }
+}
+
 static void styleActionBtn (juce::TextButton& b, const juce::String& txt,
                             juce::Colour bg = Brand::btnIn(), bool active = false)
 {
@@ -58,7 +77,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.5", juce::dontSendNotification);
+    versionLabel_.setText ("v1.4.6", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -941,6 +960,11 @@ ProjectData MainComponent::currentProject() const
     const SimParams sp = controlPanel_.getParams();
     p.speakers              = sp.speakers;
     p.frequency             = sp.frequency;
+    // Every model's own frequency, so a mixed scene reloads with each device
+    // still on the band it was set to.
+    p.modelFrequency[0]     = sp.frequencyQ21S;
+    p.modelFrequency[2]     = sp.frequencyBEM2inch;
+    p.modelFrequency[3]     = sp.frequencyQ212P;
     p.resolution            = sp.resolution;
     p.dBfloor               = sp.dBfloor;
     p.bandedSPL             = sp.bandedSPL;
@@ -2978,8 +3002,7 @@ void MainComponent::refreshFrequencyResponse()
         {
             SimParams p = base;
             p.frequency = kSupportedFrequencies[hi];
-            if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
-            else                                         p.frequencyQ21S   = p.frequency;
+            setModelFrequency (p, browsedModel, p.frequency);
             // The REAL level at this mic, in calibrated dB SPL. This used to
             // store intensityDb, which is relative to the map peak at each
             // frequency - so the plot could not show what a filter, a gain or
@@ -3031,8 +3054,7 @@ bool MainComponent::buildMicCurve (int micIndex,
     {
         SimParams p = base;
         p.frequency = kSupportedFrequencies[hi];
-        if (browsedModel == MeasurementData::BEM2in) p.frequencyBEM2inch = p.frequency;
-        else                                         p.frequencyQ21S     = p.frequency;
+        setModelFrequency (p, browsedModel, p.frequency);
 
         // Calibrated dB SPL, not the map-relative figure - see
         // refreshFrequencyResponse().
@@ -3670,8 +3692,7 @@ juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& bas
     // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue -
     // update only that model's resolved frequency so the other model's
     // speakers keep rendering at their own unrelated frequency.
-    if (measSource_ == MeasurementData::BEM2in) p.frequencyBEM2inch = freq;
-    else                                        p.frequencyQ21S   = freq;
+    setModelFrequency (p, measSource_, freq);
     p.viewMode  = ViewMode::SPL;
 
     SimResult r = AcousticEngine::compute (p);
@@ -3750,7 +3771,7 @@ void MainComponent::exportCSV()
             if (nQ212P > 0)    product << (product.isEmpty() ? "" : "+") << "Q212P(" << nQ212P << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.4.5");
+            line ("# Atomik Integral v1.4.6");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

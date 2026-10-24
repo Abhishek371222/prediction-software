@@ -32,9 +32,80 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.3** | 2026-10-12 | Renamed Atomik Integral; mic X / Y typed in; live SPL probe; magnifier rebuilt; readability pass |
 | **1.4.4** | 2026-10-14 | Mapping ribbon drawn as Figma icons in grey / black / red; status pill in the tab strip; mic X / Y boxes; the mouse wheel sets any number box; new shapes light blue |
 | **1.4.5** | 2026-10-16 | Q212P as a third cabinet, measured at six bands; Show Values follows the cursor as an SPL probe; subs ignore Show Rays |
+| **1.4.6** | 2026-10-24 | Each cabinet model is simulated at its own frequency; the Mapping ribbon follows the Figma: Ortho split from Ortho Controls, Plane Prediction named in full, every cluster centred on its plate |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.4.6] - 2026-10-24
+
+**Atomik Integral v1.4.6** - one device's frequency no longer moves another
+device's field, and the Mapping ribbon is laid out the way the Figma has it.
+
+### Fixed
+
+- **Each model is now simulated at its OWN frequency.** Picking the pattern
+  per model was never enough: the wavenumber, the phase per metre, the delay
+  phase and the crossover frequency were all taken from one scene-wide value,
+  so moving the Q21S's dropdown re-drew the Q212P's interference. Measured on
+  a two-device plan, retuning one device moved the other's field by up to
+  **18.3 dB**; it is now **0.000 dB**.
+  - Speakers that share a frequency still interfere and are summed as complex
+    pressure. Speakers at different frequencies cannot interfere, so their
+    energies add instead. A scene at one frequency solves exactly as before.
+  - The relative heatmap divides by a unity-gain peak, and a single scene-wide
+    peak was a coupling of its own - retuning the Q212P moved the Q21S's
+    colours by about 3 dB although its field never moved. Each frequency is
+    now normalised by its own peak, in the map, the pressure view, the
+    coherence ratio and the Directivity polar.
+  - Covered by Tools/verify_frequency_isolation.cpp: 297,806 checks over every
+    frequency of every model pair, plus same-frequency interference and
+    pattern provenance. The same suite run against the previous engine fails
+    2,374 of them.
+- **The Q212P's chosen frequency is remembered.** Its slot was missing from
+  the per-model frequency memory - every guard read "< 3" - so it reverted to
+  484 Hz the moment another model was browsed. Each model's frequency is also
+  saved in the project now, so a mixed scene reloads with every device on the
+  band it was set to.
+- **A Q212P frequency-response sweep moved the sub's frequency.** The sweeps
+  asked "is it the 2 inch, else it is the Q21S", which left no case for the
+  Q212P. All three sweep sites now go through one switch over the model ids.
+- **The Q212P raw-data fallback path was mis-escaped**, so that last-resort
+  folder never resolved.
+
+### Changed
+
+- **The Mapping ribbon follows the Figma.** "Options" is split into **Ortho**
+  (the mode, on its own) and **Ortho Controls** (the things it switches on),
+  "Plane" is named **Plane Prediction**, and the Ortho controls sit on ONE row
+  of glyphs with the caption underneath like every other cluster - they used
+  to be split across two rows, four glyphs on top and H / V / Gap down on the
+  caption line.
+- **The linked-spacing control is a boxed read-out**, like the mic's X / Y,
+  instead of a slider with a track. Typing and the mouse wheel still set it.
+- **Every cluster is centred on its plate.** The glyphs used to start hard
+  against the plate's left edge while the caption centred itself, so any
+  cluster whose caption was wider than its glyphs carried a block of dead
+  space on its right - Mapping Type most visibly. Plate widths are measured
+  from the caption text rather than hard-coded.
+
+### Added
+
+- **Tools/analyse_scene.cpp** - loads an .atmk scene with the real measured
+  directivity and reports how it covers an audience: level over each seating
+  area, coverage percentages, what the delay towers are worth and what a sub
+  array does across the width of a floor. It reads the same project file and
+  the same tables the app does, and its figures match the app's own plane
+  tags.
+
+### Packaging
+
+- Version strings, file version resource, installer and report headers ->
+  **v1.4.6**.
+- **Windows Release** `Atomik Integral v1.4.6.exe`, archived as
+  `AtomikIntegral-Windows-v1.4.6.exe`.
 
 ---
 

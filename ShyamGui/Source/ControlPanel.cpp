@@ -98,7 +98,7 @@ ControlPanel::ControlPanel()
         // re-solves. Merely browsing another model's catalogue does not.
         const int fi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                      freqBox_.getSelectedId() - 1);
-        if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
+        if (currentMeasSource_ >= 0 && currentMeasSource_ < kNumModelSlots)
             savedFreqHz_[currentMeasSource_] = kSupportedFrequencies[fi];
         simFrequencyHz_ = kSupportedFrequencies[fi];
 
@@ -536,7 +536,7 @@ void ControlPanel::setMeasurementSource (int idx)
     const int outFi = juce::jlimit (0, (int) kNumSupportedFrequencies - 1,
                                     freqBox_.getSelectedId() - 1);
     const double outgoingHz = kSupportedFrequencies[outFi];
-    if (currentMeasSource_ >= 0 && currentMeasSource_ < 3)
+    if (currentMeasSource_ >= 0 && currentMeasSource_ < kNumModelSlots)
         savedFreqHz_[currentMeasSource_] = outgoingHz;
 
     currentMeasSource_ = idx;
@@ -553,7 +553,7 @@ void ControlPanel::setMeasurementSource (int idx)
     // Target frequency: if this model was visited before, restore its saved Hz.
     // If first visit (savedFreqHz_ == -1), pick the nearest available frequency
     // to where the user just was - so the heatmap doesn't jump unnecessarily.
-    const double saved = (idx >= 0 && idx < 3) ? savedFreqHz_[idx] : -1.0;
+    const double saved = (idx >= 0 && idx < kNumModelSlots) ? savedFreqHz_[idx] : -1.0;
     double targetHz = kSupportedFrequencies[0];
     if (saved >= 0.0)
     {
@@ -1200,9 +1200,7 @@ void ControlPanel::resetToDefaults()
     speakers_.clear();
     selectedSpeakers_.clear();
     selected_ = -1;
-    savedFreqHz_[0] = -1.0;
-    savedFreqHz_[1] = -1.0;
-    savedFreqHz_[2] = -1.0;
+    for (auto& hz : savedFreqHz_) hz = -1.0;
     simFrequencyHz_ = -1.0;   // next speaker placed reseeds the scene frequency
 
     // Repoints the active catalogue to Q21S BEFORE searching it for 52 Hz -
@@ -1241,10 +1239,23 @@ void ControlPanel::applyProject (const ProjectData& p)
     const int browseModel = speakers_.empty() ? 0 : speakers_.front().model;
     setMeasurementSource (browseModel);
 
+    // Restore each model's own remembered frequency BEFORE the dropdown is
+    // pointed at the browsed one, so a model that is not being browsed still
+    // renders at the band the project was saved with. An older project
+    // carries -1 here and keeps that model's default.
+    for (int i = 0; i < kNumModelSlots; ++i)
+        savedFreqHz_[i] = (i < ProjectData::kNumModelSlots) ? p.modelFrequency[i] : -1.0;
+    simFrequencyHz_ = p.frequency;
+
     updatingUI_ = true;
     int freqId = 1;
+    // The browsed model's own saved frequency wins over the scene frequency,
+    // which may belong to another device entirely.
+    const double wantHz = (browseModel >= 0 && browseModel < kNumModelSlots
+                           && savedFreqHz_[browseModel] > 0.0)
+                        ? savedFreqHz_[browseModel] : p.frequency;
     for (int i = 0; i < (int) kNumSupportedFrequencies; ++i)
-        if (kSupportedFrequencies[i] == (int) std::lround (p.frequency)) { freqId = i + 1; break; }
+        if (kSupportedFrequencies[i] == (int) std::lround (wantHz)) { freqId = i + 1; break; }
     freqBox_.setSelectedId (freqId, juce::dontSendNotification);
     resSlider_.setValue   ((double) p.resolution, juce::dontSendNotification);
     floorSlider_.setValue (p.dBfloor,             juce::dontSendNotification);
@@ -1285,7 +1296,7 @@ double ControlPanel::resolvedFrequencyFor (int model) const
                                      freqBox_.getSelectedId() - 1);
         return kSupportedFrequencies[fi];
     }
-    if (model >= 0 && model < 3 && savedFreqHz_[model] >= 0.0)
+    if (model >= 0 && model < kNumModelSlots && savedFreqHz_[model] >= 0.0)
         return savedFreqHz_[model];
 
     const double* freqs; int n;

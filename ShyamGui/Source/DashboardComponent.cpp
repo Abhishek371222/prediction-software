@@ -65,7 +65,7 @@ DashboardComponent::DashboardComponent()
     title_.setBorderSize ({});
     addAndMakeVisible (title_);
 
-    footer_.setText ("Atomik Integral - v1.4.5", juce::dontSendNotification);
+    footer_.setText ("Atomik Integral - v1.4.6", juce::dontSendNotification);
     footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
     footer_.setJustificationType (juce::Justification::centred);
     footer_.setMinimumHorizontalScale (1.0f);

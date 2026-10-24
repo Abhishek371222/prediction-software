@@ -110,10 +110,13 @@ SimResult AcousticEngine::compute (const SimParams& p)
     res.worldH  = p.worldH;
     res.usedBemField = false;
 
+    // The SCENE frequency: what the reports, the banner and the wavelength
+    // read-out quote, and the fallback when no speaker is placed. It no longer
+    // propagates anything - each speaker carries its own k and omega (see Src
+    // below), which is what keeps one device's dropdown off the other's field.
     const double f      = std::max (1.0, p.frequency);
     const double lambda = kSpeedOfSound / f;
     const double k      = 2.0 * M_PI / lambda;
-    const double omega  = 2.0 * M_PI * f;
 
     res.frequency      = f;
     res.lambda         = lambda;
@@ -124,15 +127,31 @@ SimResult AcousticEngine::compute (const SimParams& p)
     {
         double x, y, gainLin, facing, delaySec, polPhase;
         SpeakerFilter filter;      // applied per smoothing sub-band
-        std::complex<double> hCentre { 1.0, 0.0 };  // H at f: pressure, interference, polar
+        std::complex<double> hCentre { 1.0, 0.0 };  // H at fOwn: pressure, interference, polar
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
-        const DirectivityPattern* pat = nullptr;   // this speaker's own model, at f
+        const DirectivityPattern* pat = nullptr;   // this speaker's own model, at fOwn
         bool   hasAbs   = false;
         double calAbs   = 0.0;    // 10^(onAxisSplDb/20), this speaker's own calibration
         double refDistM = 2.0;
+        // Each speaker is PROPAGATED at its own model's frequency, not at the
+        // scene's: its own wavelength, its own phase per metre, its own delay
+        // phase and its own filter frequency. Picking the pattern per model
+        // was never enough on its own - the wavenumber was shared, so moving
+        // one device's frequency re-drew the other device's interference.
+        double fOwn  = 52.0;
+        double kOwn  = 0.0;
+        double wOwn  = 0.0;
+        // Sources at the SAME frequency interfere and are summed as complex
+        // pressure; sources at different frequencies cannot interfere, so
+        // their intensities add instead. group indexes freqGroups below.
+        int    group = 0;
     };
     std::vector<Src> srcs;
     srcs.reserve (p.speakers.size());
+    // Distinct propagation frequencies present in the scene, in first-seen
+    // order. One entry is the overwhelmingly common case and reduces exactly
+    // to the previous single-frequency solve.
+    std::vector<double> freqGroups;
     for (const auto& s : p.speakers)
     {
         if (! s.enabled) continue;
@@ -147,11 +166,24 @@ SimResult AcousticEngine::compute (const SimParams& p)
         src.polPhase = s.polarityInverted ? M_PI : 0.0;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
         src.filter = s.filter;
-        src.hCentre = filterResponse (f, s.filter);
+
+        src.fOwn = ownFrequency (p, s.model);
+        src.kOwn = 2.0 * M_PI * src.fOwn / kSpeedOfSound;
+        src.wOwn = 2.0 * M_PI * src.fOwn;
+        src.hCentre = filterResponse (src.fOwn, s.filter);
+
+        src.group = -1;
+        for (size_t g = 0; g < freqGroups.size(); ++g)
+            if (std::abs (freqGroups[g] - src.fOwn) < 1.0e-6) { src.group = (int) g; break; }
+        if (src.group < 0)
+        {
+            freqGroups.push_back (src.fOwn);
+            src.group = (int) freqGroups.size() - 1;
+        }
 
         const auto& table = tableFor (p, s.model);
         if (! table.empty())
-            src.pat = pickPattern (table, ownFrequency (p, s.model));
+            src.pat = pickPattern (table, src.fOwn);
         if (src.pat != nullptr && src.pat->hasAbsolute)
         {
             src.hasAbs   = true;
@@ -178,14 +210,25 @@ SimResult AcousticEngine::compute (const SimParams& p)
     constexpr int    Mband   = 7;
     const double     halfOct = 1.0 / 6.0;
     const int        mCount  = p.octaveSmoothing ? Mband : 1;
-    std::vector<double> kBand ((size_t) mCount), omegaBand ((size_t) mCount);
-    for (int m = 0; m < mCount; ++m)
+    const int        gCount  = std::max (1, (int) freqGroups.size());
+    // 1/3-octave smoothing is applied around EACH group's own centre
+    // frequency, so a Q21S at 52 Hz is smoothed over 52 Hz's neighbours and a
+    // Q212P at 484 Hz over its own - not both over one shared band.
+    std::vector<std::vector<double>> kBand ((size_t) gCount,
+                                            std::vector<double> ((size_t) mCount, 0.0));
+    std::vector<std::vector<double>> omegaBand ((size_t) gCount,
+                                                std::vector<double> ((size_t) mCount, 0.0));
+    for (int g = 0; g < gCount; ++g)
     {
-        const double frac = (mCount == 1) ? 0.0
-                          : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
-        const double fm = f * std::pow (2.0, frac);
-        kBand[(size_t) m]     = 2.0 * M_PI * fm / kSpeedOfSound;
-        omegaBand[(size_t) m] = 2.0 * M_PI * fm;
+        const double fg = freqGroups.empty() ? f : freqGroups[(size_t) g];
+        for (int m = 0; m < mCount; ++m)
+        {
+            const double frac = (mCount == 1) ? 0.0
+                              : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
+            const double fm = fg * std::pow (2.0, frac);
+            kBand[(size_t) g][(size_t) m]     = 2.0 * M_PI * fm / kSpeedOfSound;
+            omegaBand[(size_t) g][(size_t) m] = 2.0 * M_PI * fm;
+        }
     }
 
     // Per speaker, per band: that speaker's own model's pattern, band-offset
@@ -198,11 +241,11 @@ SimResult AcousticEngine::compute (const SimParams& p)
     // taken at the middle of a smoothed band comes out about half a dB wrong
     // near the corner - and wrong in a way that quietly disagrees with the
     // transfer function it claims to be.
-    // H is taken at the frequency the wave is propagated at (fm, the same one
-    // that sets km / wm), not at the model's own pattern frequency: the filter
-    // acts on the signal, and the two differ in a mixed scene or while another
-    // model's catalogue is browsed - which used to leave the filter's phase
-    // and level out of step with the wave it was applied to.
+    // H is taken at the frequency the wave is propagated at - which is now
+    // this speaker's OWN band frequency, the same one that sets its km / wm.
+    // Taking it at the scene frequency instead left the filter acting on a
+    // signal at one frequency while the wave travelled at another, and made
+    // one device's crossover respond to the other device's dropdown.
     std::vector<std::vector<std::complex<double>>> hBand (
         srcs.size(), std::vector<std::complex<double>> ((size_t) mCount,
                                                         std::complex<double> (1.0, 0.0)));
@@ -220,7 +263,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 const double fmOwn = fOwn * std::pow (2.0, frac);
                 if (! table.empty())
                     patBand[si][(size_t) m] = pickPattern (table, fmOwn);
-                hBand[si][(size_t) m] = filterResponse (f * std::pow (2.0, frac), s.filter);
+                hBand[si][(size_t) m] = filterResponse (fmOwn, s.filter);
             }
             ++si;
         }
@@ -237,38 +280,66 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
     using cd = std::complex<double>;
 
-    std::vector<cd>     P    ((size_t) N * N);
-    std::vector<double> Iavg ((size_t) N * N);
-    std::vector<double> Iabs ((size_t) N * N);
+    // The field is kept ONE GRID PER FREQUENCY GROUP, not one grid for the
+    // scene. The relative heatmap divides by the scene's unity-gain peak, and
+    // a single shared peak is itself a coupling: retuning the Q212P moves the
+    // scene's loudest point, so every Q21S cell changes colour although its
+    // own field never moved. Measured at about 3 dB across the Q21S's half of
+    // a plan. Each group is therefore normalised by ITS OWN unity peak and the
+    // normalised fields are added, which leaves one device's map untouched by
+    // the other's dropdown. With one frequency in the scene the sum has one
+    // term and this is exactly the old arithmetic.
+    std::vector<std::vector<float>> gI     ((size_t) gCount, std::vector<float> ((size_t) N * N, 0.0f));
+    std::vector<std::vector<float>> gPre   ((size_t) gCount, std::vector<float> ((size_t) N * N, 0.0f));
+    std::vector<std::vector<float>> gCohA  ((size_t) gCount, std::vector<float> ((size_t) N * N, 0.0f));
+    std::vector<std::vector<float>> gIncA  ((size_t) gCount, std::vector<float> ((size_t) N * N, 0.0f));
 
-    // Per-speaker-calibrated absolute intensity. Like P / Iavg / Iabs this is
-    // written once per cell by exactly one worker, so it needs no locking;
-    // the rGeom/rSpread/theta scratch is per-worker inside runRows instead.
+    // Per-speaker-calibrated absolute intensity. Absolute dB SPL is not
+    // normalised against anything, so it needs no grouping - it was never
+    // subject to this coupling and stays one grid.
     std::vector<double> IabsCal ((size_t) N * N, 0.0);
 
-    double maxI = 0.0;
-    double maxIUnity = 0.0;
     double maxIAbsBand = 0.0;
-    double maxAbsRe = 0.0;
-    double maxAbsReUnity = 0.0;
+    std::vector<double> maxIUnityG ((size_t) gCount, 0.0);
+    std::vector<double> maxAbsReUnityG ((size_t) gCount, 0.0);
 
-    // Rows are split across cores. Every cell writes only its own index in P /
-    // Iavg / Iabs, so the only shared state is the five running maxima, which
-    // each worker accumulates locally and merges once at the end. The scratch
+    // Rows are split across cores. Every cell writes only its own index in the
+    // group grids, so the only shared state is the running maxima, which each
+    // worker accumulates locally and merges once at the end. The scratch
     // vectors are per-worker for the same reason -- they were shared before,
     // which is exactly what would have made this unsafe.
     const int hw = (int) std::thread::hardware_concurrency();
     const int nThreads = std::min (16, std::max (1, hw > 0 ? hw : 1));
 
-    struct Partial { double maxI = 0, maxIUnity = 0, maxIAbsBand = 0,
-                            maxAbsRe = 0, maxAbsReUnity = 0; };
+    struct Partial
+    {
+        double maxIAbsBand = 0;
+        std::vector<double> maxIUnity, maxAbsReUnity;
+    };
     std::vector<Partial> partials ((size_t) nThreads);
+    for (auto& pr : partials)
+    {
+        pr.maxIUnity.assign ((size_t) gCount, 0.0);
+        pr.maxAbsReUnity.assign ((size_t) gCount, 0.0);
+    }
 
     auto runRows = [&] (int rowBegin, int rowEnd, Partial& acc)
     {
         std::vector<double> rGeom ((size_t) srcs.size());
         std::vector<double> rSpread ((size_t) srcs.size());
         std::vector<double> theta ((size_t) srcs.size());
+        // Per-frequency-group accumulators, per worker for the same reason the
+        // distance scratch is: they are written every cell.
+        std::vector<std::complex<double>> gCentre ((size_t) gCount);
+        std::vector<std::complex<double>> gCentreUnity ((size_t) gCount);
+        std::vector<std::complex<double>> gSm ((size_t) gCount);
+        std::vector<std::complex<double>> gSmUnity ((size_t) gCount);
+        std::vector<std::complex<double>> gSmAbs ((size_t) gCount);
+        // This cell's per-group totals, kept apart all the way to the end so
+        // each one can be divided by its own peak.
+        std::vector<double> cellI ((size_t) gCount);
+        std::vector<double> cellIUnity ((size_t) gCount);
+        std::vector<double> cellIncoh ((size_t) gCount);
 
         for (int row = rowBegin; row < rowEnd; ++row)
         {
@@ -286,35 +357,50 @@ SimResult AcousticEngine::compute (const SimParams& p)
                 theta[i]   = std::atan2 (Y - s.y, X - s.x);
             }
 
-            cd     centre (0.0, 0.0);
-            cd     centreUnity (0.0, 0.0);
-            double incoh = 0.0;
+            for (int g = 0; g < gCount; ++g)
+            {
+                gCentre[(size_t) g] = cd (0.0, 0.0);
+                gCentreUnity[(size_t) g] = cd (0.0, 0.0);
+                cellIncoh[(size_t) g] = 0.0;
+            }
+
             for (size_t i = 0; i < srcs.size(); ++i)
             {
                 const auto& s = srcs[i];
-                const double D = dirFactor (s.pat, k, s.facing, theta[i]);
+                const double D = dirFactor (s.pat, s.kOwn, s.facing, theta[i]);
                 const double ampBase = D / rSpread[i];
                 const double amp = s.gainLin * ampBase * std::abs (s.hCentre);
-                const double phase = -(k * rGeom[i] + omega * s.delaySec) + s.polPhase
+                const double phase = -(s.kOwn * rGeom[i] + s.wOwn * s.delaySec) + s.polPhase
                                    + std::arg (s.hCentre);
-                centre += std::polar (amp, phase);
-                centreUnity += std::polar (ampBase, phase);
-                incoh  += amp;
+                // The instantaneous waveform, the coherence and the
+                // incoherent reference are all gathered PER GROUP: each one
+                // is normalised by its own group's peak further down, and a
+                // coherence ratio only means anything within one frequency
+                // anyway.
+                gCentre[(size_t) s.group] += std::polar (amp, phase);
+                gCentreUnity[(size_t) s.group] += std::polar (ampBase, phase);
+                cellIncoh[(size_t) s.group] += amp;
             }
 
-            double Iband = 0.0;
-            double IbandUnity = 0.0;
+            for (int g = 0; g < gCount; ++g)
+            { cellI[(size_t) g] = 0.0; cellIUnity[(size_t) g] = 0.0; }
             double IbandAbs = 0.0;
             for (int m = 0; m < mCount; ++m)
             {
-                cd sm (0.0, 0.0);
-                cd smUnity (0.0, 0.0);
-                cd smAbs (0.0, 0.0);
-                const double km = kBand[(size_t) m];
-                const double wm = omegaBand[(size_t) m];
+                for (int g = 0; g < gCount; ++g)
+                {
+                    gSm[(size_t) g] = cd (0.0, 0.0);
+                    gSmUnity[(size_t) g] = cd (0.0, 0.0);
+                    gSmAbs[(size_t) g] = cd (0.0, 0.0);
+                }
+
                 for (size_t i = 0; i < srcs.size(); ++i)
                 {
                     const auto& s = srcs[i];
+                    // This speaker's own band wavenumber - its group's, taken
+                    // around its own model's frequency.
+                    const double km = kBand[(size_t) s.group][(size_t) m];
+                    const double wm = omegaBand[(size_t) s.group][(size_t) m];
                     const DirectivityPattern* pm = patBand[i][(size_t) m];
                     const double D = dirFactor (pm, km, s.facing, theta[i]);
                     const double ampBase = D / rSpread[i];
@@ -323,36 +409,45 @@ SimResult AcousticEngine::compute (const SimParams& p)
                     const double amp = s.gainLin * ampBase * hm;
                     const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase
                                        + std::arg (H);
-                    sm += std::polar (amp, phase);
-                    smUnity += std::polar (ampBase, phase);
+                    gSm[(size_t) s.group] += std::polar (amp, phase);
+                    gSmUnity[(size_t) s.group] += std::polar (ampBase, phase);
                     if (hasAbs)
                     {
                         // This speaker's own on-axis calibration (dB @ its own
                         // refDistanceM), carried as a per-speaker linear scale
                         // so mixed-sensitivity devices sum correctly.
                         const double ampAbs = s.gainLin * ampBase * hm * s.calAbs * s.refDistM;
-                        smAbs += std::polar (ampAbs, phase);
+                        gSmAbs[(size_t) s.group] += std::polar (ampAbs, phase);
                     }
                 }
-                Iband += std::norm (sm);
-                IbandUnity += std::norm (smUnity);
-                if (hasAbs) IbandAbs += std::norm (smAbs);
+                // Within a group, pressures interfere; across groups only the
+                // energy adds. With a single frequency present this is the
+                // same |sum|^2 as before, to the last bit.
+                for (int g = 0; g < gCount; ++g)
+                {
+                    cellI[(size_t) g]      += std::norm (gSm[(size_t) g]);
+                    cellIUnity[(size_t) g] += std::norm (gSmUnity[(size_t) g]);
+                    if (hasAbs) IbandAbs += std::norm (gSmAbs[(size_t) g]);
+                }
             }
-            Iband /= (double) mCount;
-            IbandUnity /= (double) mCount;
             IbandAbs /= (double) mCount;
 
             const size_t idx = (size_t) row * N + col;
-            P[idx]    = centre;
-            Iavg[idx] = Iband;
-            Iabs[idx] = incoh;
+            for (int g = 0; g < gCount; ++g)
+            {
+                const size_t gi = (size_t) g;
+                cellI[gi]      /= (double) mCount;
+                cellIUnity[gi] /= (double) mCount;
+                gI[gi][idx]    = (float) cellI[gi];
+                gPre[gi][idx]  = (float) gCentre[gi].real();
+                gCohA[gi][idx] = (float) std::abs (gCentre[gi]);
+                gIncA[gi][idx] = (float) cellIncoh[gi];
+                acc.maxIUnity[gi] = std::max (acc.maxIUnity[gi], cellIUnity[gi]);
+                acc.maxAbsReUnity[gi] = std::max (acc.maxAbsReUnity[gi],
+                                                  std::abs (gCentreUnity[gi].real()));
+            }
             IabsCal[idx] = IbandAbs;
-
-            acc.maxI          = std::max (acc.maxI, Iband);
-            acc.maxIUnity     = std::max (acc.maxIUnity, IbandUnity);
-            acc.maxIAbsBand   = std::max (acc.maxIAbsBand, IbandAbs);
-            acc.maxAbsRe      = std::max (acc.maxAbsRe, std::abs (centre.real()));
-            acc.maxAbsReUnity = std::max (acc.maxAbsReUnity, std::abs (centreUnity.real()));
+            acc.maxIAbsBand = std::max (acc.maxIAbsBand, IbandAbs);
         }
         }
     };
@@ -379,17 +474,21 @@ SimResult AcousticEngine::compute (const SimParams& p)
 
     for (const auto& pr : partials)
     {
-        maxI          = std::max (maxI, pr.maxI);
-        maxIUnity     = std::max (maxIUnity, pr.maxIUnity);
-        maxIAbsBand   = std::max (maxIAbsBand, pr.maxIAbsBand);
-        maxAbsRe      = std::max (maxAbsRe, pr.maxAbsRe);
-        maxAbsReUnity = std::max (maxAbsReUnity, pr.maxAbsReUnity);
+        maxIAbsBand = std::max (maxIAbsBand, pr.maxIAbsBand);
+        for (int g = 0; g < gCount; ++g)
+        {
+            maxIUnityG[(size_t) g] = std::max (maxIUnityG[(size_t) g],
+                                               pr.maxIUnity[(size_t) g]);
+            maxAbsReUnityG[(size_t) g] = std::max (maxAbsReUnityG[(size_t) g],
+                                                   pr.maxAbsReUnity[(size_t) g]);
+        }
     }
 
-    if (maxI < 1e-300)          maxI = 1.0;
-    if (maxIUnity < 1e-300)     maxIUnity = 1.0;
-    if (maxAbsRe < 1e-300)      maxAbsRe = 1.0;
-    if (maxAbsReUnity < 1e-300) maxAbsReUnity = 1.0;
+    for (int g = 0; g < gCount; ++g)
+    {
+        if (maxIUnityG[(size_t) g] < 1e-300)     maxIUnityG[(size_t) g] = 1.0;
+        if (maxAbsReUnityG[(size_t) g] < 1e-300) maxAbsReUnityG[(size_t) g] = 1.0;
+    }
 
     const double floorDB = p.dBfloor;
 
@@ -403,10 +502,31 @@ SimResult AcousticEngine::compute (const SimParams& p)
         ? (10.0 * std::log10 (std::max (maxIAbsBand, 1e-300)))
         : 0.0;
 
-    for (size_t i = 0; i < P.size(); ++i)
+    const size_t nCells = (size_t) N * (size_t) N;
+    for (size_t i = 0; i < nCells; ++i)
     {
-        // Normalise to unity-gain peak so per-speaker gain and level changes are visible.
-        const double rel = 10.0 * std::log10 (std::max (Iavg[i], 1e-300) / maxIUnity);
+        // Each group normalised to its OWN unity-gain peak, then added. Gain,
+        // delay and filter changes stay visible exactly as before, because
+        // the peak each group is divided by is a unity-gain peak - it carries
+        // no per-speaker gain. What it no longer carries is the other
+        // device's frequency.
+        double relPower = 0.0;
+        double pre = 0.0;
+        double cohAmp = 0.0, incAmp = 0.0;
+        for (int g = 0; g < gCount; ++g)
+        {
+            const size_t gi = (size_t) g;
+            relPower += (double) gI[gi][i] / maxIUnityG[gi];
+            pre      += (double) gPre[gi][i] / maxAbsReUnityG[gi];
+            // Coherence is a ratio, so numerator and denominator take the
+            // same per-group scale and it cancels within a group; across
+            // groups the scale is what stops one weighting the other.
+            const double amp = std::sqrt (maxIUnityG[gi]);
+            cohAmp += (double) gCohA[gi][i] / amp;
+            incAmp += (double) gIncA[gi][i] / amp;
+        }
+
+        const double rel = 10.0 * std::log10 (std::max (relPower, 1e-300));
         res.splRelDB[i] = (float) rel;
         res.splDB[i]    = (float) std::max (rel, floorDB);
 
@@ -415,11 +535,12 @@ SimResult AcousticEngine::compute (const SimParams& p)
         else
             res.splAbsDB[i] = (float) rel;
 
-        res.pressure[i] = (float) (P[i].real() / maxAbsReUnity);
+        // Each group's waveform already peaks at 1, so the average keeps the
+        // sum inside [-1, 1] and leaves a single-frequency scene untouched.
+        res.pressure[i] = (float) (pre / (double) gCount);
 
-        const double coh = std::abs (P[i]);
-        res.interference[i] = (Iabs[i] > 1e-300)
-                                ? (float) std::clamp (coh / Iabs[i], 0.0, 1.0)
+        res.interference[i] = (incAmp > 1e-300)
+                                ? (float) std::clamp (cohAmp / incAmp, 0.0, 1.0)
                                 : 0.0f;
     }
     res.peakAbsDb      = peakAbs;
@@ -442,35 +563,57 @@ SimResult AcousticEngine::compute (const SimParams& p)
         const double rFar = std::max (res.worldW, res.worldH) * 5.0;
         res.polarMag.assign (nPolar, 0.0f);
 
-        double maxMagUnity = 0.0;
+        // One magnitude per group per angle, so each group can be divided by
+        // its own peak before they are added - the polar needs the same
+        // treatment as the map, or retuning one device would still re-scale
+        // the other's lobe.
+        std::vector<std::vector<double>> polarG ((size_t) gCount,
+                                                 std::vector<double> ((size_t) nPolar, 0.0));
+        std::vector<double> maxMagUnityG ((size_t) gCount, 0.0);
         for (int i = 0; i < nPolar; ++i)
         {
             const double angle = i * (2.0 * M_PI / nPolar);
             const double Xf = cx + rFar * std::cos (angle);
             const double Yf = cy + rFar * std::sin (angle);
 
-            cd sum (0.0, 0.0);
-            cd sumUnity (0.0, 0.0);
+            // Grouped exactly as the map is: one lobe pattern per frequency
+            // present, added in power, so the Q21S polar does not re-shape
+            // when the Q212P is retuned.
+            std::vector<cd> sum ((size_t) gCount, cd (0.0, 0.0));
+            std::vector<cd> sumUnity ((size_t) gCount, cd (0.0, 0.0));
             for (const auto& s : srcs)
             {
                 const double rg = std::sqrt ((Xf - s.x) * (Xf - s.x) + (Yf - s.y) * (Yf - s.y));
                 const double rs = std::max (rg, s.halfExtent);
                 const double th = std::atan2 (Yf - s.y, Xf - s.x);
-                const double D  = dirFactor (s.pat, k, s.facing, th);
+                const double D  = dirFactor (s.pat, s.kOwn, s.facing, th);
                 const double ampBase = D / rs;
                 const double amp = s.gainLin * ampBase * std::abs (s.hCentre);
-                const double phase = -(k * rg + omega * s.delaySec) + s.polPhase
+                const double phase = -(s.kOwn * rg + s.wOwn * s.delaySec) + s.polPhase
                                    + std::arg (s.hCentre);
-                sum += std::polar (amp, phase);
-                sumUnity += std::polar (ampBase, phase);
+                sum[(size_t) s.group] += std::polar (amp, phase);
+                sumUnity[(size_t) s.group] += std::polar (ampBase, phase);
             }
 
-            const double mag = std::abs (sum);
-            res.polarMag[i]  = (float) mag;
-            maxMagUnity = std::max (maxMagUnity, std::abs (sumUnity));
+            for (int g = 0; g < gCount; ++g)
+            {
+                polarG[(size_t) g][(size_t) i] = std::abs (sum[(size_t) g]);
+                maxMagUnityG[(size_t) g] = std::max (maxMagUnityG[(size_t) g],
+                                                     std::abs (sumUnity[(size_t) g]));
+            }
         }
-        if (maxMagUnity > 1e-300)
-            for (auto& v : res.polarMag) v = (float) (v / maxMagUnity);
+        for (int i = 0; i < nPolar; ++i)
+        {
+            double magSq = 0.0;
+            for (int g = 0; g < gCount; ++g)
+            {
+                const double m = maxMagUnityG[(size_t) g];
+                if (m <= 1e-300) continue;
+                const double v = polarG[(size_t) g][(size_t) i] / m;
+                magSq += v * v;
+            }
+            res.polarMag[i] = (float) std::sqrt (magSq);
+        }
     }
 
     return res;
@@ -491,8 +634,13 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         bool   hasAbs   = false;
         double calAbs   = 0.0;
         double refDistM = 2.0;
+        // As in compute(): this speaker's own propagation frequency and the
+        // group of same-frequency speakers it may interfere with.
+        double fOwn  = 52.0;
+        int    group = 0;
     };
     std::vector<Src> srcs;
+    std::vector<double> freqGroups;
     for (const auto& s : p.speakers)
     {
         if (! s.enabled) continue;
@@ -506,11 +654,21 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         src.model = s.model;
         src.halfExtent = (double) cabinetFor (s.model).halfExtentM;
         src.filter = s.filter;
+
+        src.fOwn = ownFrequency (p, s.model);
+        src.group = -1;
+        for (size_t g = 0; g < freqGroups.size(); ++g)
+            if (std::abs (freqGroups[g] - src.fOwn) < 1.0e-6) { src.group = (int) g; break; }
+        if (src.group < 0)
+        {
+            freqGroups.push_back (src.fOwn);
+            src.group = (int) freqGroups.size() - 1;
+        }
         srcs.push_back (src);
     }
     if (srcs.empty()) return false;
 
-    const double f = std::max (1.0, p.frequency);
+    const int gCount = std::max (1, (int) freqGroups.size());
 
     // hasAbs requires every active speaker's own model to carry a calibrated
     // pattern at ITS OWN frequency - mirrors compute()'s conservative
@@ -552,34 +710,38 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     {
         const double frac = (mCount == 1) ? 0.0
                           : (2.0 * m / (mCount - 1) - 1.0) * halfOct;
-        const double fm = f * std::pow (2.0, frac);
-        const double km = 2.0 * M_PI * fm / kSpeedOfSound;
-        const double wm = 2.0 * M_PI * fm;
 
-        cd sm (0.0, 0.0);
-        cd smAbs (0.0, 0.0);
+        std::vector<cd> sm ((size_t) gCount, cd (0.0, 0.0));
+        std::vector<cd> smAbs ((size_t) gCount, cd (0.0, 0.0));
         for (size_t i = 0; i < srcs.size(); ++i)
         {
             const auto& s = srcs[i];
             const auto& table = tableFor (p, s.model);
-            const double fmOwn = ownFrequency (p, s.model) * std::pow (2.0, frac);
+            // Everything below is at THIS speaker's own band frequency: its
+            // pattern, its wavenumber, its delay phase and its filter.
+            const double fmOwn = s.fOwn * std::pow (2.0, frac);
+            const double km = 2.0 * M_PI * fmOwn / kSpeedOfSound;
+            const double wm = 2.0 * M_PI * fmOwn;
             const DirectivityPattern* pm = table.empty() ? nullptr : pickPattern (table, fmOwn);
             const double D = dirFactor (pm, km, s.facing, theta[i]);
             const double ampBase = D / rSpread[i];
-            const auto   H  = filterResponse (fm, s.filter);
+            const auto   H  = filterResponse (fmOwn, s.filter);
             const double hm = std::abs (H);
             const double amp = s.gainLin * ampBase * hm;
             const double phase = -(km * rGeom[i] + wm * s.delaySec) + s.polPhase
                                + std::arg (H);
-            sm += std::polar (amp, phase);
+            sm[(size_t) s.group] += std::polar (amp, phase);
             if (hasAbs)
             {
                 const double ampAbs = amp * s.calAbs * s.refDistM;
-                smAbs += std::polar (ampAbs, phase);
+                smAbs[(size_t) s.group] += std::polar (ampAbs, phase);
             }
         }
-        Iband += std::norm (sm);
-        if (hasAbs) IbandAbs += std::norm (smAbs);
+        for (int g = 0; g < gCount; ++g)
+        {
+            Iband += std::norm (sm[(size_t) g]);
+            if (hasAbs) IbandAbs += std::norm (smAbs[(size_t) g]);
+        }
     }
     Iband /= (double) mCount;
     IbandAbs /= (double) mCount;

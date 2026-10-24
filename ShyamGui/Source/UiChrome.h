@@ -810,7 +810,7 @@ public:
         styleClusterLabel (lblMic_, "Mic");
         addAndMakeVisible (lblMic_);
 
-        styleClusterLabel (lblPlane_, "Plane");
+        styleClusterLabel (lblPlane_, "Plane Prediction");
         addAndMakeVisible (lblPlane_);
 
         auto planeBtn = [this] (RibbonIconButton& b, const juce::String& tip)
@@ -865,7 +865,11 @@ public:
 
         // One cluster, not two: Distance held a single button and Options
         // the pills it is always used with.
-        styleClusterLabel (lblDistance_, "Options");
+        // The old single "Options" cluster is split in two, as the Figma has it:
+        // Ortho is the mode, Ortho Controls are the things it switches on.
+        styleClusterLabel (lblOrtho_, "Ortho");
+        addAndMakeVisible (lblOrtho_);
+        styleClusterLabel (lblDistance_, "Ortho Controls");
         addAndMakeVisible (lblDistance_);
 
         btnInterdist_.setTooltip ("Show the gap Ortho is linking, between the "
@@ -994,8 +998,12 @@ public:
 
         orthoGapSlider_.setRange (0.5, 20.0, 0.1);
         orthoGapSlider_.setValue (3.0, juce::dontSendNotification);
-        orthoGapSlider_.setSliderStyle (juce::Slider::LinearHorizontal);
-        orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 18);
+        orthoGapSlider_.setSliderStyle (juce::Slider::LinearBar);
+        orthoGapSlider_.setVelocityBasedMode (true);
+        orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 44, 18);
+        for (auto id : { juce::Slider::backgroundColourId, juce::Slider::trackColourId,
+                         juce::Slider::thumbColourId })
+            orthoGapSlider_.setColour (id, juce::Colours::transparentBlack);
         orthoGapSlider_.setNumDecimalPlacesToDisplay (1);
         orthoGapSlider_.setTextValueSuffix (" m");
         orthoGapSlider_.textFromValueFunction =
@@ -1003,9 +1011,6 @@ public:
         orthoGapSlider_.valueFromTextFunction =
             [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
         orthoGapSlider_.setTooltip ("Linked centre-to-centre spacing - changing it updates all gaps");
-        orthoGapSlider_.setColour (juce::Slider::trackColourId, Brand::border());
-        orthoGapSlider_.setColour (juce::Slider::thumbColourId, Brand::accent());
-        orthoGapSlider_.setColour (juce::Slider::backgroundColourId, Brand::plotToolbar());
         orthoGapSlider_.setColour (juce::Slider::textBoxTextColourId, Brand::muted());
         orthoGapSlider_.setColour (juce::Slider::textBoxBackgroundColourId, Brand::plotToolbar());
         orthoGapSlider_.setColour (juce::Slider::textBoxOutlineColourId, Brand::border().withAlpha (0.35f));
@@ -1640,7 +1645,8 @@ public:
     juce::Label      lblPlane_;
     juce::Label      lblMic_;
     bool             planeTargetActive_ = false;
-    juce::Label      lblDistance_;
+    juce::Label      lblDistance_;   // caption: "Ortho Controls"
+    juce::Label      lblOrtho_;      // caption: "Ortho"
     bool             orthoExtras_ = false;   // Ortho is on: show H / V / Gap
     // The text cluster only: it is contextual on top of the tab, so it needs
     // its own rule. Home is every other child, decided in resized().
@@ -1783,6 +1789,7 @@ private:
                 || c == (juce::Component*) &btnInterdist_
                 || c == (juce::Component*) &btnLockRays_
                 || c == (juce::Component*) &lblDistance_
+                || c == (juce::Component*) &lblOrtho_
                 || c == (juce::Component*) &btnSnap_
                 || c == (juce::Component*) &btnOrtho_
                 || c == (juce::Component*) &btnOrthoHoriz_
@@ -1827,6 +1834,7 @@ private:
         btnInterdist_.setEnabled    (orthoExtras_);
         btnShowValues_.setVisible   (! homeTab);
         lblDistance_.setVisible     (! homeTab);
+        lblOrtho_.setVisible        (! homeTab);
         btnSnap_.setVisible         (! homeTab);
         btnOrtho_.setVisible        (! homeTab);
         // The H / V / Gap row stays where it is and greys out instead of
@@ -1957,8 +1965,14 @@ private:
             const int rays  = kMapPitch + kMapIconW;
             // Top row of glyphs, or the caption row (Options, H, V, Gap and
             // the spacing slider) - whichever is wider sets the cluster.
-            const int opts  = juce::jmax (kMapPitch * 3 + kSubGroup + kMapIconW,
-                                          54 + 8 + kIconW * 3 + 150 + kOptionPillGap * 3);
+            // Ortho is one glyph under its own caption; Ortho Controls is a
+            // single row of six glyphs and the gap read-out, with the caption
+            // underneath like every other cluster. The caption is the wider
+            // of the two things in the Ortho Controls cluster only on very
+            // narrow rows, so both are accounted for.
+            const int ortho = juce::jmax (kMapIconW, 40);
+            const int opts  = juce::jmax (kMapPitch * 5 + kMapIconW + kOptionPillGap + 48,
+                                          96);
             const int plane = kMapPitch * 5 + kMapIconW;
             const int mic   = kMapIconW + 6 + (12 + 3 + w.coord + 6) * 2 + 8
                             + kMapPitch + kMapIconW;
@@ -1970,6 +1984,7 @@ private:
                       + ((int) rangeChips_.size() - 1) * 4;
             return kPlateLeft + rays + kMapGap
                  + kMapGap + juce::jmax (w.type, kMapPitch + kMapIconW) + kMapGap
+                 + kMapGap + ortho  + kMapGap
                  + kMapGap + opts   + kMapGap
                  + kMapGap + plane  + kMapGap
                  + kMapGap + juce::jmax (mic, chips) + kMapGap;
@@ -2116,7 +2131,8 @@ private:
             micYBox_.setFont (coordFont);
             for (auto* l : { &lblFile_, &lblNav_, &lblView_, &lblTools_, &lblShapes_,
                              &lblColours_, &lblHelp_, &lblOptions_, &lblMapping_,
-                             &lblMappingType_, &lblDistance_, &lblPlane_, &lblMic_ })
+                             &lblMappingType_, &lblDistance_, &lblOrtho_,
+                             &lblPlane_, &lblMic_ })
                 l->setFont (capFont);
         }
 
@@ -2303,97 +2319,133 @@ private:
             const int mPitch = juce::jmax (mIcon + 2, px2 (kMapPitch));
             const int mTop   = juce::jmax (tabStrip + 2, iconTop + tool / 2 - mIcon / 2);
 
+            // Every cluster on this row is built the same way: the plate is
+            // as wide as the wider of its glyph row and its caption, the
+            // glyphs are CENTRED on it, and the caption is centred under
+            // them. The glyphs used to start hard against the plate's left
+            // edge while the caption centred itself, so any cluster whose
+            // caption was wider than its glyphs carried a block of dead
+            // space on its right - Mapping Type worst of all.
+            const int plateGap = px2 (14);
+            auto capWidthOf = [&] (const juce::Label& l)
+            {
+                return l.getFont().getStringWidth (l.getText()) + px2 (10);
+            };
+            // Returns where the glyph row starts; writes the plate's right edge.
+            auto placePlate = [&] (int left, int rowW, const juce::Label& cap,
+                                   int& plateRightOut)
+            {
+                const int inner = juce::jmax (rowW, capWidthOf (cap));
+                plateRightOut = left + inner + plateGap;
+                return left + (inner - rowW) / 2;
+            };
+            auto captionOn = [&] (juce::Label& l, int left, int plateRightV)
+            {
+                l.setBounds (left, labelTop, juce::jmax (10, plateRightV - left - plateGap), labelH);
+            };
+
             const int mx = px2 (kPlateLeft);
-            btnShowRays_.setBounds (mx, mTop, mIcon, mIcon);
-            btnLockRays_.setBounds (mx + mPitch, mTop, mIcon, mIcon);
-            const int plateRight = mx + mPitch + mIcon + px2 (14);
-            lblMapping_.setBounds (mx, labelTop, juce::jmax (10, plateRight - mx), labelH);
+            int plateRight = 0;
+            {
+                const int rowW = mPitch + mIcon;
+                const int gx = placePlate (mx, rowW, lblMapping_, plateRight);
+                btnShowRays_.setBounds (gx, mTop, mIcon, mIcon);
+                btnLockRays_.setBounds (gx + mPitch, mTop, mIcon, mIcon);
+                captionOn (lblMapping_, mx, plateRight);
+            }
             dividerX_.push_back (plateRight);
 
             // Mapping Type: its own cluster, because it governs the canvas
             // rather than the rays. Two glyphs, one of them always live; the
             // slot keeps the caption's width and the pair starts at its left
             // edge like every other cluster.
-            const int mx2 = plateRight + px2 (14);
-            const int cw  = juce::jmax (px2 (MW.type), mPitch + mIcon);
-            btnMapSpl_.setBounds (mx2,          mTop, mIcon, mIcon);
-            btnMapOff_.setBounds (mx2 + mPitch, mTop, mIcon, mIcon);
-            const int plateRight2 = mx2 + cw + px2 (14);
-            lblMappingType_.setBounds (mx2, labelTop,
-                                       juce::jmax (10, plateRight2 - mx2), labelH);
+            const int mx2 = plateRight + plateGap;
+            int plateRight2 = 0;
+            {
+                const int rowW = mPitch + mIcon;
+                const int gx = placePlate (mx2, rowW, lblMappingType_, plateRight2);
+                btnMapSpl_.setBounds (gx,          mTop, mIcon, mIcon);
+                btnMapOff_.setBounds (gx + mPitch, mTop, mIcon, mIcon);
+                captionOn (lblMappingType_, mx2, plateRight2);
+            }
             dividerX_.push_back (plateRight2);
 
-            // Options: one cluster. "Distance" held a single button and was
-            // only ever used with the pills beside it, so the rule between
-            // them bought nothing but width.
+            // Ortho: the mode on its own, one glyph under its own caption.
+            // It used to sit at the end of the Options row, which made the
+            // switch look like one more option rather than the thing the
+            // options belong to.
+            const int orx0 = plateRight2 + plateGap;
+            int plateRightO = 0;
+            {
+                const int gx = placePlate (orx0, mIcon, lblOrtho_, plateRightO);
+                btnOrtho_.setBounds (gx, mTop, mIcon, mIcon);
+                captionOn (lblOrtho_, orx0, plateRightO);
+            }
+            dividerX_.push_back (plateRightO);
+
+            // Ortho Controls: ONE row of glyphs with the caption underneath,
+            // the same shape as every other cluster on the row. They used to
+            // be split across two rows - four glyphs on top, H / V / Gap down
+            // on the caption line - which is why this cluster read differently
+            // from its neighbours.
             //
-            // Top row  : Show Interdistance | Show Values | Snap | Ortho
-            // Caption  : "Options", then Ortho's H / V / Gap to its right.
-            // The H / V / Gap row is always laid out, greyed when Ortho is
-            // off, so nothing shifts when you switch Ortho on.
-            const int pillGap = juce::jmax (2,  px2 (kOptionPillGap));
-            const int ox0 = plateRight2 + px2 (14);
+            // Row: Show Interdistance | Show Values | Snap | H | V | Gap | 0.0 m
+            // Everything except the first three greys out when Ortho is off;
+            // nothing moves, because a control you cannot find again is worse
+            // than a greyed one.
+            const int pillGap = juce::jmax (2, px2 (kOptionPillGap));
+            const int ox0 = plateRightO + plateGap;
 
-            const int sq = juce::jmax (12, juce::jmin (labelH,
-                                       getHeight() - labelTop - px2 (3)));
-            // The read-out box is sized HERE, not in the constructor: at
-            // construction Brand::UI::scale is still 1.0, so the 44x18 set
-            // there stayed at its base size and ate most of the slot, leaving
-            // a stub of a track that jumped to its end on the first click.
-            // Floor is in real pixels, not design units: the box has to hold
-            // "3.0 m" whatever the row's horizontal shrink is doing, and a
-            // read-out that says "3...." is worse than no read-out. The
-            // cluster widens to suit, because capRowW below is summed from
-            // this.
-            const int tbW = juce::jmax (46, px2 (44));
-            const int sliderW = juce::jmax (px2 (150), tbW + px2 (56));
-
-            // The caption shares its row with the Ortho extras, so the cluster
-            // is cut to whichever row is wider and the closing rule can never
-            // land inside a control.
-            const int capW    = px2 (54);     // room for the word "Options"
+            // The read-out is sized HERE, not in the constructor: at
+            // construction Brand::UI::scale is still 1.0, so a size set there
+            // stays at its base. The floor is in real pixels because the box
+            // has to hold "3.0 m" whatever the row's shrink is doing, and a
+            // read-out that says "3...." is worse than no read-out.
+            const int tbW = juce::jmax (74, px2 (68));   // holds "3.0 m" on one line
             const int subGroup = px2 (kSubGroup);
-            const int topRowW = mPitch * 3 + subGroup + mIcon;
-            const int capRowW = capW + px2 (8) + sq * 3 + sliderW + pillGap * 3;
-            const int plateRight3 = ox0 + juce::jmax (topRowW, capRowW) + px2 (14);
 
-            int ox = ox0;
+            // Measure the row first so it can be centred, exactly like the
+            // clusters either side of it.
+            const int ctlRowW = mPitch * 5 + subGroup + mIcon + pillGap + tbW;
+            int plateRight3 = 0;
+            const int ctlX = placePlate (ox0, ctlRowW, lblDistance_, plateRight3);
+
+            int ox = ctlX;
             btnInterdist_.setBounds  (ox, mTop, mIcon, mIcon); ox += mPitch;
             btnShowValues_.setBounds (ox, mTop, mIcon, mIcon); ox += mPitch + subGroup;
             btnSnap_.setBounds       (ox, mTop, mIcon, mIcon); ox += mPitch;
-            btnOrtho_.setBounds      (ox, mTop, mIcon, mIcon);
+            btnOrthoHoriz_.setBounds (ox, mTop, mIcon, mIcon); ox += mPitch;
+            btnOrthoVert_.setBounds  (ox, mTop, mIcon, mIcon); ox += mPitch;
+            orthoGapLabel_.setBounds (ox, mTop, mIcon, mIcon); ox += mIcon + pillGap;
 
+            // The gap is a boxed read-out beside its glyph, like the mic's
+            // X / Y - the slider's track is gone, so the whole cluster fits
+            // one row. Typing and the mouse wheel still set it.
             if (orthoGapSlider_.getTextBoxWidth() != tbW
-                || orthoGapSlider_.getTextBoxHeight() != sq)
-                orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxRight,
-                                                 false, tbW, sq);
+                || orthoGapSlider_.getTextBoxHeight() != mIcon)
+                orthoGapSlider_.setTextBoxStyle (juce::Slider::TextBoxLeft,
+                                                 false, tbW, mIcon);
+            orthoGapSlider_.setBounds (ox, mTop, tbW, mIcon);
 
-            lblDistance_.setBounds (ox0, labelTop, capW, labelH);
-            int ex = ox0 + capW + px2 (8);
-            btnOrthoHoriz_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
-            btnOrthoVert_.setBounds  (ex, labelTop, sq, sq); ex += sq + pillGap;
-            orthoGapLabel_.setBounds (ex, labelTop, sq, sq); ex += sq + pillGap;
-            orthoGapSlider_.setBounds (ex, labelTop, sliderW, sq);
-
+            captionOn (lblDistance_, ox0, plateRight3);
             dividerX_.push_back (plateRight3);
             plateLeft = plateRight3;
 
             // Plane: always present on this tab, greyed until the selection is
             // a shape that could be a surface.
             {
-                int px0 = plateRight3 + px2 (14);
-                const int clusterLeft = px0;
+                const int clusterLeft = plateRight3 + plateGap;
+                int plateRightP = 0;
                 // Figma order: Use as Plane, Virtual, Architectural,
                 // Listening, Seated, Standing.
+                int px0 = placePlate (clusterLeft, mPitch * 5 + mIcon, lblPlane_, plateRightP);
                 for (auto* b : { &btnUsePlane_, &btnPlaneVirt_, &btnPlaneArch_,
                                  &btnPlaneListen_, &btnPlaneSeated_, &btnPlaneStanding_ })
                 {
                     b->setBounds (px0, mTop, mIcon, mIcon);
                     px0 += mPitch;
                 }
-                const int plateRightP = px0 - mPitch + mIcon + px2 (14);
-                lblPlane_.setBounds (clusterLeft, labelTop,
-                                     juce::jmax (10, plateRightP - clusterLeft), labelH);
+                captionOn (lblPlane_, clusterLeft, plateRightP);
                 dividerX_.push_back (plateRightP);
                 plateLeft = plateRightP;
 
@@ -2402,7 +2454,12 @@ private:
                 // Mic and Range share a cluster: both are measurement tools
                 // rather than drawing ones, and giving each its own rule cost
                 // more width than the row has.
-                const int mx0 = plateRightP + px2 (14);
+                const int micLeft = plateRightP + plateGap;
+                const int coordWp = px2 (12 + 3 + MW.coord);
+                const int micRowW = mIcon + px2 (6) + (coordWp + px2 (6)) * 2 + px2 (2)
+                                  + mPitch + mIcon;
+                int plateRightMcap = 0;
+                const int mx0 = placePlate (micLeft, micRowW, lblMic_, plateRightMcap);
                 btnMic_.setBounds (mx0, mTop, mIcon, mIcon);
 
                 // The selected mic's X / Y, typed here rather than only in the
@@ -2430,11 +2487,11 @@ private:
                 }
                 const int iconRowRight = rx0 + mPitch + mIcon;
                 const int chipRowRight = rangeChips_.isEmpty() ? mx0 : (cx - chipGap);
-                const int plateRightM = juce::jmax (iconRowRight, chipRowRight) + px2 (14);
+                const int plateRightM = juce::jmax (juce::jmax (iconRowRight, chipRowRight) + px2 (14),
+                                                    plateRightMcap);
                 if (rangeChips_.isEmpty())
                 {
-                    lblMic_.setBounds (mx0 - px2 (6), labelTop,
-                                       juce::jmax (10, plateRightM - mx0 + px2 (6)), labelH);
+                    captionOn (lblMic_, micLeft, plateRightM);
                     lblRange_.setBounds (0, 0, 0, 0);
                 }
                 else

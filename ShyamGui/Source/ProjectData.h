@@ -39,6 +39,14 @@ struct ProjectData
     // --- Acoustic scene (mirrors the editable simulation inputs) -----------
     std::vector<Speaker> speakers;
     double frequency           = 52.0;
+    // Each model's own frequency, indexed by model id (0 Q21S, 1 unused,
+    // 2 BEM 2inch, 3 Q212P). Only `frequency` used to be saved, so a scene
+    // with a sub at 52 Hz and a Q212P at 2078 Hz came back with the Q212P
+    // reset to the bottom of its catalogue - the devices were separate while
+    // the app was open and collapsed together on reload. -1 = not recorded
+    // (an older project), which leaves that model on its own default.
+    static constexpr int kNumModelSlots = 4;
+    double modelFrequency[kNumModelSlots] = { -1.0, -1.0, -1.0, -1.0 };
     int    resolution          = 400;
     double dBfloor             = -36.0;
     bool   bandedSPL           = false;
@@ -107,6 +115,11 @@ struct ProjectData
         root->setProperty ("meta", juce::var (m));
 
         root->setProperty ("frequency",  frequency);
+        {
+            juce::Array<juce::var> mf;
+            for (double hz : modelFrequency) mf.add (hz);
+            root->setProperty ("modelFrequency", juce::var (mf));
+        }
         root->setProperty ("resolution", resolution);
         root->setProperty ("dBfloor",    dBfloor);
         root->setProperty ("bandedSPL",  bandedSPL);
@@ -176,6 +189,10 @@ struct ProjectData
             }
 
             if (root->hasProperty ("frequency"))  p.frequency  = (double) root->getProperty ("frequency");
+            if (auto mf = root->getProperty ("modelFrequency"); mf.isArray())
+                for (int i = 0; i < juce::jmin ((int) ProjectData::kNumModelSlots,
+                                                mf.getArray()->size()); ++i)
+                    p.modelFrequency[i] = (double) mf.getArray()->getUnchecked (i);
             if (root->hasProperty ("resolution")) p.resolution = (int)    root->getProperty ("resolution");
             if (root->hasProperty ("dBfloor"))    p.dBfloor    = (double) root->getProperty ("dBfloor");
             if (root->hasProperty ("bandedSPL"))  p.bandedSPL  = (bool)   root->getProperty ("bandedSPL");

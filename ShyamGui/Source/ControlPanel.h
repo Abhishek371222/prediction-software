@@ -270,8 +270,14 @@ private:
     // -1 = never visited yet (first switch uses nearest-frequency matching).
     // currentMeasSource_ = section 2's Speaker Model picker: drives the
     // Frequency dropdown's catalogue AND the model tag new "+Add" units get.
+    // One slot per speaker model id (0 Q21S, 1 room, 2 BEM 2inch, 3 Q212P).
+    // Sized 3 while there were three ids, it silently dropped Q212P: every
+    // guard read "< 3", so the Q212P's chosen frequency was never stored and
+    // never restored - it reverted to 484 Hz the moment another model was
+    // browsed. Add a model, add a slot.
+    static constexpr int kNumModelSlots = 4;
     int    currentMeasSource_ = 0;
-    double savedFreqHz_[3]    = { -1.0, -1.0, -1.0 };
+    double savedFreqHz_[kNumModelSlots] = { -1.0, -1.0, -1.0, -1.0 };
 
     // The frequency the SIMULATION runs at, as distinct from the one the
     // Frequency dropdown happens to be showing. Browsing another model's

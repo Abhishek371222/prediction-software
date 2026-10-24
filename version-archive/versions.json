@@ -1,6 +1,25 @@
 {
-    "generatedAt": "2026-10-16T12:00:00.000Z",
+    "generatedAt": "2026-10-24T12:00:00.000Z",
     "versions": [
+        {
+            "version": "1.4.6",
+            "notes": "Each cabinet model is now simulated at its OWN frequency. Picking the directivity pattern per model was never enough: the wavenumber, the phase per metre, the delay phase and the crossover frequency were all taken from one scene-wide value, so moving the Q21S's dropdown re-drew the Q212P's interference. Measured on a two-device plan, retuning one device moved the other's field by up to 18.3 dB; it is now 0.000 dB. Speakers that share a frequency still interfere and are summed as complex pressure; speakers at different frequencies cannot interfere, so their energies add instead, and a scene at one frequency solves exactly as before. The relative heatmap's normalisation was a second coupling of the same kind - one scene-wide unity-gain peak meant retuning the Q212P moved the Q21S's colours by about 3 dB although its field never moved - so each frequency is now normalised by its own peak, in the map, the pressure view, the coherence ratio and the Directivity polar. Covered by a new verification suite of 297,806 checks over every frequency of every model pair, which the previous engine fails 2,374 of. Also fixed: the Q212P's chosen frequency was never remembered (its slot was missing from the per-model memory, so it reverted to 484 Hz whenever another model was browsed) and each model's frequency is now saved in the project; a Q212P frequency-response sweep moved the sub's frequency instead of its own; and the Q212P raw-data fallback path was mis-escaped. The Mapping ribbon follows the Figma: Options is split into Ortho (the mode) and Ortho Controls (the things it switches on), Plane is named Plane Prediction, the Ortho controls sit on one row of glyphs with the caption underneath instead of being split across two rows, the linked-spacing control is a boxed read-out rather than a slider, and every cluster is centred on its plate - the glyphs used to start at the plate's left edge while the caption centred, leaving dead space on the right of any cluster with a long caption.",
+            "createdAt": "2026-10-24T12:00:00.000Z",
+            "updatedAt": "2026-10-24T12:00:00.000Z",
+            "downloads": {
+                "source": {
+                    "available": false
+                },
+                "mac": {
+                    "available": false
+                },
+                "windows": {
+                    "available": true,
+                    "filename": "v1.4.6/AtomikIntegral-Windows-v1.4.6.exe",
+                    "size": 6723464
+                }
+            }
+        },
         {
             "version": "1.4.5",
             "notes": "The Q212P joins the Q21S and the BEM 2inch as a cabinet you can place. Pick it in the cabinet list and the frequency catalogue switches to its six measured bands - 484, 1088, 2078, 3969, 8909 and 17013 Hz - taken from the supplied BEM field export of 41,185 points over a 10 m forward hemisphere. Units name themselves Q212P_1, Q212P_2 and carry an aiming ray, as a top should. Polars are published at 0.5, 1.0 and 2.0 m and embedded in the binary, so the model works from a portable copy with no data folder beside it. Two caveats travel with the set: the export mesh covers the front hemisphere only, so the rear is synthesised by holding the 90 degree value and readings behind a Q212P are a floor rather than a measurement; and no sensitivity figure was supplied, so the set is relative dB like the horn - coverage and directivity are right, absolute SPL is not claimed. Cabinet size, 400 x 700 x 450 mm, is provisional until a spec sheet arrives. Show Values is now a probe rather than a grid: arming it turns the cursor into a crosshair and reads the SPL at whatever point it hovers, so a value can be taken anywhere on the map instead of only where a label fits. Fixes: subs no longer answer Show Rays, since a Q21S is aimed with the right-click rotation handle and rays are for mids and tops; the 'is this a subwoofer' test was written backwards as 'is not the horn', which would have filed every model added after it - the Q212P first - as a sub and taken its ray away; CSV exports count each cabinet in their own right instead of heading a Q212P-only scene Product,Q21S(1); and the Q212P absolute raw-data fallback path was mis-escaped, so the last-resort folder never resolved.",
