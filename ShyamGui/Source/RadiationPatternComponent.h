@@ -437,6 +437,39 @@ public:
         of behaviour. */
     void setElevationFramesWorld (bool on) { elevFramesWorld_ = on; repaint(); }
 
+    /** Figma V1.1 Sources drawing: the Venue tab's sheet, grid and outside
+        distance labels instead of the full-bleed heatmap chrome. Applies to
+        the plan and the elevation; polar views are untouched. */
+    void setFigmaFrame (bool on) { figmaFrame_ = on; viewInit_ = false; repaint(); }
+
+    /** Where world x lands on this component: px = pxAtZero + x * pxPerM. */
+    struct XMapping
+    {
+        float pxAtZero = 0.0f, pxPerM = 0.0f;
+        bool operator== (const XMapping& o) const noexcept
+        { return pxAtZero == o.pxAtZero && pxPerM == o.pxPerM; }
+    };
+    XMapping planXMapping() const;
+    /** The plan's horizontal mapping changed (pan, zoom, resize). The panes
+        stacked under it follow from here. */
+    std::function<void()> onPlanViewChanged;
+
+    /** Elevation only: take the plan's horizontal mapping, so a cabinet sits
+        directly under its plan marker. pxPerM <= 0 falls back to its own. */
+    void setElevationXMapping (XMapping m);
+
+    /** A listening plane seen from the side: its run along x, its deck
+        height and the ear height above that. */
+    struct ElevPlane { float x0 = 0.0f, x1 = 0.0f, z = 0.0f, earM = 0.0f; };
+    void setElevationPlanes (std::vector<ElevPlane> p) { elevPlanes_ = std::move (p); repaint(); }
+
+    /** SPL of the last solve along the line y = @p alongY, @p n points from
+        x0 to x1. Each point is (x m, dB); dB is absolute when the solve has
+        an absolute level (@p absolute), else relative. Points off the solve
+        are skipped. */
+    std::vector<juce::Point<float>> splAlongLine (float alongY, float x0, float x1,
+                                                  int n, bool& absolute) const;
+
     /** Ink for a mark drawn straight onto the plot canvas.
 
         Over a painted heatmap the canvas is dark whatever the theme, so
@@ -452,6 +485,25 @@ public:
     bool fieldIsPainted() const noexcept;
 private:
     bool elevFramesWorld_ = false;
+
+    bool figmaFrame_ = false;
+    /** The framed look applies to the plan views, not the polar ones. */
+    bool framedPlan() const noexcept
+    {
+        return figmaFrame_
+            && params_.viewMode != ViewMode::Directivity
+            && params_.viewMode != ViewMode::MeasuredPolar
+            && params_.viewMode != ViewMode::ElevationFront
+            && params_.viewMode != ViewMode::ElevationSide;
+    }
+    juce::Rectangle<int> framedFieldBox() const;
+    void paintFramedPlan (juce::Graphics&);
+    void drawFramedGrid (juce::Graphics&, juce::Rectangle<int> pb);
+    void drawFramedLabels (juce::Graphics&, juce::Rectangle<int> pb);
+    void drawFramedElevation (juce::Graphics&);
+    XMapping lastEmittedXMap_;
+    XMapping elevXMap_;
+    std::vector<ElevPlane> elevPlanes_;
 
     juce::Rectangle<int> plotArea() const;
     float worldScaleX() const;
@@ -511,7 +563,9 @@ private:
     static juce::String formatGridLabel (double metres);
     void drawSpeakers  (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawOrthoSpacingOverlay (juce::Graphics&);
-    void drawColourbar (juce::Graphics&, juce::Rectangle<int> bounds);
+    /** @p barOverride places the bar itself; empty keeps the gutter layout. */
+    void drawColourbar (juce::Graphics&, juce::Rectangle<int> bounds,
+                        juce::Rectangle<int> barOverride = {});
     void drawPolarPlot (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawMeasuredPolar (juce::Graphics&, juce::Rectangle<int> bounds);
     void drawAnnotations (juce::Graphics&, juce::Rectangle<int> bounds);

@@ -1,0 +1,161 @@
+#pragma once
+#include <JuceHeader.h>
+#include "BrandTheme.h"
+#include "AppSettings.h"
+
+// =============================================================================
+// The Venue tab's drawing style, shared by the three stacked Sources panes
+// (Top View, Elevation view, Distance Vs. dbSPL) so all four read as one set.
+//
+// Figma "Source screen - 1.3.1" (node 207:1269):
+//
+//   field     #E4E4E4 sheet, 1 px black frame
+//   grid      #D9D9D9 on a 2 m step (5 ft in Imperial), no finer rule
+//   scale     48 px per 2 m in the 1920-wide frame
+//   labels    Montserrat SemiBold 12, black, outside the field: along the top
+//             and down the left, zero named for its axis ("0(x)", "0(y)")
+//   x = 0     a dotted blue rule through the origin in every pane
+//
+// Every pane takes the SAME horizontal mapping from the plan, so a metre
+// sits in the same column in all three.
+// =============================================================================
+namespace FigPlot
+{
+    inline juce::Colour field()     { return juce::Colour (0xffe4e4e4); }
+    inline juce::Colour grid()      { return juce::Colour (0xffd9d9d9); }
+    inline juce::Colour frame()     { return juce::Colour (0xff000000); }
+    inline juce::Colour tick()      { return juce::Colour (0xff000000); }
+    inline juce::Colour mark()      { return juce::Colour (0xffed2227); }
+    inline juce::Colour freq1()     { return juce::Colour (0xffed2227); }
+    inline juce::Colour freq2()     { return juce::Colour (0xff145fea); }
+    inline juce::Colour originAxis(){ return juce::Colour (0xff145fea).withAlpha (0.75f); }
+    inline juce::Colour cabinet()   { return juce::Colour (0x80d3def1); }   // rgba(211,222,241,0.5)
+
+    /** Figma px per metre at the default framing: 48 px per 2 m. */
+    constexpr float kDefaultPxPerM = 24.0f;
+
+    /** Frame insets in Figma px. The plan's right inset includes the colour
+        bar's strip, which sits INSIDE the frame but outside the grid. */
+    struct Insets { float l, t, r, b; };
+    constexpr Insets kPlan      { 66.0f, 53.0f, 32.0f, 27.0f };
+    constexpr float  kPlanStrip = 100.0f;
+    constexpr Insets kPane      { 66.0f, 41.0f, 32.0f, 44.0f };
+
+    inline juce::Rectangle<int> inset (juce::Rectangle<int> r, Insets i)
+    {
+        using UiConfig::Scale::fig;
+        return r.withTrimmedLeft (fig (i.l)).withTrimmedTop (fig (i.t))
+                .withTrimmedRight (fig (i.r)).withTrimmedBottom (fig (i.b));
+    }
+
+    /** The base rule, in metres: 2 m, or five feet so Imperial lands on whole feet. */
+    inline double baseStepM() { return Units::imperial() ? 5.0 * 0.3048 : 2.0; }
+
+    /** Grid step for this zoom: the base step, coarsened or refined in 1-2-5
+        steps so rules stay at least @p wantPx apart without going sparse. */
+    inline double gridStepM (double pxPerM, double wantPx)
+    {
+        static constexpr double mult[] = { 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+                                           10.0, 25.0, 50.0, 100.0, 250.0 };
+        for (double k : mult)
+            if (baseStepM() * k * pxPerM >= wantPx)
+                return baseStepM() * k;
+        return baseStepM() * 250.0;
+    }
+
+    /** Label step: a whole multiple of the grid step, so every number sits on a rule. */
+    inline double labelStepM (double gridM, double pxPerM, double wantPx)
+    {
+        for (double n : { 1.0, 2.0, 5.0, 10.0, 20.0 })
+            if (gridM * n * pxPerM >= wantPx)
+                return gridM * n;
+        return gridM * 50.0;
+    }
+
+    /** "-12m", "0(x)"; one decimal once the step drops below a whole unit. */
+    inline juce::String tick (double m, double stepM, const char* axis)
+    {
+        if (std::abs (m) < stepM * 1.0e-3) return juce::String ("0(") + axis + ")";
+        const double v = Units::metresToDisplay (m);
+        const bool frac = Units::metresToDisplay (stepM) < 0.999;
+        return (frac ? juce::String (v, 1) : juce::String ((int) std::lround (v)))
+             + Units::lengthUnit();
+    }
+
+    template <typename Fn>
+    inline void forSteps (double lo, double hi, double step, Fn&& fn)
+    {
+        if (step <= 0.0 || hi < lo) return;
+        const long i0 = (long) std::ceil  ((lo - 1.0e-9) / step);
+        const long i1 = (long) std::floor ((hi + 1.0e-9) / step);
+        for (long i = i0; i <= i1; ++i) fn ((double) i * step);
+    }
+
+    /** Vertical rules across @p f for a horizontal mapping px = x0 + m * ppm. */
+    inline void drawXGrid (juce::Graphics& g, juce::Rectangle<int> f,
+                           float x0, float ppm, double stepM)
+    {
+        if (ppm <= 0.0f) return;
+        const double lo = (f.getX() - x0) / ppm, hi = (f.getRight() - x0) / ppm;
+        forSteps (lo, hi, stepM, [&] (double m)
+        {
+            const int x = juce::roundToInt (x0 + m * ppm);
+            if (x > f.getX() && x < f.getRight())
+                g.drawVerticalLine (x, (float) f.getY(), (float) f.getBottom());
+        });
+    }
+
+    /** Dotted blue rule at x = 0, inside @p f only. */
+    inline void drawOriginAxis (juce::Graphics& g, juce::Rectangle<int> f, float x0)
+    {
+        if (x0 <= f.getX() || x0 >= f.getRight()) return;
+        const float dashes[] = { 2.0f, 3.0f };
+        g.setColour (originAxis());
+        g.drawDashedLine ({ x0, (float) f.getY(), x0, (float) f.getBottom() }, dashes, 2, 1.0f);
+    }
+
+    /** The distance row above a field, centred on each rule; a label is
+        skipped unless its text fits inside the frame. */
+    inline void drawXLabels (juce::Graphics& g, juce::Rectangle<int> f, float x0, float ppm,
+                             double stepM, float figTop, const char* axis = "x")
+    {
+        if (ppm <= 0.0f) return;
+        using UiConfig::Scale::fig;
+        const auto font = Brand::figSemi (12.0f);
+        g.setFont (font);
+        g.setColour (tick());
+        const int h = (int) std::ceil (font.getHeight());
+        const double lo = (f.getX() - x0) / ppm, hi = (f.getRight() - x0) / ppm;
+        forSteps (lo, hi, stepM, [&] (double m)
+        {
+            const int x = juce::roundToInt (x0 + m * ppm);
+            const auto txt = FigPlot::tick (m, stepM, axis);
+            const int tw = font.getStringWidth (txt);
+            if (x - tw / 2 < f.getX() || x + tw / 2 > f.getRight()) return;
+            g.drawText (txt, x - tw / 2 - 2, fig (figTop), tw + 4, h,
+                        juce::Justification::centred, false);
+        });
+    }
+
+    /** One figure down the left of a field, left-aligned at @p figLeft and
+        centred on the rule at @p y. Dropped if it would hang off the frame. */
+    inline void drawYLabel (juce::Graphics& g, juce::Rectangle<int> f, int compH, int y,
+                            const juce::String& s, float figLeft, bool atEdges)
+    {
+        const auto& font = g.getCurrentFont();
+        const int h = (int) std::ceil (font.getHeight());
+        if (atEdges ? (y - h / 2 < 0 || y + h / 2 > compH)
+                    : (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        const int right = f.getX() - 2;
+        const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
+                                                 right - 2 - font.getStringWidth (s)));
+        g.drawText (s, x, y - h / 2, juce::jmax (1, right - x), h,
+                    juce::Justification::centredLeft, false);
+    }
+
+    inline void drawMark (juce::Graphics& g, float x, float y, float sizePx)
+    {
+        g.setColour (mark());
+        g.fillRect (x - sizePx * 0.5f, y - sizePx * 0.5f, sizePx, sizePx);
+    }
+}

@@ -4,6 +4,7 @@
 #include "AppSettings.h"
 #include "MicRingSnap.h"
 #include "SpeakerPropertiesDialog.h"
+#include "FigmaPlotStyle.h"
 #include <cmath>
 #include <algorithm>
 #include <limits>
@@ -3958,12 +3959,15 @@ bool RadiationPatternComponent::fieldIsPainted() const noexcept
 
 juce::Colour RadiationPatternComponent::plotInk() const
 {
-    return fieldIsPainted() ? Brand::white() : Brand::axisLabel();
+    if (fieldIsPainted()) return Brand::white();
+    // The framed sheet is light grey in both themes, so its ink is fixed too.
+    return figmaFrame_ ? Brand::charcoal() : Brand::axisLabel();
 }
 
 juce::Colour RadiationPatternComponent::plotOnInk() const
 {
-    return fieldIsPainted() ? Brand::charcoal() : Brand::plotBg();
+    if (fieldIsPainted()) return Brand::charcoal();
+    return figmaFrame_ ? FigPlot::field() : Brand::plotBg();
 }
 
 void RadiationPatternComponent::setSpeakers (const std::vector<Speaker>& speakers, int selectedIndex)
@@ -4348,7 +4352,46 @@ bool RadiationPatternComponent::showingBemHeatmap() const noexcept
 // ---------------------------------------------------------------------------
 juce::Rectangle<int> RadiationPatternComponent::plotArea() const
 {
+    if (framedPlan())
+        return framedFieldBox().withTrimmedRight (UiConfig::Scale::fig (FigPlot::kPlanStrip));
     return getLocalBounds().withTrimmedRight (kColourbarW + 8);
+}
+
+juce::Rectangle<int> RadiationPatternComponent::framedFieldBox() const
+{
+    return FigPlot::inset (getLocalBounds(), FigPlot::kPlan);
+}
+
+RadiationPatternComponent::XMapping RadiationPatternComponent::planXMapping() const
+{
+    XMapping m;
+    m.pxPerM   = worldScaleX();
+    m.pxAtZero = worldToScreen (0.0f, 0.0f).x;
+    return m;
+}
+
+void RadiationPatternComponent::setElevationXMapping (XMapping m)
+{
+    if (m == elevXMap_) return;
+    elevXMap_ = m;
+    repaint();
+}
+
+std::vector<juce::Point<float>> RadiationPatternComponent::splAlongLine (
+    float alongY, float x0, float x1, int n, bool& absolute) const
+{
+    std::vector<juce::Point<float>> out;
+    absolute = result_.hasAbsoluteSpl;
+    if (! hasData_ || n < 2 || x1 <= x0) return out;
+    out.reserve ((size_t) n);
+    for (int i = 0; i < n; ++i)
+    {
+        const float x = x0 + (x1 - x0) * (float) i / (float) (n - 1);
+        float absDb = 0.0f, relDb = 0.0f;
+        if (sampleSplAtWorld (x, alongY, absDb, relDb))
+            out.push_back ({ x, absolute ? absDb : relDb });
+    }
+    return out;
 }
 
 float RadiationPatternComponent::worldScaleX() const
@@ -4411,6 +4454,19 @@ void RadiationPatternComponent::fitView()
     const float worldPxH = (float) wh * s;
     origin_ = { 0.5f * ((float) pb.getWidth()  - worldPxW),
                 0.5f * ((float) pb.getHeight() - worldPxH) };
+
+    if (framedPlan() && s > 1.0e-6f)
+    {
+        // The Figma framing rather than the whole field: 48 px per 2 m, the
+        // origin 6 m in from the left so the throw runs across the sheet, and
+        // y = 0 on the centre line. Wheel and middle-drag reach the rest.
+        zoom_ = juce::jlimit (minZoomForFit(), kMaxZoom,
+                              UiConfig::Scale::figf (FigPlot::kDefaultPxPerM) / s);
+        constexpr float kLeftEdgeM = -6.0f;
+        origin_.x = -(kLeftEdgeM - (float) result_.worldX0) * worldScaleX();
+        origin_.y = 0.5f * (float) pb.getHeight()
+                  - (float) (result_.worldY0 + result_.worldH) * worldScaleY();
+    }
     viewInit_   = true;
     // An explicit fit is the user asking for the default framing back.
     viewUserAdjusted_ = false;
@@ -4656,6 +4712,12 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     if (! viewInit_)
         fitView();
 
+    if (framedPlan())
+    {
+        paintFramedPlan (g);
+        return;
+    }
+
     const auto pb = plotArea();
 
     if (params_.viewMode == ViewMode::Directivity)
@@ -4708,8 +4770,268 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
 // thing a plan view structurally cannot: how high each cabinet sits and how
 // far it is tilted.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Figma V1.1 Sources plan: the Venue tab's sheet. The heatmap and every mark
+// are drawn exactly as before, inside a framed field with its distance labels
+// outside the frame and the colour bar in a strip at the frame's right end.
+// ---------------------------------------------------------------------------
+void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
+{
+    g.fillAll (Brand::panel());
+    const auto frameBox = framedFieldBox();
+    const auto pb = plotArea();
+    if (pb.getWidth() < 40 || pb.getHeight() < 30) return;
+
+    g.setColour (FigPlot::field());
+    g.fillRect (frameBox);
+
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (pb);
+        if (hasData_ && showField_)
+            drawField (g, pb);
+        drawLayout      (g, pb);
+        drawFramedGrid  (g, pb);
+        drawSplValues   (g, pb);
+        drawSpeakerRays (g, pb);
+        drawSpeakers    (g, pb);
+        drawAnnotations (g, pb);
+        drawMics (g);
+        drawSplProbe (g);
+
+        const auto o = worldToScreen (0.0f, 0.0f);
+        FigPlot::drawMark (g, o.x, o.y, (float) UiConfig::Scale::fig (8.0f));
+    }
+
+    g.setColour (FigPlot::frame());
+    g.drawRect (frameBox, 1);
+    drawFramedLabels (g, pb);
+
+    if (hasData_ && showField_)
+    {
+        using UiConfig::Scale::fig;
+        // Figma: a 16 x 440 bar 19 px past the grid and 8 px under the top,
+        // leaving room below it for the "Rel. SPL" caption.
+        const juce::Rectangle<int> bar (pb.getRight() + fig (19.0f), frameBox.getY() + fig (8.0f),
+                                        fig (16.0f),
+                                        juce::jmax (20, frameBox.getHeight() - fig (40.0f)));
+        drawColourbar (g, frameBox.withLeft (pb.getRight()), bar);
+    }
+
+    drawMarqueeOverlay (g);
+    if (magnifierOn_ && magValid_ && ! magBusy_)
+        drawMagnifier (g);
+
+    const auto map = planXMapping();
+    if (! (map == lastEmittedXMap_))
+    {
+        lastEmittedXMap_ = map;
+        if (onPlanViewChanged)
+        {
+            juce::Component::SafePointer<RadiationPatternComponent> safe (this);
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe != nullptr && safe->onPlanViewChanged) safe->onPlanViewChanged();
+            });
+        }
+    }
+}
+
+void RadiationPatternComponent::drawFramedGrid (juce::Graphics& g, juce::Rectangle<int> pb)
+{
+    if (! showGrid_) return;
+    const double ppm = (double) worldScaleX();
+    if (ppm <= 1.0e-6) return;
+    const double step = FigPlot::gridStepM (ppm, UiConfig::Scale::figf (30.0f));
+
+    // Over a heatmap the light rule is softened so it reads as a grid on
+    // the map rather than a mesh across it.
+    g.setColour (FigPlot::grid().withAlpha (fieldIsPainted() ? 0.55f : 1.0f));
+    const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY());
+    const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom());
+    FigPlot::forSteps (juce::jmin (tl.y, br.y), juce::jmax (tl.y, br.y), step, [&] (double m)
+    {
+        const int y = juce::roundToInt (worldToScreen (0.0f, (float) m).y);
+        if (y > pb.getY() && y < pb.getBottom())
+            g.drawHorizontalLine (y, (float) pb.getX(), (float) pb.getRight());
+    });
+    const auto map = planXMapping();
+    FigPlot::drawXGrid (g, pb, map.pxAtZero, map.pxPerM, step);
+    FigPlot::drawOriginAxis (g, pb, map.pxAtZero);
+}
+
+void RadiationPatternComponent::drawFramedLabels (juce::Graphics& g, juce::Rectangle<int> pb)
+{
+    const double ppm = (double) worldScaleX();
+    if (ppm <= 1.0e-6) return;
+    using UiConfig::Scale::figf;
+    const double grid  = FigPlot::gridStepM (ppm, figf (30.0f));
+    const double label = FigPlot::labelStepM (grid, ppm, figf (40.0f));
+    const auto map = planXMapping();
+
+    // Figma: SemiBold 12, the top row 25 px under the pane, the side column
+    // 24 px in - the Venue tab's numbers.
+    FigPlot::drawXLabels (g, pb, map.pxAtZero, map.pxPerM, label, 25.0f);
+
+    g.setFont (Brand::figSemi (12.0f));
+    g.setColour (FigPlot::tick());
+    const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY());
+    const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom());
+    FigPlot::forSteps (juce::jmin (tl.y, br.y), juce::jmax (tl.y, br.y), label, [&] (double m)
+    {
+        const int y = juce::roundToInt (worldToScreen (0.0f, (float) m).y);
+        FigPlot::drawYLabel (g, pb, getHeight(), y, FigPlot::tick (m, label, "y"), 24.0f, false);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Figma V1.1 Sources elevation: the rig from the side on the Venue sheet. Its
+// horizontal is the plan's own mapping, so a cabinet sits directly under its
+// plan marker; its vertical is exaggerated, 0..16 m filling the pane.
+// ---------------------------------------------------------------------------
+void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
+{
+    using UiConfig::Scale::fig;
+    using UiConfig::Scale::figf;
+
+    g.fillAll (Brand::panel());
+    const auto f = FigPlot::inset (getLocalBounds(), FigPlot::kPane);
+    if (f.getWidth() < 40 || f.getHeight() < 30) return;
+
+    // Horizontal: the plan's mapping when it has published one, else the
+    // same default framing the plan opens with.
+    float x0 = elevXMap_.pxAtZero, ppm = elevXMap_.pxPerM;
+    if (ppm <= 1.0e-6f)
+    {
+        ppm = figf (FigPlot::kDefaultPxPerM);
+        x0  = (float) f.getX() + 6.0f * ppm;
+    }
+    auto hx = [&] (float m) { return x0 + m * ppm; };
+
+    // Vertical: 16 m, or more when the rig is flown higher than that.
+    float topM = 0.0f;
+    for (const auto& s : speakers_)
+        topM = juce::jmax (topM, s.baseHeightM + cabinetFor (s.model).heightM);
+    for (const auto& p : elevPlanes_)
+        topM = juce::jmax (topM, p.z + p.earM);
+    const double step = FigPlot::baseStepM();
+    const double zTop = juce::jmax (16.0, std::ceil ((topM * 1.15) / step) * step);
+    const float  scV  = (float) (f.getHeight() / zTop);
+    auto vy = [&] (float m) { return (float) f.getBottom() - m * scV; };
+
+    g.setColour (FigPlot::field());
+    g.fillRect (f);
+
+    const double gridX  = FigPlot::gridStepM (ppm, figf (30.0f));
+    const double labelX = FigPlot::labelStepM (gridX, ppm, figf (40.0f));
+    const double labelZ = FigPlot::labelStepM (step, scV, figf (14.0f));
+
+    g.setColour (FigPlot::grid());
+    FigPlot::forSteps (0.0, zTop, step, [&] (double m)
+    {
+        const int y = juce::roundToInt (vy ((float) m));
+        if (y > f.getY() && y < f.getBottom())
+            g.drawHorizontalLine (y, (float) f.getX(), (float) f.getRight());
+    });
+    FigPlot::drawXGrid (g, f, x0, ppm, gridX);
+    g.setColour (FigPlot::frame());
+    g.drawRect (f, 1);
+
+    // Figma: the distance row 20 px under the pane, the heights 24 px in.
+    FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f);
+    g.setFont (Brand::figSemi (12.0f));
+    g.setColour (FigPlot::tick());
+    FigPlot::forSteps (0.0, zTop, labelZ, [&] (double m)
+    {
+        FigPlot::drawYLabel (g, f, getHeight(), juce::roundToInt (vy ((float) m)),
+                             FigPlot::tick (m, labelZ, "y"), 24.0f, true);
+    });
+
+    juce::Graphics::ScopedSaveState clip (g);
+    g.reduceClipRegion (f.reduced (1));
+
+    // The deck, as the Venue elevation draws it.
+    g.setColour (juce::Colour (0xff3e3e3e));
+    g.drawLine ((float) f.getX(), vy (0.0f), (float) f.getRight(), vy (0.0f), 2.0f);
+    FigPlot::drawOriginAxis (g, f, x0);
+
+    // Listening planes: a red run at deck height and a dotted line at the
+    // ears, the Venue tab's elevation marks.
+    for (const auto& p : elevPlanes_)
+    {
+        const float a = hx (juce::jmin (p.x0, p.x1)), b = hx (juce::jmax (p.x0, p.x1));
+        const float t = 3.0f;
+        const float zy = juce::jmin (vy (p.z), (float) f.getBottom() - t * 0.5f);
+        g.setColour (FigPlot::mark());
+        g.drawLine (a, zy, b, zy, t);
+        const float msz = (float) fig (8.0f);
+        FigPlot::drawMark (g, a, zy, msz);
+        FigPlot::drawMark (g, b, zy, msz);
+        if (p.earM > 0.0f)
+        {
+            const float dashes[] = { 3.0f, 3.0f };
+            const float ey = vy (p.z + p.earM);
+            g.setColour (FigPlot::mark().withAlpha (0.7f));
+            g.drawDashedLine ({ a, ey, b, ey }, dashes, 2, 1.0f);
+        }
+    }
+
+    // Cabinets to scale on the vertical, so each keeps its shape; tilted
+    // about its own centre. Figma: pale blue body, hairline black edge.
+    std::vector<juce::Rectangle<float>> tags;
+    g.setFont (Brand::figSemi (8.0f));
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& s = speakers_[(size_t) i];
+        const auto cab = cabinetFor (s.model);
+        const float w = cab.depthM * scV, h = cab.heightM * scV;
+        const float cy = vy (s.baseHeightM + 0.5f * cab.heightM);
+        const juce::Rectangle<float> box (hx (s.x) - 0.5f * w, cy - 0.5f * h, w, h);
+        const bool sel = std::find (selectedSpeakers_.begin(), selectedSpeakers_.end(), i)
+                         != selectedSpeakers_.end();
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            if (std::abs (s.tiltDeg) > 0.01f)
+                g.addTransform (juce::AffineTransform::rotation (
+                    juce::degreesToRadians (s.tiltDeg), box.getCentreX(), box.getCentreY()));
+            g.setColour (s.enabled ? FigPlot::cabinet() : FigPlot::cabinet().withMultipliedAlpha (0.5f));
+            g.fillRoundedRectangle (box, 2.0f);
+            g.setColour (sel ? Brand::accent() : FigPlot::frame().withAlpha (s.enabled ? 0.85f : 0.35f));
+            g.drawRoundedRectangle (box, 2.0f, sel ? 1.6f : 0.6f);
+        }
+
+        // Its name beside it, unless that would land on one already drawn -
+        // a flown array is a column of boxes and their names would pile up.
+        const juce::String tag = juce::String (speakerModelTag (s.model)) + "_"
+                               + juce::String (speakerModelOrdinal (speakers_, i));
+        const float tw = (float) g.getCurrentFont().getStringWidth (tag) + 4.0f;
+        const float th = g.getCurrentFont().getHeight();
+        const juce::Rectangle<float> tr (box.getRight() + 3.0f, cy - th * 0.5f, tw, th);
+        bool clash = false;
+        for (const auto& r : tags) if (r.intersects (tr)) { clash = true; break; }
+        if (clash) continue;
+        tags.push_back (tr);
+        g.setColour (FigPlot::tick().withAlpha (s.enabled ? 0.85f : 0.4f));
+        g.drawText (tag, tr, juce::Justification::centredLeft, false);
+    }
+
+    FigPlot::drawMark (g, hx (0.0f), vy (0.0f), (float) fig (8.0f));
+
+    if (speakers_.empty())
+    {
+        g.setColour (FigPlot::tick().withAlpha (0.55f));
+        g.setFont (Brand::figSemi (12.0f));
+        g.drawText ("Add a source to see it in elevation", f, juce::Justification::centred);
+    }
+}
+
 void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangle<int> area)
 {
+    if (figmaFrame_ && params_.viewMode == ViewMode::ElevationSide)
+    {
+        drawFramedElevation (g);
+        return;
+    }
     const bool front = (params_.viewMode == ViewMode::ElevationFront);
     const auto pb = area.reduced (juce::roundToInt (area.getWidth() * 0.06f),
                                   juce::roundToInt (area.getHeight() * 0.09f));
@@ -6150,7 +6472,8 @@ void RadiationPatternComponent::drawOrthoSpacingOverlay (juce::Graphics& g)
 }
 
 // ---------------------------------------------------------------------------
-void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangle<int> bounds)
+void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangle<int> bounds,
+                                               juce::Rectangle<int> barOverride)
 {
     // Figma "Home Screen 1.1": the Rel. SPL bar is 18x750.66 at x=1813,y=163.65
     // inside a canvas of x=340..1920, y=132..979 - i.e. 31.65px below the canvas
@@ -6161,17 +6484,21 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
     // LEFT edge. Anchoring from the right instead pushed the bar back over the
     // heatmap whenever the gutter was narrower than that offset - which is what
     // happens full-screen, where the plot takes more of the width.
-    const int barW = UiConfig::Scale::px (14);                       // -> 18px
-    const int barX = bounds.getX() + UiConfig::Scale::px (4);
-    const int barY = bounds.getY() + UiConfig::Scale::px (24);       // -> 32px
-    const int barH = bounds.getHeight() - UiConfig::Scale::px (73);  // -> 96px
+    const bool placed = ! barOverride.isEmpty();
+    const int barW = placed ? barOverride.getWidth()  : UiConfig::Scale::px (14);       // -> 18px
+    const int barX = placed ? barOverride.getX()      : bounds.getX() + UiConfig::Scale::px (4);
+    const int barY = placed ? barOverride.getY()      : bounds.getY() + UiConfig::Scale::px (24);  // -> 32px
+    const int barH = placed ? barOverride.getHeight() : bounds.getHeight() - UiConfig::Scale::px (73); // -> 96px
     if (barH < 20) return;
 
-    const auto tickCol = Brand::text();                 // white (dark) / charcoal (light)
-    const auto outline = AppSettings::get().isDark()
+    // On the framed sheet the bar sits on light grey whatever the theme.
+    const auto tickCol = placed ? FigPlot::tick() : Brand::text();   // white (dark) / charcoal (light)
+    const auto outline = placed ? juce::Colour (0xffc2c2c2)
+                       : AppSettings::get().isDark()
                              ? juce::Colour (0xffc8c8c8)
                              : Brand::border();
-    g.setFont (Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
+    g.setFont (placed ? Brand::figSemi (12.0f)
+                      : Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
 
     const int tickH = UiConfig::Scale::px (14);
     auto drawTick = [&] (int db, int ty)
@@ -6228,10 +6555,11 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
     }
 
     g.setColour (tickCol);
-    g.setFont (Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
+    g.setFont (placed ? Brand::figSemi (12.0f)
+                      : Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
     // Figma puts the caption just below the bar, starting ~13px right of its
     // left edge (x=1826 for a bar at 1813) and running to the canvas edge.
-    const int capX = barX + UiConfig::Scale::px (10);
+    const int capX = placed ? barX : barX + UiConfig::Scale::px (10);
     g.drawText ("Rel. SPL", capX, barY + barH + UiConfig::Scale::px (6),
                 juce::jmax (10, bounds.getRight() - capX), tickH,
                 juce::Justification::centredLeft);

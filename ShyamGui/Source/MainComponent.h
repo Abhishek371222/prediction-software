@@ -19,6 +19,7 @@
 #include "MicListenPanel.h"
 #include "MicRefLockDialog.h"
 #include "CommandTerminal.h"
+#include "DistanceSplPlot.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent - owns all sub-panels, runs AcousticEngine::compute on a
@@ -151,7 +152,11 @@ private:
     PaneHeaderBar  elevHeader_ { "Elevation view" };
     PaneHeaderBar  splHeader_  { "Distance Vs. dbSPL" };
     RadiationPatternComponent elevationComp_;
+    DistanceSplPlot           splPlot_;
     void syncElevation();
+    /** The elevation and the dB pane take the plan's horizontal mapping and
+        the dB pane re-reads its line from the last solve. */
+    void syncStackedPanes();
     // The Figma's side panel. The old ControlPanel stays in the build,
     // hidden, until its controls have been moved across.
     SourcePanel    sourcePanel_;

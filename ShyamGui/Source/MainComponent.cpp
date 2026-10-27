@@ -347,6 +347,11 @@ MainComponent::MainComponent (ProjectData project)
     sourcePanel_.onEnabled  = [this] (int i, bool on)          { controlPanel_.setSpeakerEnabled (i, on); };
     sourcePanel_.onPolarity = [this] (int i, bool inv)         { controlPanel_.setSpeakerPolarity (i, inv); };
     sourcePanel_.onAddSource = [this] { showAddShapeMenu (&viewBar_.btnAddSource_); };
+    sourcePanel_.onDeleteSource = [this] (int i)
+    {
+        willEdit();
+        controlPanel_.removeSpeakers ({ i });
+    };
     sourcePanel_.onSelectPlane = [this] (int i) { selectedPlane_ = i; refreshSourcePanel(); };
     sourcePanel_.onDeletePlane = [this] (int i) { deletePlane (i); };
     viewBar_.btnAddSource_.onClick = [this]
@@ -361,10 +366,19 @@ MainComponent::MainComponent (ProjectData project)
     addAndMakeVisible (elevHeader_);
     addAndMakeVisible (splHeader_);
     addAndMakeVisible (elevationComp_);
+    addAndMakeVisible (splPlot_);
     // A read-out, not an editor: no tools, no selection, no drag handles.
     elevationComp_.setInterceptsMouseClicks (false, false);
     // Read against the plan above it, so it shares the plan's x span.
     elevationComp_.setElevationFramesWorld (true);
+    // Figma V1.1: all three panes on the Venue tab's sheet, sharing one
+    // horizontal so a distance reads in the same column top to bottom.
+    if (kUseTopMenuBar)
+    {
+        patternComp_.setFigmaFrame (true);
+        elevationComp_.setFigmaFrame (true);
+        patternComp_.onPlanViewChanged = [this] { syncStackedPanes(); };
+    }
     elevHeader_.onFold = [this] (bool) { resized(); };
     splHeader_.onFold  = [this] (bool) { resized(); };
 
@@ -2572,20 +2586,28 @@ void MainComponent::resized()
     // height back to the plan rather than leaving a hole.
     if (kUseTopMenuBar && ! venueMode_)
     {
-        // Figma V1.1: 30 px pane headers; under them the plan (560) and the
-        // elevation (402) share what is left, in that ratio.
+        // Figma V1.1 (Source screen 1.3.1): 30 px pane headers; under them
+        // the plan (560), the elevation (360) and the dB pane (360) share
+        // what is left in that ratio. A folded pane hands its share back.
         const int hdrH   = juce::jmax (18, UiConfig::Scale::fig (30.0f));
-        const int elevH  = elevHeader_.isFolded() ? 0
-                         : juce::jmax (80, (int) ((bodyH - hdrH * 2) * (402.0f / 962.0f)));
-        const int splH   = 0;     // the third pane is a header only for now
-        const int planH  = juce::jmax (120, bodyH - hdrH * 2 - elevH - splH);
+        const int avail  = juce::jmax (0, bodyH - hdrH * 2);
+        const bool elevOpen = ! elevHeader_.isFolded();
+        const bool splOpen  = ! splHeader_.isFolded();
+        const float total = 560.0f + (elevOpen ? 360.0f : 0.0f) + (splOpen ? 360.0f : 0.0f);
+        const int elevH  = elevOpen ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
+        const int splH   = splOpen  ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
+        const int planH  = juce::jmax (120, avail - elevH - splH);
 
         int yy = bodyTop2;
         patternComp_.setBounds (plotX, yy, centreW, planH);           yy += planH;
         elevHeader_.setBounds  (plotX, yy, centreW, hdrH);            yy += hdrH;
         elevationComp_.setBounds (plotX, yy, centreW, elevH);         yy += elevH;
         elevationComp_.setVisible (elevH > 0);
-        splHeader_.setBounds   (plotX, yy, centreW, hdrH);
+        splHeader_.setBounds   (plotX, yy, centreW, hdrH);            yy += hdrH;
+        splPlot_.setBounds     (plotX, yy, centreW, splH);
+        splPlot_.setVisible (splH > 0);
+        elevHeader_.setVisible (true);
+        splHeader_.setVisible (true);
     }
     else if (venueMode_)
     {
@@ -2595,6 +2617,7 @@ void MainComponent::resized()
         elevHeader_.setVisible (false);
         splHeader_.setVisible (false);
         elevationComp_.setVisible (false);
+        splPlot_.setVisible (false);
     }
     else
     {
@@ -2602,6 +2625,7 @@ void MainComponent::resized()
         elevHeader_.setVisible (false);
         splHeader_.setVisible (false);
         elevationComp_.setVisible (false);
+        splPlot_.setVisible (false);
     }
 
     if (! venueMode_)
@@ -2862,7 +2886,9 @@ void MainComponent::refreshCaptionColour()
     // "A speaker exists" is NOT the same question: with Mapping off there are
     // devices and no field, and asking the wrong one left this line white on
     // white. The plot itself knows whether it painted a map, so ask it.
-    const bool overField = patternComp_.fieldIsPainted();
+    // On the framed sheet the caption sits on the pane above the frame, never
+    // on the map, so it keeps the brand red.
+    const bool overField = ! kUseTopMenuBar && patternComp_.fieldIsPainted();
     plotHeader_.getTitleLabel().setColour (juce::Label::textColourId,
                                            overField ? Brand::white()
                                                      : Brand::plotTitle());
@@ -3153,6 +3179,55 @@ void MainComponent::syncElevation()
     SimResult r; { juce::ScopedLock sl (resultLock_); r = lastResult_; }
     elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
     elevationComp_.updateData (r, p);
+
+    // The audience, seen from the side: the Venue tab's listening planes.
+    std::vector<RadiationPatternComponent::ElevPlane> planes;
+    for (const auto& el : venue_)
+    {
+        if (el.type != VenueElement::Type::Listening) continue;
+        RadiationPatternComponent::ElevPlane ep;
+        ep.x0 = ep.x1 = el.pts[0].x;
+        ep.z  = el.pts[0].z;
+        for (const auto& pt : el.pts)
+        {
+            ep.x0 = juce::jmin (ep.x0, pt.x);
+            ep.x1 = juce::jmax (ep.x1, pt.x);
+            ep.z  = juce::jmax (ep.z,  pt.z);
+        }
+        ep.earM = VenueElement::earHeightM (el.height);
+        planes.push_back (ep);
+    }
+    elevationComp_.setElevationPlanes (std::move (planes));
+    syncStackedPanes();
+}
+
+void MainComponent::syncStackedPanes()
+{
+    if (! kUseTopMenuBar) return;
+    const auto map = patternComp_.planXMapping();
+    elevationComp_.setElevationXMapping (map);
+    splPlot_.setXMapping (map.pxAtZero, map.pxPerM);
+    if (map.pxPerM <= 1.0e-6f) return;
+
+    // The visible run of the centre line, starting at the front face of the
+    // rearmost cabinet - inside the boxes the level means nothing.
+    float lo = (0.0f - map.pxAtZero) / map.pxPerM;
+    const float hi = ((float) patternComp_.getWidth() - map.pxAtZero) / map.pxPerM;
+    const auto spk = controlPanel_.getSpeakers();
+    bool any = false;
+    float front = 0.0f;
+    for (const auto& s : spk)
+    {
+        if (! s.enabled) continue;
+        const float f = s.x + 0.5f * cabinetFor (s.model).depthM;
+        front = any ? juce::jmin (front, f) : f;
+        any = true;
+    }
+    if (any) lo = juce::jmax (lo, front);
+
+    bool absolute = true;
+    auto pts = patternComp_.splAlongLine (0.0f, lo, hi, 300, absolute);
+    splPlot_.setCurve (std::move (pts), absolute, lastParams_.frequency, 0.0f);
 }
 
 // The planes, named as the reference tool names them: Plane 1, Plane 2, in
