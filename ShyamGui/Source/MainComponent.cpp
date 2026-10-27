@@ -373,21 +373,8 @@ MainComponent::MainComponent (ProjectData project)
     addChildComponent (venueScroll_);
     venueScroll_.setViewedComponent (&venuePanel_, false);
     venueScroll_.setScrollBarsShown (false, false, true, false);
-    venuePanel_.onAddElement = [this]
-    {
-        juce::PopupMenu m;
-        m.addSectionHeader ("Add element");
-        m.addItem (1, "Audience  (listening)");
-        m.addItem (2, "Stage  (structure)");
-        // Anchored to the + itself. Targeting the panel put the menu against
-        // a component inside a Viewport, where it had nowhere sensible to go.
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewBar_.btnAddSource_),
-                         [this] (int r)
-                         {
-                             if (r == 1) addVenueElement (VenueElement::Type::Listening);
-                             else if (r == 2) addVenueElement (VenueElement::Type::Structure);
-                         });
-    };
+    // The + adds an element straight away; its row's Type box changes it.
+    venuePanel_.onAddElement = [this] { addVenueElement (VenueElement::Type::Listening); };
     venuePanel_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venuePanel_.onDelete = [this] (int i) { deleteVenueElement (i); };
     venueView_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
@@ -3376,11 +3363,16 @@ void MainComponent::refreshVenuePanel()
 void MainComponent::addVenueElement (VenueElement::Type type)
 {
     const bool listening = (type == VenueElement::Type::Listening);
-    const int n = (int) venue_.size() + 1;
+    // "Element n", skipping any number already taken.
+    auto taken = [this] (const juce::String& s)
+    {
+        for (const auto& e : venue_) if (e.name == s) return true;
+        return false;
+    };
+    int n = 1;
+    while (taken ("Element " + juce::String (n))) ++n;
     venue_.push_back (VenueElement::centred (
-        listening ? (venue_.empty() ? juce::String ("Audience")
-                                    : "Audience " + juce::String (n))
-                  : "Stage",
+        "Element " + juce::String (n),
         type,
         listening ? 16.0f : 10.0f,     // width across the venue, metres
         listening ?  8.0f :  6.0f,     // depth

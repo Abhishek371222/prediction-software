@@ -44,6 +44,14 @@ struct VenueElement
     Type         type   = Type::Listening;
     AudHeight    height = AudHeight::Seated;
 
+    /** Ear height above the plane, metres: seated 3.5 ft, standing 5 ft. */
+    static float earHeightM (AudHeight h) noexcept
+    {
+        return h == AudHeight::Standing ? 5.0f * 0.3048f : 3.5f * 0.3048f;
+    }
+    /** Only a seating (listening) plane has an audience height. */
+    bool hasAudHeight() const noexcept { return type == Type::Listening; }
+
     // Four corners, metres. Kept as four free points rather than a rect so the
     // panel's POINT 1..4 fields each have something real to edit - a venue
     // outline is not always square, and the reference tool lets you move one
@@ -284,9 +292,10 @@ protected:
     }
 
     // Labelled in whatever unit the app is set to, not always metres.
-    static juce::String tick (double m)
+    // Zero names its axis: "0(x)" along the top, "0(y)" down the side.
+    static juce::String tick (double m, const char* axis = "y")
     {
-        if (std::abs (m) < 1.0e-9) return "0(y)";
+        if (std::abs (m) < 1.0e-9) return juce::String ("0(") + axis + ")";
         return juce::String ((int) std::lround (Units::metresToDisplay (m)))
              + Units::lengthUnit();
     }
@@ -349,7 +358,7 @@ protected:
             // is, so a rule just inside the frame drew its number half
             // outside it - the row of figures ran wider than the drawing it
             // belongs to. A label is skipped unless the text itself fits.
-            const auto txt = tick (m);
+            const auto txt = tick (m, "x");
             const int  tw  = font.getStringWidth (txt);
             if (x - tw / 2 < f.getX() || x + tw / 2 > f.getRight()) continue;
 
@@ -359,16 +368,23 @@ protected:
     }
 
     // Figma: SemiBold, left-aligned at `figLeft`, centred on the rule at y.
+    // A figure too wide for the column moves left rather than losing letters.
+    // `atEdges` lets the figures on the frame's top and bottom rules show
+    // (the elevation's 0 and its top); otherwise they are left out.
     void drawYLabel (juce::Graphics& g, juce::Rectangle<int> f, int y,
-                     const juce::String& s, float figLeft) const
+                     const juce::String& s, float figLeft, bool atEdges = false) const
     {
-        const int x = UiConfig::Scale::fig (figLeft);
-        const int h = (int) std::ceil (g.getCurrentFont().getHeight());
+        const auto& font = g.getCurrentFont();
+        const int h = (int) std::ceil (font.getHeight());
         // Vertically the same rule as the top row: a figure whose line sits
         // within a half-line of the frame would be drawn half outside it, so
         // it is left out rather than clipped in half.
-        if (y - h / 2 < f.getY() || y + h / 2 > f.getBottom()) return;
-        g.drawText (s, x, y - h / 2, juce::jmax (1, f.getX() - x - 2), h,
+        if (atEdges ? (y - h / 2 < 0 || y + h / 2 > getHeight())
+                    : (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        const int right = f.getX() - 2;
+        const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
+                                                 right - 2 - font.getStringWidth (s)));
+        g.drawText (s, x, y - h / 2, juce::jmax (1, right - x), h,
                     juce::Justification::centredLeft, false);
     }
 
@@ -498,16 +514,41 @@ public:
         }
         else if (grab_ == Grab::Corner)
         {
-            out.pts[grabIdx_].x += (float) dx;
-            out.pts[grabIdx_].y += (float) dy;
+            // The opposite corner stays put and the shape is rebuilt as an
+            // upright rectangle between it and the pointer - moving one point
+            // alone sheared it into a parallelogram.
+            const int i = grabIdx_, o = (i + 2) % 4;
+            const int nA = (i + 1) % 4, nB = (i + 3) % 4;
+            const float cx = start_.pts[i].x + (float) dx;
+            const float cy = start_.pts[i].y + (float) dy;
+            const float ox = start_.pts[o].x, oy = start_.pts[o].y;
+            const auto& c0 = start_.pts[i];
+            const auto& a0 = start_.pts[nA];
+            // The neighbour that sat above/below the corner keeps its x.
+            const bool aSharesX = std::abs (a0.x - c0.x) < std::abs (a0.y - c0.y);
+            out.pts[i].x = cx; out.pts[i].y = cy;
+            out.pts[o].x = ox; out.pts[o].y = oy;
+            out.pts[nA].x = aSharesX ? cx : ox; out.pts[nA].y = aSharesX ? oy : cy;
+            out.pts[nB].x = aSharesX ? ox : cx; out.pts[nB].y = aSharesX ? cy : oy;
         }
         else if (grab_ == Grab::Edge)
         {
-            // An edge carries both of its ends, which is how a rectangle is
-            // resized rather than skewed.
+            // An edge moves straight out or in, carrying both of its ends: a
+            // side edge only in x, a top/bottom edge only in y. That resizes
+            // the rectangle instead of slanting it.
             const int a = grabIdx_, b = (grabIdx_ + 1) % 4;
-            out.pts[a].x += (float) dx; out.pts[a].y += (float) dy;
-            out.pts[b].x += (float) dx; out.pts[b].y += (float) dy;
+            const auto& a0 = start_.pts[a];
+            const auto& b0 = start_.pts[b];
+            if (std::abs (b0.x - a0.x) >= std::abs (b0.y - a0.y))
+            {
+                const float y = (a0.y + b0.y) * 0.5f + (float) dy;
+                out.pts[a].y = y; out.pts[b].y = y;
+            }
+            else
+            {
+                const float x = (a0.x + b0.x) * 0.5f + (float) dx;
+                out.pts[a].x = x; out.pts[b].x = x;
+            }
         }
         else return;
 
@@ -711,7 +752,7 @@ public:
             for (double m = 0.0; m <= kZTop + 1.0e-6; m += st)
             {
                 const int y = juce::roundToInt (zToScreen (m, f, kZTop));
-                drawYLabel (g, f, y, tick (m), 33.0f);
+                drawYLabel (g, f, y, tick (m), 24.0f, true);
             }
         }
 
@@ -742,9 +783,22 @@ public:
                 }
                 const float x0 = xToScreen (lo, f);
                 const float x1 = xToScreen (hi, f);
-                const float zy = zToScreen (z,  f, kZTop);
+                // Kept inside the field so a run on the deck is not clipped
+                // down to a sliver by the frame.
+                const float t  = 3.0f;
+                const float zy = juce::jmin (zToScreen (z, f, kZTop), (float) f.getBottom() - t * 0.5f);
                 g.setColour (markCol().withAlpha (i == sel_ ? 1.0f : 0.45f));
-                g.drawLine (x0, zy, x1, zy, 1.4f);
+                g.drawLine (x0, zy, x1, zy, t);
+
+                // A seating plane also shows where the ears are: a dotted line
+                // the audience height above it.
+                if (e.hasAudHeight())
+                {
+                    const float earM = VenueElement::earHeightM (e.height);
+                    const float ey   = zToScreen (z + earM, f, kZTop);
+                    const float dashes[] = { 3.0f, 3.0f };
+                    g.drawDashedLine ({ x0, ey, x1, ey }, dashes, 2, 2.0f);
+                }
                 if (i == sel_) { drawMark (g, x0, zy, true); drawMark (g, x1, zy, true); }
             }
 

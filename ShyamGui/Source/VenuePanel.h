@@ -164,7 +164,17 @@ public:
         for (size_t i = 0; i < rowY_.size(); ++i)
             if (ev.y >= rowY_[i].getStart() && ev.y < rowY_[i].getEnd())
             {
-                if (onSelect) onSelect ((int) i);
+                const int idx = (int) i;
+                if (onSelect) onSelect (idx);
+                if (ev.mods.isPopupMenu() && onDelete != nullptr)
+                {
+                    juce::PopupMenu m;
+                    m.addItem (1, "Delete");
+                    auto cb = onDelete;
+                    const juce::Rectangle<int> at (ev.getScreenX(), ev.getScreenY(), 1, 1);
+                    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (at),
+                                     [cb, idx] (int r) { if (r == 1) cb (idx); });
+                }
                 return;
             }
     }
@@ -295,7 +305,7 @@ public:
         rules_.push_back ({ y, true });
 
         name_->setEnabled (has);
-        audH_->setEnabled (has);
+        audH_->setEnabled (has && selHasAudH_);
 
         contentH_ = y + fig (12.0f);
     }
@@ -375,6 +385,7 @@ private:
             const auto& s = e[(size_t) sel_];
             headSet_->setTitle ("Element Settings (" + s.name + ")");
             name_->setValue (s.name);
+            selHasAudH_ = s.hasAudHeight();
             audH_->setSelectedId (s.height == VenueElement::AudHeight::Standing ? 2 : 1,
                                   juce::dontSendNotification);
             for (int c = 0; c < 4; ++c)
@@ -387,6 +398,7 @@ private:
         else
         {
             headSet_->setTitle ("Element Settings");
+            selHasAudH_ = false;
             name_->setValue ({});
             for (auto& f : pt_) f->setValue ({});
         }
@@ -398,6 +410,7 @@ private:
     std::vector<std::unique_ptr<Row>> rows_;
     std::unique_ptr<SourcePanel::FieldBox> name_;
     std::unique_ptr<juce::ComboBox>        audH_;
+    bool                                   selHasAudH_ = false;
     VenueComboLnF                          comboLnf_;
     std::vector<std::unique_ptr<SourcePanel::FieldBox>> pt_;
 

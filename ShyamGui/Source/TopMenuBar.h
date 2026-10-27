@@ -85,8 +85,8 @@ public:
             logo_->drawWithin (g, lb, juce::RectanglePlacement::centred, 1.0f);
         }
 
-        // Figma V1.1: every menu cell is outlined #D5D3D3; the open tab is
-        // filled #DFDFDF and outlined #2C2929; Settings is outlined #3D3636.
+        // Every menu cell, Settings included, is outlined #D5D3D3; the open
+        // tab is filled #DFDFDF.
         // The cells are painted UNDER the transparent buttons.
         const auto* active = buttonFor (activeTab_);
         for (auto* b : { &btnFile_, &btnVenue_, &btnSources_, &btnMapping_, &btnExport_ })
@@ -97,10 +97,10 @@ public:
                 g.setColour (kTabActive);
                 g.fillRect (b->getBounds());
             }
-            g.setColour (on ? kTabEdge : kRule);
+            g.setColour (kRule);
             g.drawRect (b->getBounds(), 1);
         }
-        g.setColour (kSettingsEdge);
+        g.setColour (kRule);
         g.drawRect (btnSettings_.getBounds(), 1);
 
         g.setColour (kBound);
@@ -145,9 +145,7 @@ private:
     // Figma V1.1 strip colours.
     const juce::Colour kWhite        { juce::Colour (0xffffffff) };
     const juce::Colour kTabActive    { juce::Colour (0xffdfdfdf) };
-    const juce::Colour kTabEdge      { juce::Colour (0xff2c2929) };
     const juce::Colour kRule         { juce::Colour (0xffd5d3d3) };
-    const juce::Colour kSettingsEdge { juce::Colour (0xff3d3636) };
     const juce::Colour kBound        { juce::Colour (0xff000000) };
 
     const juce::TextButton* buttonFor (MenuId id) const

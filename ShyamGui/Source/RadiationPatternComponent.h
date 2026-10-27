@@ -245,10 +245,11 @@ public:
         enum class PlaneType    { Listening = 0, Virtual = 1, Architectural = 2 };
         enum class ListenHeight { Seated = 0, Standing = 1 };
 
-        /** Ear height, in metres, for each listening posture. */
+        /** Ear height, in metres, for each listening posture: seated 3.5 ft,
+            standing 5 ft - the same as the Venue tab's Aud. Height. */
         static float listenHeightM (ListenHeight h) noexcept
         {
-            return h == ListenHeight::Standing ? 1.7f : 1.2f;
+            return h == ListenHeight::Standing ? 5.0f * 0.3048f : 3.5f * 0.3048f;
         }
         bool         isPlane   = false;
         PlaneType    planeType = PlaneType::Listening;
