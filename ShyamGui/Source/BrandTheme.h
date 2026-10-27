@@ -497,6 +497,18 @@ namespace Brand
     {
         return juce::Font ("Montserrat Bold", height, juce::Font::bold);
     }
+    // A Figma text style: its font-size in Figma px, mapped onto this window.
+    // Figma sizes type by the em, a JUCE Font by its whole line box (about
+    // 1.22 em for Montserrat), so the size goes in as a point height.
+    inline juce::Font fig (float figmaPx, const juce::Font& face)
+    {
+        return face.withPointHeight (juce::jmax (7.0f, UiConfig::Scale::figf (figmaPx)));
+    }
+    inline juce::Font figMed  (float figmaPx) { return fig (figmaPx, techMed (12.0f)); }
+    inline juce::Font figSemi (float figmaPx) { return fig (figmaPx, techSemi (12.0f)); }
+
+    // Top menu strip words - Montserrat Medium 16 in the Figma.
+    inline juce::Font topMenu() { return figMed (16.0f); }
     // Slider value boxes: Regular + 20% letter spacing.
     inline juce::Font sliderNumber (float height)
     {
@@ -879,6 +891,8 @@ namespace Brand
                 return active ? techMed (h)   // Active View = Medium
                               : tech (h);     // Idle View = Regular
             }
+            if (id == "topMenu")
+                return topMenu();
             if (id == "dashAction")
                 return techSemi (UI::scaledFont (Type::dashActionButton));
             if (id == "dashRecent")

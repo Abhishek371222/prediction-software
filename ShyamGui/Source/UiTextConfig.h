@@ -46,7 +46,7 @@ namespace UiConfig
         // fraction of a wider or narrower window. 21:9 squeezed it to 13.3% and
         // 4:3 bloated it to 19.6%. Sizing it from the window width instead
         // holds the design's share at every aspect.
-        constexpr float sidebarWidthFraction = 340.0f / 1920.0f;
+        constexpr float sidebarWidthFraction = 384.0f / 1920.0f;
         // Bounds are in design units, so they scale with the factor. The floor
         // is the design width itself: the control rows (label column + slider +
         // value box) are laid out for it, and dropping under it collapsed the
@@ -54,8 +54,8 @@ namespace UiConfig
         // 1024x768. So this only ever widens the sidebar, never narrows it.
         // The ceiling stops an ultrawide spending its extra width on chrome --
         // the plot is the better home for it.
-        constexpr int   sidebarWidthMin = 258;   // == Layout::sidebarWidth
-        constexpr int   sidebarWidthMax = 310;
+        constexpr int   sidebarWidthMin = 296;   // == Layout::sidebarWidth
+        constexpr int   sidebarWidthMax = 356;
 
         inline float factor = 1.0f;
 
@@ -69,13 +69,33 @@ namespace UiConfig
             return raw;
         }
 
+        // The Figma frames (1920 x 1080) are drawn for a 13"/14" laptop panel.
+        // fig() maps a Figma pixel onto this window: exactly 1:1 on that screen
+        // with the window maximised (1920 wide, ~1009 tall once the title bar
+        // and taskbar are taken), and in proportion on every other screen.
+        // Windows display scaling is already folded in - a 150 % laptop gives
+        // a 1280-wide logical window, 0.667 here, and JUCE draws that x1.5.
+        constexpr float figmaWidth     = 1920.0f;
+        constexpr float figmaHeight    = 1009.0f;
+        constexpr float figmaMinFactor = 0.45f;
+        inline float figFactor = 1.0f;
+
         inline void updateFromWindow (int windowW, int windowH)
         {
             factor = compute (windowW, windowH);
+
+            const float fx = windowW / figmaWidth;
+            const float fy = windowH / figmaHeight;
+            const float f  = fx < fy ? fx : fy;
+            figFactor = f < figmaMinFactor ? figmaMinFactor : (f > maxFactor ? maxFactor : f);
         }
 
         inline int px (int v)     { return (int) ((float) v * factor + 0.5f); }
         inline float px (float v) { return v * factor; }
+
+        /** A Figma length (px in the 1920 x 1080 frame) in this window. */
+        inline int   fig  (float figmaPx) { return (int) (figmaPx * figFactor + 0.5f); }
+        inline float figf (float figmaPx) { return figmaPx * figFactor; }
     }
 
     // -------------------------------------------------------------------------
@@ -260,7 +280,7 @@ namespace UiConfig
         // just enough room for 13px text instead of 9-9.5px.
         // Figma "Home Screen 1.1": sidebar is 340px of a 1920px canvas, i.e.
         // 258 through the 1.317 scale factor the app derives at that size.
-        constexpr int sidebarWidth          = 258;  // -> 340px
+        constexpr int sidebarWidth          = 296;  // -> 384px
         constexpr int sidebarCollapsedWidth = 32;   // rail when sidebar is collapsed
         // Sidebar metrics, all Figma pixels / 1.317 (see 02-layout-left-panel.md):
         //   12px content gutter - 36px input rows - 24px section headers -

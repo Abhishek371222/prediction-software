@@ -942,7 +942,7 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
         // pin, and it was readable at the size it has always been. The mic
         // control that needed to be bigger is the one in the ribbon.
         const float ms = 1.0f;
-        g.setColour (sel ? Brand::accent() : Brand::white());
+        g.setColour (sel ? Brand::accent() : plotInk());
         // Simple mic glyph: capsule + stand
         g.fillEllipse (s.x - 5.0f * ms, s.y - 8.0f * ms, 10.0f * ms, 12.0f * ms);
         g.drawLine (s.x, s.y + 4.0f * ms, s.x, s.y + 10.0f * ms, 1.5f * ms);
@@ -3948,6 +3948,24 @@ void RadiationPatternComponent::ensureWorldExtents() noexcept
         result_.worldH = params_.worldH > 0.0 ? params_.worldH : 100.0;
 }
 
+bool RadiationPatternComponent::fieldIsPainted() const noexcept
+{
+    // showField_ matters as much as the image does: with mapping switched off
+    // the last solve's image is still valid and still cached, but nothing
+    // paints it, so the canvas underneath is the bare page.
+    return hasData_ && showField_ && fieldImage_.isValid();
+}
+
+juce::Colour RadiationPatternComponent::plotInk() const
+{
+    return fieldIsPainted() ? Brand::white() : Brand::axisLabel();
+}
+
+juce::Colour RadiationPatternComponent::plotOnInk() const
+{
+    return fieldIsPainted() ? Brand::charcoal() : Brand::plotBg();
+}
+
 void RadiationPatternComponent::setSpeakers (const std::vector<Speaker>& speakers, int selectedIndex)
 {
     speakers_ = speakers;
@@ -4623,10 +4641,12 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
     if (params_.viewMode == ViewMode::ElevationFront
         || params_.viewMode == ViewMode::ElevationSide)
     {
-        // Same canvas as the plan with mapping off, so switching views does
-        // not switch the drawing from a dark field to a white page - and the
-        // white labels and grid keep the contrast they were designed for.
-        g.fillAll (ColourMaps::sevenColor (0.0f));
+        // The theme's page. This used to be forced to the colour map's own
+        // floor so that white overlays kept their contrast - but the labels
+        // and grid pick their ink from the THEME, which is black on the light
+        // one, and black on a forced-black canvas is how the grid came to be
+        // invisible. Canvas and ink now answer to the same question.
+        g.fillAll (Brand::plotBg());
         drawElevation (g, getLocalBounds());
         drawMarqueeOverlay (g);
         return;
@@ -4652,12 +4672,11 @@ void RadiationPatternComponent::paint (juce::Graphics& g)
         if (hasData_ && showField_)
             drawField (g, pb);   // stretched to fill pb exactly
         else if (! showField_)
-            // Mapping Off still needs a canvas. Painting the colour map's own
-            // floor - the shade a silent field would be - keeps every overlay
-            // (white labels, rays, grid) at the contrast it was designed for;
-            // the bare component background is white in the light theme, which
-            // made them vanish.
-            g.fillAll (ColourMaps::sevenColor (0.0f));
+            // Mapping Off still needs a canvas, and it is the theme's page -
+            // white in the light theme, as the reference drawing has it. Every
+            // mark placed on it goes through plotInk(), so they darken to suit
+            // rather than staying white and disappearing.
+            g.fillAll (Brand::plotBg());
         drawLayout   (g, pb);
         drawGrid     (g, pb);
         drawSplValues (g, pb);     // over the map, under everything placed on it
@@ -4714,16 +4733,33 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
     }
     if (! any) { lo = 0.0f; hi = 10.0f; topM = 3.0f; }
 
-    const float spanH = juce::jmax (4.0f, (hi - lo) * 1.35f);
+    // Stacked under the plan, the pane is read ACROSS to the plan above it, so
+    // it takes the plan's own horizontal span instead of hugging the rig.
+    if (elevFramesWorld_)
+    {
+        const double x0 = params_.worldX0, y0 = params_.worldY0;
+        lo = (float) (front ? y0 : x0);
+        hi = (float) (front ? y0 + params_.worldH : x0 + params_.worldW);
+    }
+
+    const float spanH = juce::jmax (4.0f, (hi - lo) * (elevFramesWorld_ ? 1.0f : 1.35f));
     const float spanV = juce::jmax (3.0f, topM * 1.45f);
     const float cH    = 0.5f * (lo + hi);
 
-    // One scale for both axes, or the cabinets stop being to scale.
-    const float sc = juce::jmin ((float) pb.getWidth()  / spanH,
-                                 (float) pb.getHeight() / spanV);
+    // One scale for both axes, or the cabinets stop being to scale. When the
+    // pane is framed on the world that cannot hold: 160 m of field in a strip
+    // a couple of hundred pixels tall would shrink a 0.6 m cabinet below one
+    // pixel. So the world-framed pane scales the two axes separately and
+    // accepts the vertical exaggeration - which is what ArrayCalc's profile
+    // pane and the reference drawing both do, and why a 12 m trim reads
+    // clearly over an 80 m throw.
+    const float scH = (float) pb.getWidth()  / spanH;
+    const float scV = (float) pb.getHeight() / spanV;
+    const float sc  = elevFramesWorld_ ? scV : juce::jmin (scH, scV);
+    const float scX = elevFramesWorld_ ? scH : sc;
     const float groundY = (float) pb.getBottom();
     const float midX    = (float) pb.getCentreX();
-    auto hx = [&] (float world) { return midX + (world - cH) * sc; };
+    auto hx = [&] (float world) { return midX + (world - cH) * scX; };
     auto vy = [&] (float metres) { return groundY - metres * sc; };
 
     // --- grid + height scale ----------------------------------------------
@@ -4737,7 +4773,9 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
         g.drawHorizontalLine (juce::roundToInt (yy), (float) pb.getX(), (float) pb.getRight());
     }
     g.setColour (Brand::ash());
-    g.setFont (Brand::tech (juce::jmax (9.0f, 11.0f * Brand::UI::scale)));
+    // Bigger than it was: these are the numbers you read the drawing by, and
+    // at 11 px they were the smallest type on the screen.
+    g.setFont (Brand::tech (juce::jmax (11.0f, 13.0f * Brand::UI::scale)));
     for (float m = stepM; m <= spanV; m += stepM)
     {
         const float yy = vy (m);
@@ -4760,9 +4798,24 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
     // Horizontal scale: which way along the rig you are looking, and where.
     {
         const float halfSpan = 0.5f * spanH;
-        const float stepH = halfSpan > 25.0f ? 10.0f : (halfSpan > 10.0f ? 5.0f : 2.0f);
+        // Pick the step from the room on screen, not from the span alone. A
+        // fixed 10 m ceiling was fine for a pane framed on the rig; framed on
+        // an 80 m field it puts seventeen labels in nine hundred pixels and
+        // they run together. Walk the 1/2/5 decades until the gap is readable.
+        float stepH = 1.0f;
+        {
+            const float wantPx = 84.0f;
+            const float mult[3] = { 1.0f, 2.0f, 5.0f };
+            for (int dec = -1; dec <= 4 && stepH * scX < wantPx; ++dec)
+                for (int k = 0; k < 3; ++k)
+                {
+                    const float cand = mult[k] * std::pow (10.0f, (float) dec);
+                    if (cand * scX >= wantPx) { stepH = cand; break; }
+                    stepH = cand;
+                }
+        }
         const float first = std::ceil ((cH - halfSpan) / stepH) * stepH;
-        g.setFont (Brand::tech (juce::jmax (8.0f, 10.0f * Brand::UI::scale)));
+        g.setFont (Brand::tech (juce::jmax (10.0f, 12.0f * Brand::UI::scale)));
         for (float m = first; m <= cH + halfSpan; m += stepH)
         {
             const float xx = hx (m);
@@ -4805,9 +4858,9 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
             g.addTransform (juce::AffineTransform::rotation (
                 juce::degreesToRadians (s.tiltDeg), box.getCentreX(), box.getCentreY()));
 
-        g.setColour (s.enabled ? Brand::white() : Brand::white().withAlpha (0.35f));
+        g.setColour (s.enabled ? plotInk() : plotInk().withAlpha (0.35f));
         g.fillRect (box);
-        g.setColour (sel ? Brand::accent() : Brand::charcoal());
+        g.setColour (sel ? Brand::accent() : plotOnInk());
         g.drawRect (box, sel ? 2.5f : 1.2f);
 
         // Which way it fires, so a tilted box reads unambiguously.
@@ -4818,7 +4871,7 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
             tri.addTriangle (box.getCentreX() - arrow * 0.3f, box.getCentreY() - arrow * 0.5f,
                              box.getCentreX() - arrow * 0.3f, box.getCentreY() + arrow * 0.5f,
                              box.getCentreX() + arrow * 0.5f, box.getCentreY());
-            g.setColour (Brand::charcoal().withAlpha (0.75f));
+            g.setColour (plotOnInk().withAlpha (0.75f));
             g.fillPath (tri);
         }
     }
@@ -4879,6 +4932,7 @@ juce::var RadiationPatternComponent::annotationsToVar (const std::vector<Annotat
         o->setProperty ("planeType",    (int) an.planeType);
         o->setProperty ("listenHgt",    (int) an.listenHgt);
         o->setProperty ("showTag",      an.showTag);
+        o->setProperty ("venueIndex",   an.venueIndex);
 
         // Points go in as a flat x,y,x,y list - half the JSON of an array of
         // objects, and the order is the only thing that carries meaning.
@@ -4938,6 +4992,7 @@ RadiationPatternComponent::annotationsFromVar (const juce::var& v)
         an.listenHgt    = (Annotation::ListenHeight) juce::jlimit (
                               0, (int) Annotation::ListenHeight::Standing,
                               geti ("listenHgt", 0));
+        an.venueIndex   = geti ("venueIndex", -1);
         // Older files have no such property, and a plane in one was drawn with
         // its tag showing, so that is what they keep.
         an.showTag      = getb ("showTag", true);
@@ -5263,7 +5318,7 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
     // screen that surface is the SPL heatmap -- near-black at the dB floor --
     // and the light theme's black ink disappeared into it entirely. White over
     // the heatmap, the theme ink over the bare plot background.
-    const bool         overField = hasData_ && fieldImage_.isValid();
+    const bool         overField = fieldIsPainted();
     const juce::Colour labelInk  = overField ? Brand::white() : Brand::axisLabel();
     const juce::Colour labelHalo = (overField ? juce::Colours::black : Brand::plotBg())
                                        .withAlpha (0.55f);
@@ -5282,21 +5337,44 @@ void RadiationPatternComponent::drawGrid (juce::Graphics& g, juce::Rectangle<int
             fn ((double) i * step);
     };
 
+    // Dashed for the grid, solid and brighter for the two axes through
+    // zero. A grid of solid lines gives the axis nothing to stand out
+    // against, and the axis is the one line on the plan you navigate by.
+    const float dashes[2] = { 3.0f, 4.0f };
+    const juce::Colour axisCol = (overField ? Brand::white() : Brand::axisLabel())
+                                     .withAlpha (overField ? 0.55f : 0.75f);
+
+    auto isZero = [] (double v) { return std::abs (v) < 1.0e-9; };
+
     auto vline = [&] (double xm, bool major)
     {
         auto a = worldToScreen ((float) xm, (float) yMin);
         auto b = worldToScreen ((float) xm, (float) yMax);
+        if (isZero (xm))
+        {
+            g.setColour (axisCol);
+            g.drawLine (a.x, a.y, b.x, b.y, UiConfig::PlotGrid::majorThickness * 1.6f);
+            return;
+        }
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? UiConfig::PlotGrid::majorThickness
-                                             : UiConfig::PlotGrid::minorThickness);
+        g.drawDashedLine ({ a, b }, dashes, 2,
+                          major ? UiConfig::PlotGrid::majorThickness
+                                : UiConfig::PlotGrid::minorThickness);
     };
     auto hline = [&] (double ym, bool major)
     {
         auto a = worldToScreen ((float) xMin, (float) ym);
         auto b = worldToScreen ((float) xMax, (float) ym);
+        if (isZero (ym))
+        {
+            g.setColour (axisCol);
+            g.drawLine (a.x, a.y, b.x, b.y, UiConfig::PlotGrid::majorThickness * 1.6f);
+            return;
+        }
         g.setColour (major ? majorCol : minorCol);
-        g.drawLine (a.x, a.y, b.x, b.y, major ? UiConfig::PlotGrid::majorThickness
-                                             : UiConfig::PlotGrid::minorThickness);
+        g.drawDashedLine ({ a, b }, dashes, 2,
+                          major ? UiConfig::PlotGrid::majorThickness
+                                : UiConfig::PlotGrid::minorThickness);
     };
 
     forTicks (visX0, visX1, minorStep, [&] (double x) { if (! isMajor (x)) vline (x, false); });
@@ -5505,8 +5583,9 @@ void RadiationPatternComponent::drawSpeakerDimensions (juce::Graphics& g,
     const bool roomy = (box.getWidth() >= 26.0f && box.getHeight() >= 26.0f);
     const auto cab = cabinetFor (spk.model);
 
-    const juce::Colour ink  = Brand::white().withAlpha (0.92f * alpha);
-    const juce::Colour thin = Brand::white().withAlpha (0.55f * alpha);
+    // Drawn inside the cabinet body, so it is the inverse of the fill.
+    const juce::Colour ink  = plotOnInk().withAlpha (0.92f * alpha);
+    const juce::Colour thin = plotOnInk().withAlpha (0.55f * alpha);
 
     if (! roomy)
     {
@@ -5616,7 +5695,7 @@ void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
                        && ((drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
                            || (i == selected_) || isSpeakerSelected (i));
         g.setColour (live ? Brand::accent().withAlpha (0.95f)
-                          : Brand::white().withAlpha (lockRays_ ? 0.40f : 0.60f));
+                          : plotInk().withAlpha (lockRays_ ? 0.40f : 0.60f));
         g.drawDashedLine ({ c, end }, dashes, 2, live ? 1.8f : 1.4f);
     }
 }
@@ -5840,11 +5919,11 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
             {
                 const float rx = rm * worldScaleX();
                 const float ry = rm * worldScaleY();
-                g.setColour (Brand::white().withAlpha (0.55f));
+                g.setColour (plotInk().withAlpha (0.55f));
                 g.drawEllipse (c.x - rx, c.y - ry, rx * 2.0f, ry * 2.0f, 1.0f);
                 g.setFont (Brand::mono (juce::jmax (12.5f,
                                Brand::UI::scaledFont (Brand::Type::gridNum))));
-                g.setColour (Brand::white().withAlpha (0.75f));
+                g.setColour (plotInk().withAlpha (0.75f));
                 const juce::String lab = rangeRingLabel (rm);
                 g.drawText (lab,
                             (int) (c.x + rx * 0.707f) + 4,
@@ -5875,7 +5954,10 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                 -juce::degreesToRadians (spk.rotationDeg), c.x, c.y));
 
         // Body fill first so selection glow can sit inside the footprint.
-        g.setColour (Brand::white().withAlpha (0.92f * alpha));
+        // Ink, not white: on the light page a white cabinet on a white
+        // canvas is only its own outline. The reference drawing fills
+        // them solid too.
+        g.setColour (plotInk().withAlpha (0.92f * alpha));
         g.fillRect (box);
 
         if (isSel)

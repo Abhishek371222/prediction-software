@@ -10,6 +10,10 @@
 #include "ProjectData.h"
 #include "LayoutLayer.h"
 #include "UiChrome.h"
+#include "TopMenuBar.h"
+#include "ViewHeaderBar.h"
+#include "SourcePanel.h"
+#include "VenuePanel.h"
 #include "MicReceiver.h"
 #include "FrequencyResponseComponent.h"
 #include "MicListenPanel.h"
@@ -134,6 +138,74 @@ private:
     juce::Viewport            controlViewport_;
     juce::DrawableButton      btnSidebarToggle_ { "sidebarToggle", juce::DrawableButton::ImageFitted };
     PlotHeaderBar             plotHeader_;
+    // The Figma has ONE strip at the top, not a title row and a ribbon
+    // under it. The ribbon is kept in the build and hidden; its actions
+    // live in this bar's five menus.
+    TopMenuBar     topMenu_;
+    // The strip under the menu: the side panel's own header on the left,
+    // the canvas's on the right, split on the sidebar's edge.
+    ViewHeaderBar  viewBar_;
+    // The reference tool stacks a plan over an elevation. The elevation is
+    // the same renderer in ElevationSide mode, fed the same solve - a
+    // display only, so none of its editing is switched on.
+    PaneHeaderBar  elevHeader_ { "Elevation view" };
+    PaneHeaderBar  splHeader_  { "Distance Vs. dbSPL" };
+    RadiationPatternComponent elevationComp_;
+    void syncElevation();
+    // The Figma's side panel. The old ControlPanel stays in the build,
+    // hidden, until its controls have been moved across.
+    SourcePanel    sourcePanel_;
+    void showTopMenu (int which, juce::Component* under);
+    void refreshSourcePanel();
+    void showAddShapeMenu (juce::Component* under);
+    void addQuadrangularAtOrigin();
+    // The source kinds the reference tool's "+" offers. Each lands on
+    // the origin; they differ in how many cabinets they bring and how
+    // those cabinets are arranged.
+    enum class AddSource { Array, PointSource, SubArray };
+    void addSourceAtOrigin (AddSource kind, int count);
+    void promptAddMultipleSources();
+    // The listening planes, in the order they appear in the Sources
+    // list. The index is into THAT list, not into the annotation
+    // vector, which also holds free drawings - planeAnnotIndex maps
+    // one to the other so nothing else has to know the difference.
+    juce::StringArray planeNames() const;
+    int  planeAnnotIndex (int planeIndex) const;
+    void deletePlane (int planeIndex);
+    int  selectedPlane_ = -1;
+
+    // --- the Venue tab ---------------------------------------------------
+    // A tab, not a mode of the plan: it draws the room rather than the rig,
+    // and brings its own left panel with it.
+    bool                      venueMode_ = false;
+    std::vector<VenueElement> venue_;
+    int                       venueSel_ = -1;
+    VenueView                 venueView_;
+    VenuePanel                venuePanel_;
+    juce::Viewport            venueScroll_;
+    void setVenueMode (bool on);
+    void refreshVenuePanel();
+    void addVenueElement (VenueElement::Type type);
+    void setVenueElement (int index, const VenueElement& e);
+    void syncVenueToPlanes();
+    void deleteVenueElement (int index);
+    void venueAction (int index, int action);
+    void setVenueFurnitureHidden (bool hidden);
+    // Measured off ArrayCalc V12: a new array is created with its frame
+    // at 8.00 m. The cabinet pitch and sub spacing are ours - the
+    // reference tool reads them from its own cabinet database, which we
+    // do not carry, so they are stated here rather than hidden in the
+    // arithmetic.
+    static constexpr float kArrayFrameHeightM = 8.0f;
+    static constexpr float kCabinetPitchM     = 0.35f;
+    static constexpr float kSubSpacingM       = 1.2f;
+    static constexpr int   kAddArrayCabinets  = 4;
+    static constexpr int   kAddSubCabinets    = 4;
+    // The menus drive the ribbon's own callbacks, so the app behaves
+    // exactly as before. The ribbon's buttons held the on/off state;
+    // with it hidden, these carry it so the ticks can be right.
+    bool menuRays_ = true, menuInterdist_ = true, menuSplValues_ = false;
+    int  menuMapping_ = 0;
     RadiationPatternComponent patternComp_;
     std::unique_ptr<MicFrequencyResponseWindow> frWindow_;
     std::unique_ptr<MicListenWindow>            listenWindow_;

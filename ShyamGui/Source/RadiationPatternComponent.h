@@ -257,6 +257,14 @@ public:
             "this is a surface" - but it sits over the drawing underneath, so
             it can be switched off per plane from the right-click menu. */
         bool         showTag   = true;
+        /** Which Venue element produced this plane, or -1 for one drawn by
+            hand on the plan.
+
+            The Venue tab owns its elements; the planes here are a PROJECTION
+            of them. Marking them is what lets the projection be re-run without
+            destroying the shapes someone drew directly on the plan - the sync
+            replaces only the rows it put there itself. */
+        int          venueIndex = -1;
 
         /** Which shapes can be a plane: the ones that span or enclose ground.
             A text box is a label and a ruler is a measurement, so neither
@@ -414,6 +422,35 @@ private:
     void zoomAboutCentre (float factor);
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
+public:
+    /** Frame the elevation on the WORLD span rather than on the rig's
+        own bounding box.
+
+        The stacked elevation pane sits directly under the plan and is
+        read against it, so the two have to agree on where 20 m is. Left
+        to itself the elevation fits the cabinets, which for a flown
+        array - every box on one plan position - collapses to the 4 m
+        floor and zooms until the throw is off the pane. The standalone
+        Elevation view still fits the rig, which is what you want when
+        the rig IS the subject, so this is opt-in rather than a change
+        of behaviour. */
+    void setElevationFramesWorld (bool on) { elevFramesWorld_ = on; repaint(); }
+
+    /** Ink for a mark drawn straight onto the plot canvas.
+
+        Over a painted heatmap the canvas is dark whatever the theme, so
+        white reads. Over the bare canvas it is the THEME's page - a
+        near-white sheet in the light theme - so the same white would be
+        drawn white on white. Asking the question in one place is what
+        stops a grid, a ray or a cabinet going invisible. */
+    juce::Colour plotInk() const;
+    /** The inverse: a mark drawn ON TOP of something filled with
+        plotInk(), such as a label inside a cabinet body. */
+    juce::Colour plotOnInk() const;
+    /** True when a heatmap is actually painted under the overlays. */
+    bool fieldIsPainted() const noexcept;
+private:
+    bool elevFramesWorld_ = false;
 
     juce::Rectangle<int> plotArea() const;
     float worldScaleX() const;

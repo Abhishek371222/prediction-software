@@ -1098,6 +1098,78 @@ void ControlPanel::setSpeakerRotation (int index, float deg)
     }
 }
 
+// --- Setters the Figma side panel drives -----------------------------------
+// Each one mirrors setSpeakerRotation: guard the index, write the field, keep
+// the sidebar's own control in step without re-entering, then take the undo
+// snapshot and tell the world. Doing it any other way would leave the old
+// sidebar showing a value the scene no longer has.
+void ControlPanel::setSpeakerTilt (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].tiltDeg = deg;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        tiltSlider_.setValue (deg, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerHeight (int index, float metres)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].baseHeightM = metres;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        heightSlider_.setValue (metres, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerModel (int index, int model)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    if (speakers_[(size_t) index].model == model) return;
+    speakers_[(size_t) index].model = model;
+    willEdit();
+    rebuildSpeakerBox();     // the unit's name carries its model
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerEnabled (int index, bool on)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].enabled = on;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        enabledToggle_.setToggleState (on, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerPolarity (int index, bool inverted)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].polarityInverted = inverted;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        polarityToggle_.setToggleState (inverted, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
 void ControlPanel::setSpeakerPosition (int index, float x, float y)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;

@@ -190,6 +190,14 @@ public:
     /** Plot -> model: the aim line's hide state lives with the speaker, and
         the plot only ever holds a COPY of the speaker list. */
     void setSpeakerAimLine (int index, bool show);
+    // The side panel edits the same fields the sidebar sliders do, so it
+    // goes through the same door: every one of these takes the undo
+    // snapshot and triggers the re-solve, exactly like a slider drag.
+    void setSpeakerTilt     (int index, float deg);
+    void setSpeakerHeight   (int index, float metres);
+    void setSpeakerModel    (int index, int model);
+    void setSpeakerEnabled  (int index, bool on);
+    void setSpeakerPolarity (int index, bool inverted);
     void selectSpeaker (int index);
     /** Sync plot multi-select into the panel (primary drives the editor values). */
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
@@ -343,8 +351,12 @@ private:
     // Measured directivity is always on (Q21S BEM) - no UI toggle.
 
     // Region the next simulation covers. Replaces a hard-coded 100 x 100 m.
-    double worldW_ = 100.0, worldH_ = 100.0;
-    double worldX0_ = 0.0, worldY0_ = 0.0;
+    // The plan is laid out around the ORIGIN, not off a corner: 0,0 is
+    // the middle of the field, and the grid runs negative in both
+    // directions, which is what every coordinate in the reference
+    // drawing is measured from.
+    double worldW_ = 160.0, worldH_ = 120.0;
+    double worldX0_ = -80.0, worldY0_ = -60.0;
 
     // Measurement distance (kept separate per set) -- currently hidden from UI
     juce::Label    measDistLabel_;

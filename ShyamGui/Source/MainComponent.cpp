@@ -28,6 +28,24 @@ static void setModelFrequency (SimParams& p, int model, double hz)
     }
 }
 
+// The Figma's top panel is a single menu strip. The icon ribbon stays in
+// the build - hidden, not deleted - and every action it carried is in one
+// of the five menus.
+static constexpr bool kUseTopMenuBar = true;
+
+// The bottom strip - "Last run" / "Elapsed" and the two export buttons - is
+// hidden, and the height it used to hold goes to the plots above it. The code
+// stays: the buttons still work and are still laid out, they are simply given
+// no room and no visibility, so bringing the strip back is one flag.
+static constexpr bool kShowBottomStrip = false;
+static inline int bottomStripH() noexcept
+{
+    return kShowBottomStrip ? Brand::UI::bottomPanelH : 0;
+}
+// The side panel follows the Figma. The old ControlPanel is untouched and
+// still built - it is just not what the viewport shows.
+static constexpr bool kUseFigmaSidebar = true;
+
 static void styleActionBtn (juce::TextButton& b, const juce::String& txt,
                             juce::Colour bg = Brand::btnIn(), bool active = false)
 {
@@ -87,8 +105,16 @@ MainComponent::MainComponent (ProjectData project)
 
     paramBar_.setVisible (false);   // stats now live in the Help (?) popup
 
-    controlViewport_.setViewedComponent (&controlPanel_, false);
-    controlViewport_.setScrollBarsShown (true, false);
+    // The side panel is the Figma's now; the old one is kept in the
+    // build and simply is not the viewport's child while this flag is on.
+    controlViewport_.setViewedComponent (kUseFigmaSidebar ? (juce::Component*) &sourcePanel_
+                                                          : (juce::Component*) &controlPanel_,
+                                         false);
+    // No visible bar, but the wheel still scrolls: the 3rd argument is
+    // allowVerticalScrollingWithoutScrollbar. A bar down the sidebar's edge
+    // ate width from every row and drew a grey stripe through the panel's
+    // own border.
+    controlViewport_.setScrollBarsShown (false, false, true, false);
     controlViewport_.setScrollBarThickness (8);
     addAndMakeVisible (controlViewport_);
 
@@ -307,6 +333,108 @@ MainComponent::MainComponent (ProjectData project)
 
     // Figma File cluster. Tooltips are set alongside the icons in UiChrome.h
     // ("New Project", "Save Project (Ctrl+S)", ...), these are the actions.
+    // --- the Figma side panel, bound to the scene ----------------------
+    // Picking a cabinet row drops the plane selection, so the list never shows
+    // two chosen rows - and the plane's Delete goes away with it, which is the
+    // point: it belongs to the row you are actually on.
+    sourcePanel_.onSelect   = [this] (int i)                  { selectedPlane_ = -1;
+                                                                controlPanel_.selectSpeaker (i); };
+    sourcePanel_.onPosition = [this] (int i, float x, float y) { controlPanel_.setSpeakerPosition (i, x, y); };
+    sourcePanel_.onRotation = [this] (int i, float d)          { controlPanel_.setSpeakerRotation (i, d); };
+    sourcePanel_.onTilt     = [this] (int i, float d)          { controlPanel_.setSpeakerTilt (i, d); };
+    sourcePanel_.onHeight   = [this] (int i, float m)          { controlPanel_.setSpeakerHeight (i, m); };
+    sourcePanel_.onModel    = [this] (int i, int m)            { controlPanel_.setSpeakerModel (i, m); };
+    sourcePanel_.onEnabled  = [this] (int i, bool on)          { controlPanel_.setSpeakerEnabled (i, on); };
+    sourcePanel_.onPolarity = [this] (int i, bool inv)         { controlPanel_.setSpeakerPolarity (i, inv); };
+    sourcePanel_.onAddSource = [this] { showAddShapeMenu (&viewBar_.btnAddSource_); };
+    sourcePanel_.onSelectPlane = [this] (int i) { selectedPlane_ = i; refreshSourcePanel(); };
+    sourcePanel_.onDeletePlane = [this] (int i) { deletePlane (i); };
+    viewBar_.btnAddSource_.onClick = [this]
+    {
+        // One button, two tabs: it adds whatever the list under it holds.
+        if (venueMode_) { if (venuePanel_.onAddElement) venuePanel_.onAddElement(); }
+        else            showAddShapeMenu (&viewBar_.btnAddSource_);
+    };
+    // Fill it once at startup; after this the scene's own change hooks drive it.
+    refreshSourcePanel();
+
+    addAndMakeVisible (elevHeader_);
+    addAndMakeVisible (splHeader_);
+    addAndMakeVisible (elevationComp_);
+    // A read-out, not an editor: no tools, no selection, no drag handles.
+    elevationComp_.setInterceptsMouseClicks (false, false);
+    // Read against the plan above it, so it shares the plan's x span.
+    elevationComp_.setElevationFramesWorld (true);
+    elevHeader_.onFold = [this] (bool) { resized(); };
+    splHeader_.onFold  = [this] (bool) { resized(); };
+
+    // --- the Venue tab -------------------------------------------------
+    addChildComponent (venueView_);
+    addChildComponent (venueScroll_);
+    venueScroll_.setViewedComponent (&venuePanel_, false);
+    venueScroll_.setScrollBarsShown (false, false, true, false);
+    venuePanel_.onAddElement = [this]
+    {
+        juce::PopupMenu m;
+        m.addSectionHeader ("Add element");
+        m.addItem (1, "Audience  (listening)");
+        m.addItem (2, "Stage  (structure)");
+        // Anchored to the + itself. Targeting the panel put the menu against
+        // a component inside a Viewport, where it had nowhere sensible to go.
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewBar_.btnAddSource_),
+                         [this] (int r)
+                         {
+                             if (r == 1) addVenueElement (VenueElement::Type::Listening);
+                             else if (r == 2) addVenueElement (VenueElement::Type::Structure);
+                         });
+    };
+    venuePanel_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
+    venuePanel_.onDelete = [this] (int i) { deleteVenueElement (i); };
+    venueView_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
+    venueView_.onElementChanged = [this] (int i, VenueElement e) { setVenueElement (i, e); };
+    venueView_.onAction = [this] (int i, int a) { venueAction (i, a); };
+    venuePanel_.onType   = [this] (int i, VenueElement::Type t)
+    { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].type = t;
+        refreshVenuePanel(); syncVenueToPlanes(); markProjectDirty(); } };
+    venuePanel_.onName   = [this] (int i, const juce::String& n)
+    { if (i >= 0 && i < (int) venue_.size() && n.isNotEmpty())
+      { venue_[(size_t) i].name = n; refreshVenuePanel(); markProjectDirty(); } };
+    venuePanel_.onAudHeight = [this] (int i, VenueElement::AudHeight h)
+    { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].height = h;
+        refreshVenuePanel(); syncVenueToPlanes(); markProjectDirty(); } };
+    venuePanel_.onPoint = [this] (int i, int c, int a, float m)
+    {
+        if (i < 0 || i >= (int) venue_.size() || c < 0 || c > 3) return;
+        auto& p = venue_[(size_t) i].pts[c];
+        if (a == 0) p.x = m; else if (a == 1) p.y = m; else p.z = m;
+        refreshVenuePanel();
+        syncVenueToPlanes();
+        markProjectDirty();
+    };
+
+    addAndMakeVisible (topMenu_);
+    addAndMakeVisible (viewBar_);
+    viewBar_.setVisible (kUseTopMenuBar);
+    // The two ray glyphs drive the same handlers the ribbon's did.
+    viewBar_.btnRays_.setClickingTogglesState (true);
+    viewBar_.btnRays_.setToggleState (true, juce::dontSendNotification);
+    viewBar_.btnRays_.onClick = [this]
+    {
+        menuRays_ = viewBar_.btnRays_.getToggleState();
+        if (plotHeader_.onShowRays) plotHeader_.onShowRays (menuRays_);
+    };
+    viewBar_.btnLockRays_.setClickingTogglesState (true);
+    viewBar_.btnLockRays_.onClick = [this]
+    {
+        if (plotHeader_.onLockRays)
+            plotHeader_.onLockRays (viewBar_.btnLockRays_.getToggleState());
+    };
+    topMenu_.setLogo (logo_.get());
+    topMenu_.onMenu = [this] (TopMenuBar::MenuId id, juce::Component* under)
+    {
+        showTopMenu ((int) id, under);
+    };
+
     plotHeader_.onFileNew    = [this] { launchNewProjectInstance(); };
     plotHeader_.onFileOpen   = [this] { openProjectInCurrentWindow(); };
     plotHeader_.onFileSave   = [this] { saveProject(); };
@@ -611,6 +739,7 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.onChanged     = [this]
     {
         commitEdit();
+        refreshSourcePanel();
         // Always push the live speaker list (delete / enable / layout) so markers
         // and active counts update immediately, then recompute field views.
         syncRenderer();
@@ -676,6 +805,7 @@ MainComponent::MainComponent (ProjectData project)
                     lastParams_.bandedSPL = live.bandedSPL;
                     lastParams_.colourmap = live.colourmap;
                     patternComp_.updateData (lastResult_, lastParams_);
+                    syncElevation();
                 }
             }
 
@@ -694,6 +824,7 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setSpeakers (controlPanel_.getSpeakers(), idx);
         patternComp_.selectOnlySpeaker (idx);
         patternComp_.repaint();
+        refreshSourcePanel();
     };
     controlPanel_.onAddSpeakerRequest = [this]
     {
@@ -836,6 +967,10 @@ MainComponent::MainComponent (ProjectData project)
     controlPanel_.applyProject (project_);
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
+    venue_    = VenueElement::listFromVar (project_.venue);
+    venueSel_ = venue_.empty() ? -1 : 0;
+    refreshVenuePanel();
+    syncVenueToPlanes();
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);
@@ -973,6 +1108,7 @@ ProjectData MainComponent::currentProject() const
     // Drawings travel with the project now. They used to exist only in the
     // undo snapshot, so every shape, ruler and text box was lost on save.
     p.drawings = RadiationPatternComponent::annotationsToVar (patternComp_.getAnnotations());
+    p.venue    = VenueElement::listToVar (venue_);
     p.rangeRings = rangeRingsToVar (patternComp_.rangeRings());
     p.rangesVisible = patternComp_.rangesVisible();
     return p;
@@ -1948,7 +2084,14 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 
     // Unit-system change: re-render the read-out panels with converted values.
     {
+        // controlPanel_ is the LEGACY sidebar and is hidden behind the Figma
+        // one, so refreshing only it left every visible field still reading
+        // the old unit. Both current panels have to be told as well.
         controlPanel_.refreshUnits();
+        sourcePanel_.refreshUnits();
+        refreshSourcePanel();
+        refreshVenuePanel();
+        venueView_.repaint();
         plotHeader_.refreshUnits();
         patternComp_.refreshUnits();
         updateSettingsBar();
@@ -1980,9 +2123,10 @@ void MainComponent::toggleSidebar()
 
 int MainComponent::effectiveSidebarWidth() const
 {
-    return AppSettings::get().sidebarCollapsed()
-               ? Brand::UI::sidebarCollapsedW
-               : Brand::UI::sidebarW;
+    if (AppSettings::get().sidebarCollapsed())
+        return Brand::UI::sidebarCollapsedW;
+    // Figma V1.1: the panel is 400 wide and the canvas starts at x = 400.
+    return kUseFigmaSidebar ? UiConfig::Scale::fig (400.0f) : Brand::UI::sidebarW;
 }
 
 void MainComponent::syncSidebarToggleChrome()
@@ -2082,12 +2226,13 @@ void MainComponent::paint (juce::Graphics& g)
 
     const int W = getWidth();
     const int H = getHeight();
-    const int headerH = Brand::UI::headerBandH;
-    const int bottomH = Brand::UI::bottomPanelH;
+    const int headerH = kUseTopMenuBar ? topMenu_.preferredHeight() : Brand::UI::headerBandH;
+    const int bottomH = bottomStripH();
     const int sideW = effectiveSidebarWidth();
     const int plotX = sideW;
     const int centreW = juce::jmax (0, W - plotX);
-    const int bodyTop2 = headerH + Brand::UI::plotHeaderH;
+    const int bodyTop2 = headerH + (kUseTopMenuBar ? viewBar_.preferredHeight()
+                                                  : Brand::UI::plotHeaderH);
     const int bottomTop = H - bottomH;
 
     // Figma: flat regions, flush to each other - no rounded cards and no gaps.
@@ -2102,8 +2247,10 @@ void MainComponent::paint (juce::Graphics& g)
         g.fillRect (plotX, bottomTop, centreW, bottomH);
     }
 
-    // Atomik wordmark, top-left of the header band (ATOMIK only).
-    Brand::drawLogo (g, logo_.get(), Brand::headerLogoBounds ((float) headerH));
+    // The wordmark and the project name are the menu strip's own, drawn
+    // by TopMenuBar so they sit in its cells rather than floating.
+    if (! kUseTopMenuBar)
+        Brand::drawLogo (g, logo_.get(), Brand::headerLogoBounds ((float) headerH));
 }
 
 void MainComponent::paintOverChildren (juce::Graphics& g)
@@ -2113,11 +2260,12 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     if (W <= 0 || H <= 0)
         return;
 
-    const int headerH = Brand::UI::headerBandH;
-    const int bottomH = Brand::UI::bottomPanelH;
+    const int headerH = kUseTopMenuBar ? topMenu_.preferredHeight() : Brand::UI::headerBandH;
+    const int bottomH = bottomStripH();
     const int sideW = effectiveSidebarWidth();
     const int plotX = sideW;
-    const int bodyTop2 = headerH + Brand::UI::plotHeaderH;
+    const int bodyTop2 = headerH + (kUseTopMenuBar ? viewBar_.preferredHeight()
+                                                  : Brand::UI::plotHeaderH);
     const int bottomTop = H - bottomH;
 
     // Figma separates regions with hairline rules, not card outlines:
@@ -2134,6 +2282,94 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
         g.drawHorizontalLine (bottomTop, (float) plotX, (float) W);
 }
 
+// ---------------------------------------------------------------------------
+// The five menus behind the top strip. Every item drives the SAME callback the
+// icon ribbon drove, so nothing changed about what the app does - only where
+// you reach it from. The ribbon held the on/off state in its buttons; hidden,
+// it cannot, so the flags above carry it and the ticks follow them.
+void MainComponent::showTopMenu (int which, juce::Component* under)
+{
+    juce::PopupMenu m;
+
+    switch (which)
+    {
+        case TopMenuBar::File:
+            m.addItem (101, "New project");
+            m.addItem (102, "Open project...");
+            m.addSeparator();
+            m.addItem (103, "Save");
+            m.addItem (104, "Save as...");
+            break;
+
+        case TopMenuBar::Venue:
+            // Venue is a TAB. Clicking it switches the workspace rather than
+            // dropping a menu, which is why this returns before showing one.
+            setVenueMode (true);
+            return;
+
+        case TopMenuBar::Sources:
+            setVenueMode (false);
+            m.addItem (301, "Show aiming rays", true, menuRays_);
+            break;
+
+        case TopMenuBar::Mapping:
+            m.addItem (401, "SPL mapping", true, menuMapping_ == 1);
+            m.addItem (402, "Mapping off", true, menuMapping_ == 0);
+            m.addSeparator();
+            m.addItem (410, "Show interdistance", true, menuInterdist_);
+            m.addItem (411, "Show values", menuMapping_ == 1, menuSplValues_);
+            break;
+
+        case TopMenuBar::Export:
+            m.addItem (501, "Export...");
+            break;
+
+        case TopMenuBar::Settings:
+            m.addItem (601, "Preferences...");
+            break;
+    }
+
+    auto fire = [] (const std::function<void()>& f) { if (f) f(); };
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (under),
+                     [this, fire] (int r)
+    {
+        switch (r)
+        {
+            case 101: fire (plotHeader_.onFileNew);    break;
+            case 102: fire (plotHeader_.onFileOpen);   break;
+            case 103: fire (plotHeader_.onFileSave);   break;
+            case 104: fire (plotHeader_.onFileSaveAs); break;
+            case 501: fire (plotHeader_.onFileExport); break;
+
+            case 201: patternComp_.setTool (RadiationPatternComponent::Tool::Select); break;
+            case 202: patternComp_.setTool (RadiationPatternComponent::Tool::Pan);    break;
+            case 203: patternComp_.resetView();                                       break;
+
+            case 301: menuRays_ = ! menuRays_;
+                      if (plotHeader_.onShowRays) plotHeader_.onShowRays (menuRays_);
+                      break;
+
+            case 401:
+            case 402: menuMapping_ = (r == 401 ? 1 : 0);
+                      if (plotHeader_.onMappingType) plotHeader_.onMappingType (menuMapping_);
+                      break;
+
+            case 410: menuInterdist_ = ! menuInterdist_;
+                      if (plotHeader_.onShowInterdistance) plotHeader_.onShowInterdistance (menuInterdist_);
+                      break;
+
+            case 411: menuSplValues_ = ! menuSplValues_;
+                      if (plotHeader_.onShowSplValues) plotHeader_.onShowSplValues (menuSplValues_);
+                      break;
+
+            case 601: openPreferences(); break;
+
+            default: break;
+        }
+    });
+}
+
 void MainComponent::resized()
 {
     const int W = getWidth();
@@ -2144,10 +2380,10 @@ void MainComponent::resized()
     viewHeader_.setFont (exportHeader_.getFont());
     terminalHeader_.setFont (exportHeader_.getFont());
 
-    const int titleH    = Brand::UI::headerBandH;
+    const int titleH    = kUseTopMenuBar ? topMenu_.preferredHeight() : Brand::UI::headerBandH;
     const int paramH    = Brand::UI::paramBarH;
     const int plotHdrH  = Brand::UI::plotHeaderH;
-    const int bottomH   = Brand::UI::bottomPanelH;
+    const int bottomH   = bottomStripH();
     const int statusH   = Brand::UI::statusStripH;
     const int pad       = UiConfig::Scale::px (8);   // gap between panel cards
     const int innerPad  = UiConfig::Scale::px (4);   // inset inside rounded shells
@@ -2241,8 +2477,11 @@ void MainComponent::resized()
     // above both the sidebar and the canvas, like one continuous two-row header -
     // instead of sitting only above the canvas. Sidebar + canvas share a lower
     // top, below that full-width strip.
-    const int bodyTop        = titleH;            // ribbon sits flush under the title row
-    const int toolbarStripH  = plotHdrH;
+    const int bodyTop        = titleH;            // the menu strip is the whole header now
+    // The icon ribbon is hidden behind the menu bar, so it claims no
+    // height - the sidebar and the canvas start straight under the strip.
+    const int viewHdrH       = kUseTopMenuBar ? viewBar_.preferredHeight() : 0;
+    const int toolbarStripH  = kUseTopMenuBar ? viewHdrH : plotHdrH;
     const int bodyTop2       = bodyTop + toolbarStripH;   // flush, no gap (Figma y=132)
     const int bottomTop  = H - bottomH;
     const int bodyH      = juce::jmax (80, bottomTop - bodyTop2);
@@ -2276,11 +2515,31 @@ void MainComponent::resized()
         // reserved strip just left a band of empty grey above "1. FREQUENCY".
         const int panelH = juce::jmax (40, sidebarH);
         controlViewport_.setBounds (sideX, bodyTop2, sideW, panelH);
-        const int innerW = sideW - controlViewport_.getScrollBarThickness();
-        controlPanel_.setSize (innerW, panelH);
-        if (controlPanel_.getContentHeight() > panelH)
-            controlPanel_.setSize (innerW, controlPanel_.getContentHeight());
+        // The panel runs to the sidebar's own edge. Reserving the scroll
+        // bar's width unconditionally left a dead strip down the right of the
+        // panel - the mute marks and the load bar stopped short of the rule.
+        // The bar only costs width when it is actually needed.
+        const int barW = controlViewport_.getScrollBarThickness();
+        const int innerW = sideW - (kUseFigmaSidebar ? 0 : barW);
+        if (kUseFigmaSidebar)
+        {
+            // Full width whether it scrolls or not: the bar is hidden now, so
+            // a taller-than-the-view panel no longer has to make room for one.
+            sourcePanel_.setSize (innerW, panelH);
+            if (sourcePanel_.getContentHeight() > panelH)
+                sourcePanel_.setSize (innerW, sourcePanel_.getContentHeight());
+        }
+        else
+        {
+            controlPanel_.setSize (innerW, panelH);
+            if (controlPanel_.getContentHeight() > panelH)
+                controlPanel_.setSize (innerW, controlPanel_.getContentHeight());
+        }
 
+        // The Figma has no hamburger over the panel - it was landing on the
+        // first source row's mute mark. Folding the panel is the strip's own
+        // chevron now, so the button is hidden rather than moved.
+        btnSidebarToggle_.setVisible (! kUseFigmaSidebar);
         btnSidebarToggle_.setBounds (sideX + sideW - burger - burgerPad,
                                      bodyTop2 + burgerPad,
                                      burger, burger);
@@ -2291,9 +2550,75 @@ void MainComponent::resized()
     // and no rounded card, closed by a hairline along its bottom edge (drawn
     // in PlotHeaderBar::paint). Info/Settings/Help are this ribbon's own
     // "Help" cluster (see PlotHeaderBar::setHelpIcons / resized()).
-    plotHeader_.setBounds (0, titleH, W, toolbarStripH);
+    plotHeader_.setBounds (0, titleH, W, juce::jmax (1, plotHdrH));
+    plotHeader_.setVisible (! kUseTopMenuBar);
+    if (kUseTopMenuBar)
+    {
+        topMenu_.setSidebarWidth (sideW);
+        topMenu_.setBounds (0, 0, W, titleH);
+        topMenu_.toFront (false);
+        viewBar_.setSidebarWidth (sideW);
+        viewBar_.setBounds (0, titleH, W, viewHdrH);
+        viewBar_.toFront (false);
+    }
 
-    patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
+    // The Venue tab takes over the centre and the sidebar wholesale. Doing it
+    // here, before the Sources stack is placed, keeps the two from fighting
+    // over the same rectangle.
+    venueView_.setVisible (venueMode_);
+    venueScroll_.setVisible (venueMode_);
+    // The plan's caption and its export footer belong to the Sources tab.
+    // They are MainComponent's children drawn over the canvas, so they do not
+    // go away with patternComp_ and have to be told.
+    plotHeader_.getTitleLabel().setVisible (! venueMode_);
+    setVenueFurnitureHidden (venueMode_);
+    if (venueMode_)
+    {
+        venueView_.setBounds (plotX, bodyTop2, centreW, bodyH);
+        venueScroll_.setBounds (0, bodyTop2, sideW, bodyH);
+        venuePanel_.setSize (juce::jmax (10, sideW),
+                             juce::jmax (bodyH, venuePanel_.getContentHeight()));
+    }
+
+    // The centre is a stack: the plan, then the elevation under its own
+    // header, then the SPL-vs-distance header. Folding a pane gives its
+    // height back to the plan rather than leaving a hole.
+    if (kUseTopMenuBar && ! venueMode_)
+    {
+        // Figma V1.1: 30 px pane headers; under them the plan (560) and the
+        // elevation (402) share what is left, in that ratio.
+        const int hdrH   = juce::jmax (18, UiConfig::Scale::fig (30.0f));
+        const int elevH  = elevHeader_.isFolded() ? 0
+                         : juce::jmax (80, (int) ((bodyH - hdrH * 2) * (402.0f / 962.0f)));
+        const int splH   = 0;     // the third pane is a header only for now
+        const int planH  = juce::jmax (120, bodyH - hdrH * 2 - elevH - splH);
+
+        int yy = bodyTop2;
+        patternComp_.setBounds (plotX, yy, centreW, planH);           yy += planH;
+        elevHeader_.setBounds  (plotX, yy, centreW, hdrH);            yy += hdrH;
+        elevationComp_.setBounds (plotX, yy, centreW, elevH);         yy += elevH;
+        elevationComp_.setVisible (elevH > 0);
+        splHeader_.setBounds   (plotX, yy, centreW, hdrH);
+    }
+    else if (venueMode_)
+    {
+        // Parked, not destroyed - the Sources tab is exactly as it was when
+        // you come back to it.
+        patternComp_.setVisible (false);
+        elevHeader_.setVisible (false);
+        splHeader_.setVisible (false);
+        elevationComp_.setVisible (false);
+    }
+    else
+    {
+        patternComp_.setBounds (plotX, bodyTop2, centreW, bodyH);
+        elevHeader_.setVisible (false);
+        splHeader_.setVisible (false);
+        elevationComp_.setVisible (false);
+    }
+
+    if (! venueMode_)
+        patternComp_.setVisible (true);
 
     // Top-right of the field, inset clear of the colour bar on the far right.
     if (UiConfig::showViewSwitcher)
@@ -2375,6 +2700,10 @@ void MainComponent::resized()
         erx -= btnGap + btnW;
         btnExportPNG_.setBounds (erx, btnTop, btnW, btnH);
 
+        statusStrip_.setVisible (kShowBottomStrip && ! venueMode_);
+        btnExportPNG_.setVisible (kShowBottomStrip && ! venueMode_);
+        btnExportCSV_.setVisible (kShowBottomStrip && ! venueMode_);
+
         const int infoX = plotX + UiConfig::Scale::px (L::bottomRunInfoLeft);
         const int infoH = UiConfig::Scale::px (L::bottomRunInfoLineGap) * 2;
         const int infoY = bottomTop + (bottomH - infoH) / 2;
@@ -2441,6 +2770,7 @@ void MainComponent::run()
 void MainComponent::applyResult (const SimResult& r)
 {
     patternComp_.updateData (r, lastParams_);
+    syncElevation();
     syncRenderer();
     updateSettingsBar();
     refreshFrequencyResponse();
@@ -2537,11 +2867,15 @@ void MainComponent::syncTextControls()
 
 void MainComponent::refreshCaptionColour()
 {
-    // With no devices the canvas is the pale empty grid and the brand red
-    // reads well on it. As soon as a speaker is placed the field renders
-    // underneath -- near-black at the dB floor -- and red on that is as good
-    // as invisible, so the caption switches to white.
-    const bool overField = lastResult_.activeSpeakers > 0;
+    // Over a painted field -- near-black at the dB floor -- the brand red is
+    // as good as invisible, so the caption switches to white. Over the bare
+    // canvas it stays red, because that canvas is the theme's page and is a
+    // white sheet in the light theme.
+    //
+    // "A speaker exists" is NOT the same question: with Mapping off there are
+    // devices and no field, and asking the wrong one left this line white on
+    // white. The plot itself knows whether it painted a map, so ask it.
+    const bool overField = patternComp_.fieldIsPainted();
     plotHeader_.getTitleLabel().setColour (juce::Label::textColourId,
                                            overField ? Brand::white()
                                                      : Brand::plotTitle());
@@ -2655,6 +2989,420 @@ void MainComponent::showDrawColourPicker()
                                             nullptr);
 }
 
+// The panel holds no state of its own, so it is re-read from the scene
+// whenever the scene changes - the same trigger the plan and the solver use.
+// The "+" on the Sources header. These four items are ArrayCalc V12's own Add
+// menu, read off the running application rather than guessed from a video:
+// Add array / Add point sources / Add SUB array / Add multiple sources. The
+// Quadrangular below the rule is OURS - the reference tool adds listening
+// planes from its Venue view, not from here, but the plan is the only place we
+// draw one, so it stays within reach.
+void MainComponent::showAddShapeMenu (juce::Component* under)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Add");
+    m.addItem (1, "Add array");
+    m.addItem (2, "Add point sources");
+    m.addItem (3, "Add SUB array");
+    m.addItem (4, "Add multiple sources...");
+    m.addSeparator();
+    m.addItem (5, "Quadrangular");
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (under),
+                     [this] (int r)
+                     {
+                         switch (r)
+                         {
+                             case 1: addSourceAtOrigin (AddSource::Array,       kAddArrayCabinets); break;
+                             case 2: addSourceAtOrigin (AddSource::PointSource, 1);                 break;
+                             case 3: addSourceAtOrigin (AddSource::SubArray,    kAddSubCabinets);   break;
+                             case 4: promptAddMultipleSources();                                    break;
+                             case 5: addQuadrangularAtOrigin();                                     break;
+                             default: break;
+                         }
+                     });
+}
+
+// Everything a source brings lands on the ORIGIN, which is the behaviour that
+// matters here: ArrayCalc creates a new source at Position x 0.00 m, y 0.00 m
+// with a frame height of 8.00 m and 0 degrees of horizontal aiming, then
+// leaves you to drag or type it into place. Measured from the running V12.
+//
+// The three kinds differ only in what they put at that origin:
+//   Array        a flown stack - ONE plan position, cabinets going down from
+//                the frame height, so it reads as a column in the elevation
+//                and a single marker in the plan.
+//   PointSource  one cabinet on the deck.
+//   SubArray     a ground row spread along y, the way the subs sit in the
+//                reference drawing.
+//
+// Both graphs pick this up for free: the plan and the elevation are fed from
+// the same speaker list through syncElevation(), so a source cannot appear in
+// one and be missing from the other.
+void MainComponent::addSourceAtOrigin (AddSource kind, int count)
+{
+    count = juce::jmax (1, count);
+
+    const bool  isSub = (kind == AddSource::SubArray);
+    const int   model = isSub ? 0 : controlPanel_.getBrowsedModel();
+
+    willEdit();
+
+    const int before = (int) controlPanel_.getSpeakers().size();
+    int added = 0;
+
+    for (int i = 0; i < count; ++i)
+    {
+        // A flown array and a point source are one plan position whatever
+        // their cabinet count; a SUB row spreads along y about the origin.
+        const float x = 0.0f;
+        const float y = isSub ? (float) ((double) i - (count - 1) * 0.5) * kSubSpacingM
+                              : 0.0f;
+
+        if (! controlPanel_.addSpeakerAt (x, y))
+            break;                      // the scene cap, reported below
+
+        const int idx = before + added;
+        controlPanel_.setSpeakerModel    (idx, model);
+        controlPanel_.setSpeakerRotation (idx, 0.0f);   // Hor. aiming 0 deg
+        controlPanel_.setSpeakerTilt     (idx, 0.0f);
+        // Cabinets hang downwards from the frame, so the first is highest.
+        controlPanel_.setSpeakerHeight   (idx, kind == AddSource::Array
+                                                   ? juce::jmax (0.0f, kArrayFrameHeightM
+                                                                           - (float) i * kCabinetPitchM)
+                                                   : 0.0f);
+        ++added;
+    }
+
+    if (added == 0)
+    {
+        commitEdit();
+        juce::NativeMessageBox::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon, "Sources full",
+            "This scene already holds the maximum number of cabinets, so the "
+            "source was not added.");
+        return;
+    }
+
+    // ArrayCalc selects what it has just made, and so do we - the positioning
+    // and rigging sections below the list retitle to the new source.
+    controlPanel_.selectSpeaker (before);
+    refreshSourcePanel();
+    commitEdit();
+
+    if (added < count)
+        juce::NativeMessageBox::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon, "Source added short",
+            "Only " + juce::String (added) + " of " + juce::String (count)
+                + " cabinets fitted - the scene is at its cabinet limit.");
+}
+
+// "Add multiple sources" asks how many, as the reference tool does, rather
+// than picking a number on your behalf.
+void MainComponent::promptAddMultipleSources()
+{
+    auto* aw = new juce::AlertWindow ("Add multiple sources",
+                                      "How many point sources?",
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("n", "4", "Count:");
+    aw->addButton ("Add",    1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->enterModalState (true, juce::ModalCallbackFunction::create (
+        [this, aw] (int r)
+        {
+            std::unique_ptr<juce::AlertWindow> owned (aw);
+            const int n = aw->getTextEditor ("n")->getText().getIntValue();
+            if (r == 1 && n > 0)
+                addSourceAtOrigin (AddSource::PointSource, n);
+        }), false);
+}
+
+// Every new plane lands on the origin, as the reference tool does: 0,0 is the
+// one place on the plan you can always find, and the shape is then dragged to
+// where it belongs rather than hunted for off-screen.
+void MainComponent::addQuadrangularAtOrigin()
+{
+    auto all = patternComp_.getAnnotations();
+
+    RadiationPatternComponent::Annotation a;
+    a.kind         = RadiationPatternComponent::Annotation::Kind::Rectangle;
+    a.construction = RadiationPatternComponent::Construction::RectTwoCorners;
+    a.space        = RadiationPatternComponent::AnnotSpace::World;
+    a.closed       = true;
+    a.colour       = juce::Colour (0xffe0a419);
+    a.fillAlpha    = 0.35f;
+    a.thicknessPx  = 2.0f;
+    a.isPlane      = true;
+    a.planeType    = RadiationPatternComponent::Annotation::PlaneType::Listening;
+    // ArrayCalc defaults a new plane to 1.70 m ears - standing, not seated.
+    a.listenHgt    = RadiationPatternComponent::Annotation::ListenHeight::Standing;
+    a.showTag      = true;
+    // Measured from ArrayCalc V12 itself: a new Quadrangular is 10 m deep by
+    // 10 m wide with its FRONT-CENTRE on the origin, running in +x -
+    // P0 (front, cntr) 0,0, P1 (0,5), P2 (10,5), P3 (10,-5). Not centred on
+    // the origin, which is what it looks like until you read the numbers.
+    a.pts = { { 0.0f, -5.0f }, { 10.0f, 5.0f } };
+
+    willEdit();                       // the undo snapshot, as any edit takes
+    all.push_back (a);
+    patternComp_.setAnnotations (std::move (all));
+    patternComp_.repaint();
+    // It goes to the bottom of the Sources list and is selected there, so the
+    // thing you just made is the thing the panel is talking about - and its
+    // Delete is one click away if it was a mistake.
+    selectedPlane_ = planeNames().size() - 1;
+    refreshSourcePanel();
+    commitEdit();
+}
+
+// The elevation pane shows the SAME solve as the plan, drawn from the side.
+// It is fed from here rather than keeping its own copy, so it can never show a
+// rig the plan does not.
+void MainComponent::syncElevation()
+{
+    if (! kUseTopMenuBar) return;
+    SimParams p = lastParams_;
+    p.viewMode = ViewMode::ElevationSide;
+    SimResult r; { juce::ScopedLock sl (resultLock_); r = lastResult_; }
+    elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+    elevationComp_.updateData (r, p);
+}
+
+// The planes, named as the reference tool names them: Plane 1, Plane 2, in
+// the order they were added. The name is derived rather than stored, so it
+// cannot drift out of step with the list it labels.
+juce::StringArray MainComponent::planeNames() const
+{
+    juce::StringArray names;
+    const auto all = patternComp_.getAnnotations();
+    for (const auto& a : all)
+        if (a.isPlane)
+            names.add ("Plane " + juce::String (names.size() + 1));
+    return names;
+}
+
+// Nth plane -> its slot in the annotation vector, which also holds the free
+// drawings. -1 when there is no such plane.
+int MainComponent::planeAnnotIndex (int planeIndex) const
+{
+    if (planeIndex < 0) return -1;
+    const auto all = patternComp_.getAnnotations();
+    int seen = 0;
+    for (int i = 0; i < (int) all.size(); ++i)
+        if (all[(size_t) i].isPlane && seen++ == planeIndex)
+            return i;
+    return -1;
+}
+
+void MainComponent::deletePlane (int planeIndex)
+{
+    const int ai = planeAnnotIndex (planeIndex);
+    if (ai < 0) return;
+
+    auto all = patternComp_.getAnnotations();
+    willEdit();
+    all.erase (all.begin() + ai);
+    patternComp_.setAnnotations (std::move (all));
+    patternComp_.repaint();
+    // The row under the one just removed takes its place, so the selection
+    // stays where the eye is rather than jumping to the top.
+    selectedPlane_ = juce::jmin (planeIndex, planeNames().size() - 1);
+    refreshSourcePanel();
+    commitEdit();
+}
+
+// Switching tabs hides one centre stack and shows the other. Both keep their
+// state while hidden, so coming back to a tab finds it as you left it.
+void MainComponent::setVenueMode (bool on)
+{
+    if (venueMode_ == on) return;
+    venueMode_ = on;
+    topMenu_.setActiveTab (on ? TopMenuBar::Venue : TopMenuBar::Sources);
+    viewBar_.setToolsVisible (! on);
+    viewBar_.setSourcesName (on ? "Elements" : "Sources");
+    viewBar_.setViewName ("Top View");
+    refreshVenuePanel();
+    resized();
+    repaint();
+}
+
+// Everything that belongs to the Sources tab but is parented to the window
+// rather than to the plot: the run/elapsed readout and the two export
+// buttons under it. Hidden as a group so the Venue tab is the clean sheet the
+// reference drawing shows.
+void MainComponent::setVenueFurnitureHidden (bool hidden)
+{
+    statusStrip_.setVisible (! hidden);
+    btnExportPNG_.setVisible (! hidden);
+    btnExportCSV_.setVisible (! hidden);
+}
+
+// A drag on the plan finished a move or a reshape. It goes through the same
+// door as a typed value: one place changes the model, refreshes the panel and
+// marks the project dirty, so the two ways of editing cannot diverge.
+// ---------------------------------------------------------------------------
+// Venue -> prediction.
+//
+// The Venue tab is where the audience is defined; the Sources tab is where the
+// level on it is predicted. This is the one place the two meet: every
+// Listening element becomes a listening plane on the plan, which is what the
+// solver clips its map to and what the plane tag reports avg / min / max over.
+//
+// Direction matters. Venue elements are the TRUTH and the planes are a
+// projection of them, re-run whenever an element changes. Going the other way
+// would mean two editors for one thing and a race over which won.
+//
+// Only the rows this function created are replaced - they carry venueIndex >= 0
+// - so a Quadrangular drawn by hand on the plan survives a venue edit untouched.
+//
+// Structure elements are deliberately NOT projected. A stage is somewhere the
+// audience is not; turning it into a listening plane would paint a map over
+// the one part of the room nobody is standing in.
+// Remove an element, and with it the listening plane it was projecting.
+// Selection falls to the row that slides up into its place, so the panel is
+// still pointing at something after the delete.
+// Duplicate / Mirror x / Mirror y / Delete - ArrayCalc's Tools block, reached
+// from the shape's own context menu. Mirroring reflects about the ORIGIN, which
+// is what makes it useful: a left-hand stand mirrors into the right-hand one.
+void MainComponent::venueAction (int index, int action)
+{
+    if (index < 0 || index >= (int) venue_.size()) return;
+
+    if (action == VenueTopPlot::ActDelete) { deleteVenueElement (index); return; }
+
+    if (action == VenueTopPlot::ActDuplicate)
+    {
+        auto copy = venue_[(size_t) index];
+        copy.name += " copy";
+        venue_.push_back (copy);
+        venueSel_ = (int) venue_.size() - 1;
+    }
+    else
+    {
+        auto& el = venue_[(size_t) index];
+        for (auto& p : el.pts)
+        {
+            if (action == VenueTopPlot::ActMirrorX) p.x = -p.x;
+            if (action == VenueTopPlot::ActMirrorY) p.y = -p.y;
+        }
+    }
+
+    refreshVenuePanel();
+    syncVenueToPlanes();
+    markProjectDirty();
+}
+
+void MainComponent::deleteVenueElement (int index)
+{
+    if (index < 0 || index >= (int) venue_.size()) return;
+    venue_.erase (venue_.begin() + index);
+    venueSel_ = juce::jmin (index, (int) venue_.size() - 1);
+    refreshVenuePanel();
+    syncVenueToPlanes();
+    markProjectDirty();
+}
+
+void MainComponent::syncVenueToPlanes()
+{
+    auto all = patternComp_.getAnnotations();
+
+    // Out with the previous projection.
+    all.erase (std::remove_if (all.begin(), all.end(),
+                               [] (const RadiationPatternComponent::Annotation& a)
+                               { return a.venueIndex >= 0; }),
+               all.end());
+
+    for (int i = 0; i < (int) venue_.size(); ++i)
+    {
+        const auto& el = venue_[(size_t) i];
+        if (el.type != VenueElement::Type::Listening) continue;
+
+        RadiationPatternComponent::Annotation a;
+        a.kind         = RadiationPatternComponent::Annotation::Kind::Polyline;
+        a.construction = RadiationPatternComponent::Construction::PolylineClosed;
+        a.space        = RadiationPatternComponent::AnnotSpace::World;
+        a.closed       = true;
+        a.colour       = el.colour();
+        a.fillAlpha    = 0.35f;
+        a.thicknessPx  = 2.0f;
+        a.isPlane      = true;
+        a.planeType    = RadiationPatternComponent::Annotation::PlaneType::Listening;
+        // Seated / Standing carries straight across - the two models already
+        // agree on the posture, and the engine turns it into an ear height.
+        a.listenHgt    = el.height == VenueElement::AudHeight::Standing
+                           ? RadiationPatternComponent::Annotation::ListenHeight::Standing
+                           : RadiationPatternComponent::Annotation::ListenHeight::Seated;
+        a.showTag      = true;
+        a.venueIndex   = i;
+
+        // A venue element is four free points, so it goes across as a closed
+        // polyline rather than a rectangle: an audience that has been dragged
+        // out of square must still predict over its real outline.
+        a.pts.clear();
+        for (const auto& p : el.pts)
+            a.pts.push_back ({ p.x, p.y });
+
+        all.push_back (a);
+    }
+
+    patternComp_.setAnnotations (std::move (all));
+    patternComp_.repaint();
+    // The map is clipped to these planes, so the solve has to be redone.
+    scheduleRecompute();
+}
+
+void MainComponent::setVenueElement (int index, const VenueElement& e)
+{
+    if (index < 0 || index >= (int) venue_.size()) return;
+    venue_[(size_t) index] = e;
+    refreshVenuePanel();
+    syncVenueToPlanes();
+    markProjectDirty();
+}
+
+void MainComponent::refreshVenuePanel()
+{
+    venueSel_ = juce::jlimit (-1, (int) venue_.size() - 1, venueSel_);
+    venuePanel_.setElements (venue_, venueSel_);
+    const int h = venuePanel_.getContentHeight();
+    if (h > 0 && venuePanel_.getHeight() < h)
+        venuePanel_.setSize (venuePanel_.getWidth(), h);
+    venueView_.setElements (&venue_, venueSel_);
+    venueView_.repaint();
+}
+
+// Everything lands on the origin, as it does on the Sources tab - 0,0 is the
+// one place on the drawing you can always find.
+void MainComponent::addVenueElement (VenueElement::Type type)
+{
+    const bool listening = (type == VenueElement::Type::Listening);
+    const int n = (int) venue_.size() + 1;
+    venue_.push_back (VenueElement::centred (
+        listening ? (venue_.empty() ? juce::String ("Audience")
+                                    : "Audience " + juce::String (n))
+                  : "Stage",
+        type,
+        listening ? 16.0f : 10.0f,     // width across the venue, metres
+        listening ?  8.0f :  6.0f,     // depth
+        listening ?  0.0f :  1.0f));   // a stage stands off the deck
+    venueSel_ = (int) venue_.size() - 1;
+    refreshVenuePanel();
+    syncVenueToPlanes();
+    markProjectDirty();
+}
+
+void MainComponent::refreshSourcePanel()
+{
+    if (! kUseFigmaSidebar) return;
+    sourcePanel_.setScene (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+    const auto pn = planeNames();
+    selectedPlane_ = juce::jlimit (-1, pn.size() - 1, selectedPlane_);
+    sourcePanel_.setPlanes (pn, selectedPlane_);
+    const int h = sourcePanel_.getContentHeight();
+    if (h > 0 && sourcePanel_.getHeight() < h)
+        sourcePanel_.setSize (sourcePanel_.getWidth(), h);
+}
+
 void MainComponent::refreshTitleLabel()
 {
     const auto name = project_.displayName();
@@ -2666,6 +3414,10 @@ void MainComponent::refreshTitleLabel()
         titleLabel_.setText (text, juce::dontSendNotification);
         resized();   // the title is centre-anchored, so its width drives its x
     }
+    // The strip carries the project name at its right-hand end, the way the
+    // Figma has it, so the centred title in the old band is not needed.
+    topMenu_.setProjectName (name.isNotEmpty() ? name : juce::String ("Untitled"));
+    titleLabel_.setVisible (! kUseTopMenuBar);
 }
 
 void MainComponent::updateSettingsBar()
@@ -2722,6 +3474,7 @@ void MainComponent::setViewMode (ViewMode mode)
         patternComp_.setMeasuredFrequency ((int) (controlPanel_.getParams().frequency + 0.5));
         SimResult r; { juce::ScopedLock sl (resultLock_); r = lastResult_; }
         patternComp_.updateData (r, lastParams_);
+    syncElevation();
         updateSettingsBar();
         scheduleRecompute();
         return;
@@ -2750,6 +3503,7 @@ void MainComponent::setViewMode (ViewMode mode)
     {
         lastParams_.viewMode = mode;
         patternComp_.updateData (r, lastParams_);
+    syncElevation();
         syncRenderer();
         updateSettingsBar();
     }
@@ -3376,6 +4130,10 @@ void MainComponent::loadProjectFile (const juce::File& f)
     controlPanel_.applyProject (project_);
     patternComp_.setAnnotations (
         RadiationPatternComponent::annotationsFromVar (project_.drawings));
+    venue_    = VenueElement::listFromVar (project_.venue);
+    venueSel_ = venue_.empty() ? -1 : 0;
+    refreshVenuePanel();
+    syncVenueToPlanes();
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);

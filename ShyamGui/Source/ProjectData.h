@@ -58,6 +58,10 @@ struct ProjectData
     // it. Before this they lived only in the undo snapshot and were lost on
     // every save.
     juce::var drawings;
+    // The Venue tab's elements - audiences, stages. Kept beside the
+    // plan's drawings rather than inside them: they are a different
+    // kind of thing with their own fields.
+    juce::var venue;
     juce::var rangeRings;      // metres, the reference rings the user added
     juce::var rangesVisible;   // whether those rings are drawn
 
@@ -154,6 +158,8 @@ struct ProjectData
         root->setProperty ("speakers", spk);
         if (drawings.isArray() && drawings.size() > 0)
             root->setProperty ("drawings", drawings);
+        if (venue.isArray() && venue.size() > 0)
+            root->setProperty ("venue", venue);
         if (rangeRings.isArray() && rangeRings.size() > 0)
         {
             root->setProperty ("rangeRings", rangeRings);
@@ -172,6 +178,7 @@ struct ProjectData
             // Absent in projects saved before drawings were persisted, which
             // simply leaves them empty - an old file still opens.
             p.drawings = root->getProperty ("drawings");
+            p.venue    = root->getProperty ("venue");
             p.rangeRings = root->getProperty ("rangeRings");
             p.rangesVisible = root->getProperty ("rangesVisible");
 
