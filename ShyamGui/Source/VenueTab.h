@@ -4,6 +4,7 @@
 #include "UiChrome.h"
 #include "ViewHeaderBar.h"
 #include "AppSettings.h"
+#include "FigmaPlotStyle.h"
 
 // =============================================================================
 // The Venue tab: the room, not the rig.
@@ -166,6 +167,7 @@ struct VenueCamera
 
     void zoomBy (double factor, double aboutX, double aboutY)
     {
+        touched = true;
         const double want = juce::jlimit (kMinSpanM, kMaxSpanM, spanM * factor);
         const double k    = want / spanM;
         // Keep the world point under the cursor pinned where it is: the point
@@ -175,7 +177,40 @@ struct VenueCamera
         spanM   = want;
     }
 
-    void reset() { xCentre = -1.0; yCentre = 0.0; spanM = 50.0; }
+    // Where the camera returns to, and where it starts. Set from the world
+    // the solver works over, so the Venue tab and the Sources tab open on the
+    // same ground at the same scale - a 10 m box is the same size on both,
+    // and switching tabs does not rescale the room under you.
+    // Home is a CENTRE and a SCALE, never a span. A span would have to be
+    // worked out from the pane's width, and the width is not known until the
+    // pane has been laid out - computing it early gave a span of a few metres
+    // and an axis that counted "-4m -4m -3m -3m".
+    double homeX = 0.0, homeY = 0.0;
+    double homePxPerM = 24.0;      // FigPlot::kDefaultPxPerM
+    bool   touched = false;        // has the user zoomed or panned yet?
+
+    void setHome (double cx, double cy, double pxPerM)
+    {
+        homeX = cx; homeY = cy;
+        homePxPerM = juce::jmax (1.0e-3, pxPerM);
+        if (! touched) { xCentre = homeX; yCentre = homeY; }
+    }
+
+    /** Called by a pane once it knows how wide its field actually is. */
+    void frameTo (int fieldWidthPx)
+    {
+        if (touched || fieldWidthPx < 40) return;
+        xCentre = homeX;
+        yCentre = homeY;
+        spanM   = juce::jlimit (kMinSpanM, kMaxSpanM,
+                                (double) fieldWidthPx / homePxPerM);
+    }
+
+    void reset()
+    {
+        touched = false;
+        xCentre = homeX; yCentre = homeY;
+    }
 };
 
 class VenuePlotBase : public juce::Component
@@ -205,12 +240,16 @@ protected:
     const std::vector<VenueElement>* elems_ = nullptr;
     int                              sel_   = -1;
 
-    static juce::Colour fieldCol()  { return juce::Colour (0xffe4e4e4); }
-    static juce::Colour gridCol()   { return juce::Colour (0xffd9d9d9); }
-    static juce::Colour frameCol()  { return juce::Colour (0xff000000); }
+    // Straight from the sheet the Sources plan and the SPL plot already
+    // draw with. These were a private copy here - near enough to look right
+    // on their own, different enough that the two tabs never quite matched.
+    // One definition means they cannot drift apart again.
+    static juce::Colour fieldCol()  { return FigPlot::field(); }
+    static juce::Colour gridCol()   { return FigPlot::grid(); }
+    static juce::Colour frameCol()  { return FigPlot::frame(); }
+    static juce::Colour tickCol()   { return FigPlot::tick(); }
+    static juce::Colour markCol()   { return FigPlot::mark(); }
     static juce::Colour groundCol() { return juce::Colour (0xff3e3e3e); }
-    static juce::Colour tickCol()   { return juce::Colour (0xff000000); }
-    static juce::Colour markCol()   { return juce::Colour (0xffe02020); }
 
     // Labelled extent. The field shows a little more than this on each side,
     // which is why the outermost label sits inside the frame rather than on it.
@@ -221,10 +260,7 @@ protected:
     // Grid and label step, in METRES. In Imperial it is five feet, so the
     // rules land on whole feet and the numbers beside them are round - a
     // 2 m grid labelled in feet reads 6.6 ft, 13.1 ft, 19.7 ft.
-    static double stepM()
-    {
-        return Units::imperial() ? 5.0 * 0.3048 : 2.0;
-    }
+    static double stepM() { return FigPlot::baseStepM(); }
 
     // The field's inset from the pane, in Figma px: room for the tick labels
     // along the top and down the left. Each pane sets its own.
@@ -245,10 +281,7 @@ protected:
     // sparse numbers is how a drawing is normally dimensioned.
     static double labelStep (double pxPerM, double wantPx)
     {
-        for (double mult : { 1.0, 2.0, 2.5, 5.0, 10.0 })
-            if (stepM() * mult * pxPerM >= wantPx)
-                return stepM() * mult;
-        return stepM() * 10.0;
+        return FigPlot::gridStepM (pxPerM, wantPx);
     }
 
     VenueCamera* cam_ = nullptr;
@@ -293,11 +326,22 @@ protected:
 
     // Labelled in whatever unit the app is set to, not always metres.
     // Zero names its axis: "0(x)" along the top, "0(y)" down the side.
-    static juce::String tick (double m, const char* axis = "y")
+    // Enough decimals for the step in use. Rounding to whole units is right
+    // at a 2 m rule and wrong at a 0.5 m one, where it prints the same number
+    // twice and the axis looks broken.
+    static juce::String tick (double m, const char* axis = "y",
+                              double stepDisplay = 1.0)
     {
         if (std::abs (m) < 1.0e-9) return juce::String ("0(") + axis + ")";
-        return juce::String ((int) std::lround (Units::metresToDisplay (m)))
-             + Units::lengthUnit();
+        const int dp = stepDisplay >= 1.0 ? 0 : (stepDisplay >= 0.1 ? 1 : 2);
+        return juce::String (Units::metresToDisplay (m), dp) + Units::lengthUnit();
+    }
+
+    /** Hold the opening scale until the user zooms: the pane knows its own
+        width, so this is the only place the span can honestly be set. */
+    void frameIfUntouched (juce::Rectangle<int> f) const
+    {
+        if (cam_ != nullptr) cam_->frameTo (f.getWidth());
     }
 
     void drawField (juce::Graphics& g, juce::Rectangle<int> f) const
@@ -406,6 +450,7 @@ protected:
     void panBy (juce::Point<float> deltaPx)
     {
         if (cam_ == nullptr) return;
+        cam_->touched = true;
         const auto f = fieldArea();
         const double perM = pxPerMetre (f);
         // Dragging the drawing right moves the camera LEFT, which with x
@@ -567,6 +612,7 @@ public:
         const auto f = fieldArea();
         if (f.getWidth() < 40 || f.getHeight() < 30) return;
 
+        frameIfUntouched (f);
         drawField (g, f);
 
         // Horizontal rules across WHAT IS VISIBLE. This used to run from
@@ -724,6 +770,7 @@ public:
         auto f = fieldArea();
         if (f.getWidth() < 40 || f.getHeight() < 30) return;
 
+        frameIfUntouched (f);
         drawField (g, f);
 
         g.setColour (gridCol());
@@ -850,6 +897,15 @@ public:
 
     /** Back to the framing the panes open with. */
     void resetView() { cam_.reset(); top_.repaint(); elev_.repaint(); }
+
+    /** The region the rest of the app is working over. Both panes frame it,
+        so every graph in the application is looking at the same ground. */
+    void setWorld (double centreX, double centreY, double pxPerMetre)
+    {
+        cam_.setHome (centreX, centreY, pxPerMetre);
+        top_.repaint();
+        elev_.repaint();
+    }
 
     void resized() override
     {

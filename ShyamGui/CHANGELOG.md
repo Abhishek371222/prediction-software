@@ -33,9 +33,116 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.4** | 2026-10-14 | Mapping ribbon drawn as Figma icons in grey / black / red; status pill in the tab strip; mic X / Y boxes; the mouse wheel sets any number box; new shapes light blue |
 | **1.4.5** | 2026-10-16 | Q212P as a third cabinet, measured at six bands; Show Values follows the cursor as an SPL probe; subs ignore Show Rays |
 | **1.4.6** | 2026-10-24 | Each cabinet model is simulated at its own frequency; the Mapping ribbon follows the Figma: Ortho split from Ortho Controls, Plane Prediction named in full, every cluster centred on its plate |
+| **1.5.0** | 2026-10-28 | Venue tab: the room as its own screen, wired to the solver; one plot style across every tab |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
+
+---
+
+## [1.5.0] - 2026-10-28
+
+**Atomik Integral v1.5.0** - the venue becomes a screen of its own. Where the
+audience is, and what it is made of, is now drawn and edited on its own tab,
+and the solver predicts onto it.
+
+### Added
+
+- **A Venue tab.** The room, not the rig. An Elements list, an Element
+  Settings block, and a stacked Top View / Elevation view - the same shape the
+  Sources tab uses, so switching tabs does not rearrange the window.
+  - Three kinds of element: **Listening** (an audience), **Structure** (built
+    scenery, a stage) and **Object** (a prop or a piece of kit). Each draws in
+    its own colour.
+  - Every element is four free points, not a rectangle, so a venue dragged out
+    of square still works everywhere downstream.
+  - Everything added lands on the **origin**, as ArrayCalc does: 0,0 is the one
+    place on a drawing you can always find.
+
+- **Venue elements feed the prediction.** Every Listening element becomes a
+  listening plane on the Sources plan, which is what the solver clips its map
+  to and what the plane tag reports avg / min / max / spread over. The ear
+  height carries across, so a Seated audience reads SEATED 1.2 m on the tag.
+  - Venue owns the truth; the planes are a projection, re-run on every change.
+    Going the other way would mean two editors for one thing and a race over
+    which won.
+  - Annotations carry a `venueIndex`, so the projection replaces only the rows
+    it put there itself - a shape drawn by hand on the plan survives a venue
+    edit untouched.
+  - Structure and Object are deliberately NOT projected. A stage is where the
+    audience is not; a map painted over it would be a map of nobody.
+
+- **Editing on the canvas.** Click an element to select it, drag the body to
+  move it, drag a corner to move that point, drag an edge midpoint to move
+  both its ends so a rectangle resizes rather than skews. Hit-testing is an
+  even-odd crossing test, not a bounding box, because the outline need not stay
+  rectangular.
+- **Zoom and pan**, shared by both venue panes: the wheel zooms about the
+  pointer and keeps the point under it pinned; a drag on empty canvas pans. One
+  camera drives the plan and the elevation, so a metre stays in the same column
+  in both.
+- **A Tools menu on the shape itself** - Duplicate, Mirror x, Mirror y, Delete.
+  ArrayCalc keeps these in a side panel; there is no room for that block here,
+  so they hang off the element they act on. Mirroring reflects about the
+  origin, so a left-hand stand mirrors into the right-hand one.
+- **Venue elements are saved** in the `.atmk` project, written only when the
+  list is not empty.
+
+### Changed
+
+- **One plot style across every tab.** `FigmaPlotStyle.h` already held the
+  field, grid, frame, tick and mark colours, the 2 m / 5 ft grid rule and the
+  48 px-per-2 m default scale, and the Sources plan and the SPL pane drew from
+  it. The Venue panes had their own near-identical copy; they now draw from the
+  same sheet, so a 10 m box is the same size on both tabs and the two can no
+  longer drift apart.
+- **x runs the conventional way** on the venue panes: negative to the left,
+  positive to the right, as ArrayCalc and the Sources plan have it.
+- **The Sources panel uses the Venue palette.** It had its own family of greys,
+  a few levels off at every step; value boxes, headers, rows and rules now take
+  the same values, and a selected row is the same flat pink rather than a 7%
+  wash with a red edge.
+- Menu strip: shorter cells with more width for the words, grey dividers, and
+  the open tab filled. The view strip is bounded in black, top and bottom.
+- Tick type is one size on both axes of both panes; the label step adapts to
+  the space, so bigger type means fewer, better-spaced numbers.
+- The bottom strip (run time and the two export buttons) is hidden and its
+  height given to the plots.
+
+### Fixed
+
+- **The unit toggle did nothing.** Three separate breaks on the path from the
+  setting to the pixels: the change handler refreshed the *legacy* sidebar
+  rather than either of the two on screen; `FieldBox` captured its unit suffix
+  once at construction, so no relayout could change it; and the venue axes were
+  hardcoded to metres. The grid step is unit-aware too - five feet in Imperial,
+  so the rules land on whole feet instead of 6.6 ft, 13.1 ft, 19.7 ft.
+- **"Sources" appeared twice** - the view strip's left cell and the panel's own
+  section header, one bar under the other.
+- Elements drawn past the edge of the field painted over the tick labels; both
+  panes now clip to their field.
+- Venue grid rules and figures were swept about the origin rather than about
+  the camera, so panning left the far side of the field blank and unlabelled.
+- An axis figure whose rule sat within half a label of the frame was drawn half
+  outside it; labels are now measured, not boxed.
+- The Sources elevation framed the rig's own bounding box, so a flown array -
+  every box on one plan position - collapsed to the 4 m floor and zoomed until
+  the throw was off the pane.
+- The SPL caption and the plan's grid were drawn white on white with Mapping
+  off: the canvas was forced to the heatmap's black floor while the ink was
+  chosen from the theme. Canvas and ink now answer the same question.
+
+### Known limits
+
+- `Rigging Angles (name)` lists every speaker in the scene rather than that
+  source's cabinets. One Speaker is one source in this model, so there is no
+  grouping layer for an array to own its cabinets yet; `No. of Cabinets`
+  remains inert for the same reason.
+- `Aud. Height` stays editable on Structure and Object elements, where an ear
+  height means nothing.
+- Ear height documents a plane and sets its tag; it does not move the
+  prediction, because the measured data is one horizontal plane per device and
+  there is no vertical directivity to solve with.
 
 ---
 

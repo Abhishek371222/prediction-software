@@ -33,6 +33,10 @@ public:
     HeaderGlyphButton (const juce::String& name, Glyph g)
         : juce::Button (name), glyph_ (g) {}
 
+    /** A folded section's chevron points right instead of down. */
+    void setFolded (bool f) { if (folded_ != f) { folded_ = f; repaint(); } }
+    bool isFolded() const noexcept { return folded_; }
+
     void paintButton (juce::Graphics& g, bool hl, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (getWidth() * 0.26f);
@@ -47,9 +51,14 @@ public:
             juce::Path p;
             const float w = r.getWidth() * 0.86f, hgt = w * 0.56f;
             const float cx = r.getCentreX(), cy = r.getCentreY();
-            p.addTriangle (cx - w * 0.5f, cy - hgt * 0.5f,
-                           cx + w * 0.5f, cy - hgt * 0.5f,
-                           cx,            cy + hgt * 0.5f);
+            if (folded_)
+                p.addTriangle (cx - hgt * 0.5f, cy - w * 0.5f,
+                               cx - hgt * 0.5f, cy + w * 0.5f,
+                               cx + hgt * 0.5f, cy);
+            else
+                p.addTriangle (cx - w * 0.5f, cy - hgt * 0.5f,
+                               cx + w * 0.5f, cy - hgt * 0.5f,
+                               cx,            cy + hgt * 0.5f);
             g.fillPath (p);
         }
         else
@@ -62,6 +71,7 @@ public:
 
 private:
     Glyph glyph_;
+    bool  folded_ = false;
 };
 
 // The header over a stacked pane - "Elevation view", "Distance Vs. dbSPL".
@@ -73,7 +83,13 @@ public:
     explicit PaneHeaderBar (const juce::String& title) : title_ (title)
     {
         addAndMakeVisible (fold_);
-        fold_.onClick = [this] { folded_ = ! folded_; if (onFold) onFold (folded_); repaint(); };
+        fold_.onClick = [this]
+        {
+            folded_ = ! folded_;
+            fold_.setFolded (folded_);
+            if (onFold) onFold (folded_);
+            repaint();
+        };
     }
 
     std::function<void (bool folded)> onFold;

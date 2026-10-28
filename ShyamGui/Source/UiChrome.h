@@ -490,7 +490,9 @@ public:
     {
         if (auto* ed = getCurrentTextEditor())
             ed->setBounds (getLocalBounds().withTrimmedLeft (valueLeft() - 2));
-    }
+    
+    
+}
 
     void editorShown (juce::TextEditor* ed) override
     {

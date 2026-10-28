@@ -95,7 +95,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.4.6", juce::dontSendNotification);
+    versionLabel_.setText ("v1.5.0", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -360,6 +360,13 @@ MainComponent::MainComponent (ProjectData project)
         if (venueMode_) { if (venuePanel_.onAddElement) venuePanel_.onAddElement(); }
         else            showAddShapeMenu (&viewBar_.btnAddSource_);
     };
+    // The strip's chevron folds the Elements list on the Venue tab.
+    viewBar_.btnSourcesFold_.onClick = [this]
+    {
+        if (! venueMode_) return;
+        venuePanel_.setListFolded (! venuePanel_.isListFolded());
+        viewBar_.btnSourcesFold_.setFolded (venuePanel_.isListFolded());
+    };
     // Fill it once at startup; after this the scene's own change hooks drive it.
     refreshSourcePanel();
 
@@ -391,6 +398,7 @@ MainComponent::MainComponent (ProjectData project)
     venuePanel_.onAddElement = [this] { addVenueElement (VenueElement::Type::Listening); };
     venuePanel_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venuePanel_.onDelete = [this] (int i) { deleteVenueElement (i); };
+    venuePanel_.onLayoutChanged = [this] { resized(); };
     venueView_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venueView_.onElementChanged = [this] (int i, VenueElement e) { setVenueElement (i, e); };
     venueView_.onAction = [this] (int i, int a) { venueAction (i, a); };
@@ -3283,6 +3291,7 @@ void MainComponent::setVenueMode (bool on)
     viewBar_.setToolsVisible (! on);
     viewBar_.setSourcesName (on ? "Elements" : "Sources");
     viewBar_.setViewName ("Top View");
+    viewBar_.btnSourcesFold_.setFolded (on && venuePanel_.isListFolded());
     refreshVenuePanel();
     resized();
     repaint();
@@ -3424,6 +3433,19 @@ void MainComponent::setVenueElement (int index, const VenueElement& e)
 
 void MainComponent::refreshVenuePanel()
 {
+    // One working space for every graph in the app: the Venue panes frame the
+    // same region the solver covers and the Sources plan draws, so a box put
+    // down on one tab is the same size and in the same place on the other.
+    {
+        // Framed at the SAME metres-per-pixel the Sources plan opens with -
+        // FigPlot::kDefaultPxPerM, 48 px per 2 m - rather than at a span of
+        // its own. A 10 m box is then the same size on both tabs, which is
+        // what "the same working space" has to mean before anything else.
+        const double ppm = juce::jmax (1.0, (double) UiConfig::Scale::figf (
+                                                FigPlot::kDefaultPxPerM));
+        venueView_.setWorld (0.0, 0.0, ppm);
+    }
+
     venueSel_ = juce::jlimit (-1, (int) venue_.size() - 1, venueSel_);
     venuePanel_.setElements (venue_, venueSel_);
     const int h = venuePanel_.getContentHeight();
@@ -4596,7 +4618,7 @@ void MainComponent::exportCSV()
             if (nQ212P > 0)    product << (product.isEmpty() ? "" : "+") << "Q212P(" << nQ212P << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.4.6");
+            line ("# Atomik Integral v1.5.0");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

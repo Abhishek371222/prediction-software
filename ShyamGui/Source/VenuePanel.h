@@ -57,6 +57,40 @@ public:
         g.drawRect (0, 0, w, h, 1);
     }
 
+    /** V4's box, with the solid 14 x 8 triangle the section headers use in
+        place of its stroked chevron. */
+    void drawComboBox (juce::Graphics& g, int width, int height, bool,
+                       int, int, int, int, juce::ComboBox& box) override
+    {
+        const auto r = juce::Rectangle<int> (0, 0, width, height).toFloat();
+        g.setColour (box.findColour (juce::ComboBox::backgroundColourId));
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (box.findColour (juce::ComboBox::outlineColourId));
+        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+
+        const float tw = UiConfig::Scale::figf (14.0f), th = UiConfig::Scale::figf (8.0f);
+        const float cx = (float) width - 20.0f, cy = (float) height * 0.5f;
+        juce::Path t;
+        t.addTriangle (cx - tw * 0.5f, cy - th * 0.5f,
+                       cx + tw * 0.5f, cy - th * 0.5f,
+                       cx,             cy + th * 0.5f);
+        g.setColour (box.findColour (juce::ComboBox::arrowColourId)
+                        .withAlpha (box.isEnabled() ? 0.9f : 0.2f));
+        g.fillPath (t);
+    }
+
+    /** No tick: the pink row already marks the current choice. */
+    void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted,
+                            bool, bool hasSubMenu, const juce::String& text,
+                            const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override
+    {
+        juce::LookAndFeel_V4::drawPopupMenuItem (g, area, isSeparator, isActive, isHighlighted,
+                                                 false, hasSubMenu, text, shortcutKeyText,
+                                                 icon, textColour);
+    }
+
 private:
     // The same grey the value boxes use.
     const juce::Colour kList { 0xffd9d9d9 };
@@ -100,6 +134,13 @@ public:
         // No "Elements" header here: the view strip directly above this panel
         // is that header, plus and chevron included. See VenueView.
         headSet_ = std::make_unique<SourcePanel::SectionHead> ("Element Settings", false);
+        headSet_->onFold = [this] (bool f)
+        {
+            settingsFolded_ = f;
+            resized();
+            repaint();
+            if (onLayoutChanged) onLayoutChanged();
+        };
         addAndMakeVisible (*headSet_);
 
         name_ = std::make_unique<SourcePanel::FieldBox> (juce::String());
@@ -159,6 +200,20 @@ public:
 
     int getContentHeight() const { return contentH_; }
 
+    /** Called when a fold changes how tall the panel's content is. */
+    std::function<void()> onLayoutChanged;
+
+    /** The Elements list folds from the header strip above the panel. */
+    void setListFolded (bool f)
+    {
+        if (listFolded_ == f) return;
+        listFolded_ = f;
+        resized();
+        repaint();
+        if (onLayoutChanged) onLayoutChanged();
+    }
+    bool isListFolded() const noexcept { return listFolded_; }
+
     void mouseUp (const juce::MouseEvent& ev) override
     {
         for (size_t i = 0; i < rowY_.size(); ++i)
@@ -199,7 +254,7 @@ public:
             g.drawText (t.text, t.area, juce::Justification::centredLeft, true);
         }
 
-        if (rows_.empty())
+        if (rows_.empty() && ! listFolded_)
         {
             g.setColour (VenueSkin::ink().withAlpha (0.55f));
             g.setFont (Brand::figMed (12.0f));
@@ -252,6 +307,8 @@ public:
         int y = 0;
         for (auto& r : rows_)
         {
+            r->type->setVisible (! listFolded_);
+            if (listFolded_) continue;
             text (r->name, fig (14.0f), y, fig (190.0f), rowH);
             text ("Type",  fig (212.0f), y, fig (55.0f), rowH);
             r->type->setBounds (box (269.0f, y + ctlY, 117.0f, 28.0f));
@@ -262,7 +319,9 @@ public:
         }
 
         // The list area is 158 tall in the drawing: two rows and white space.
-        const int listH = juce::jmax (fig (158.0f), (int) rows_.size() * pitch + fig (72.0f));
+        // Folded, it takes no room and Element Settings moves up under the strip.
+        const int listH = listFolded_ ? 0
+                        : juce::jmax (fig (158.0f), (int) rows_.size() * pitch + fig (72.0f));
         y = listH;
 
         // --- Element Settings header: 44 tall.
@@ -271,6 +330,16 @@ public:
         y += pitch;
 
         const bool has = sel_ >= 0 && (size_t) sel_ < rows_.size();
+
+        name_->setVisible (! settingsFolded_);
+        audH_->setVisible (! settingsFolded_);
+        for (auto& f : pt_) f->setVisible (! settingsFolded_);
+        if (settingsFolded_)
+        {
+            rules_.push_back ({ y, false });
+            contentH_ = y + fig (12.0f);
+            return;
+        }
 
         // --- Name row: 44 tall.
         text ("Name",        fig (12.1f),  y, fig (48.0f), rowH);
@@ -411,6 +480,8 @@ private:
     std::unique_ptr<SourcePanel::FieldBox> name_;
     std::unique_ptr<juce::ComboBox>        audH_;
     bool                                   selHasAudH_ = false;
+    bool                                   listFolded_ = false;
+    bool                                   settingsFolded_ = false;
     VenueComboLnF                          comboLnf_;
     std::vector<std::unique_ptr<SourcePanel::FieldBox>> pt_;
 

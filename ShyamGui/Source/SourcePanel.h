@@ -20,12 +20,20 @@ class SourcePanel : public juce::Component
 {
 public:
     //--------------------------------------------------------------- look
-    static juce::Colour fieldFill()  { return juce::Colour (0xffdbdbdb); }
-    static juce::Colour headFill()   { return juce::Colour (0xffbebebe); }
-    static juce::Colour headRule()   { return juce::Colour (0xffacaaaa); }
-    static juce::Colour stripeFill() { return juce::Colour (0xffe8e8e8); }
-    static juce::Colour listRule()   { return juce::Colour (0xffa1a0a0); }
-    static juce::Colour rowRule()    { return juce::Colour (0xffcdcccc); }
+    //
+    // The SAME values the Venue tab uses. The two panels sit under one strip
+    // and are read as one piece of furniture, so they cannot be two families
+    // of grey - this one had its own #DBDBDB / #BEBEBE / #E8E8E8 set, a few
+    // levels off Venue's at every step, which is exactly the kind of mismatch
+    // that reads as sloppiness rather than as a deliberate difference.
+    static juce::Colour fieldFill()  { return juce::Colour (0xffd9d9d9); }   // value boxes
+    static juce::Colour headFill()   { return juce::Colour (0xffdfdede); }   // section headers
+    static juce::Colour headRule()   { return juce::Colour (0xffc8c8c8); }
+    static juce::Colour stripeFill() { return juce::Colour (0xfff0f0f0); }   // list rows
+    static juce::Colour listRule()   { return juce::Colour (0xffc8c8c8); }
+    static juce::Colour rowRule()    { return juce::Colour (0xffc8c8c8); }
+    /** The chosen row, as the Venue tab paints it. */
+    static juce::Colour rowSelect()  { return juce::Colour (0xffebb2b3); }
 
     /** 20 not 20.0, 2.5 as 2.5 - the Figma reads "20 ft" and "5 Deg". */
     static juce::String num (double v)
@@ -244,9 +252,16 @@ public:
 
         void editorShown (juce::TextEditor* ed) override
         {
+            // setFont / textColourId only reach text typed afterwards; the value
+            // already in the box needs the apply*ToAllText calls.
             ed->setFont (Brand::figMed (fontPx_));
+            ed->applyFontToAllText (Brand::figMed (fontPx_));
             ed->setColour (juce::TextEditor::textColourId, Brand::text());
+            ed->applyColourToAllText (Brand::text());
+            ed->setColour (juce::TextEditor::highlightColourId, Brand::accent().withAlpha (0.30f));
+            ed->setColour (juce::TextEditor::highlightedTextColourId, Brand::text());
             ed->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+            ed->setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
             ed->setBounds (getLocalBounds().withTrimmedLeft (juce::jmax (0, UiConfig::Scale::fig (inset_) - 2)));
         }
 
@@ -454,10 +469,11 @@ public:
         if (selPlane_ < 0 && selected_ >= 0 && (size_t) selected_ < sourceRowY_.size())
         {
             const auto r = sourceRowY_[(size_t) selected_];
-            g.setColour (Brand::accent().withAlpha (0.07f));
+            // The Venue tab's pink, flat across the row. The old 7% accent
+            // wash was so faint the chosen row was hard to find, and the red
+            // edge beside it is not something the Venue list draws.
+            g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
-            g.setColour (Brand::accent());
-            g.fillRect (0, r.getStart(), UiConfig::Scale::px (3), r.getLength());
         }
 
         // A selected plane is marked the same way a selected cabinet is, so
@@ -465,10 +481,11 @@ public:
         if (selPlane_ >= 0 && (size_t) selPlane_ < planeRowY_.size())
         {
             const auto r = planeRowY_[(size_t) selPlane_];
-            g.setColour (Brand::accent().withAlpha (0.07f));
+            // The Venue tab's pink, flat across the row. The old 7% accent
+            // wash was so faint the chosen row was hard to find, and the red
+            // edge beside it is not something the Venue list draws.
+            g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
-            g.setColour (Brand::accent());
-            g.fillRect (0, r.getStart(), UiConfig::Scale::px (3), r.getLength());
         }
 
         g.setColour (listRule());
@@ -542,7 +559,18 @@ public:
 
         // ------------------------------------------------------- Sources
         // Name at 12, "System" at 178, the combo 242..351, the mute 362..389.
-        const bool srcOpen = head (*headSrc_);
+        //
+        // No header of its own. The view strip directly above this panel IS
+        // the Sources header - same word, same plus, same chevron - so
+        // drawing one here put "Sources" on the screen twice, one bar under
+        // the other. The Venue panel already works this way; this is the same
+        // fix applied to the tab it was copied from.
+        //
+        // headSrc_ stays alive and keeps carrying the fold state and the
+        // onPlus callback; it is simply given no room and no visibility.
+        headSrc_->setBounds (0, y, 0, 0);
+        headSrc_->setVisible (false);
+        const bool srcOpen = ! headSrc_->isFolded();
         for (auto& s : sources_) show (srcOpen, { s->system.get(), s->mute.get() });
         for (size_t i = 0; i < planes_.size(); ++i)
             planes_[i]->del->setVisible (srcOpen && (int) i == selPlane_);
