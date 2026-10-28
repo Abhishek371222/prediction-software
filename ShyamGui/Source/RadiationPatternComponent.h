@@ -424,6 +424,10 @@ private:
     void zoomAboutCentre (float factor);
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
+    /** Keep a point on the field, which runs worldX0..worldX0+worldW (and the
+        same in y) - every quadrant about the origin, not just 0..worldW. */
+    float clampWorldX (float x) const noexcept;
+    float clampWorldY (float y) const noexcept;
 public:
     /** Frame the elevation on the WORLD span rather than on the rig's
         own bounding box.

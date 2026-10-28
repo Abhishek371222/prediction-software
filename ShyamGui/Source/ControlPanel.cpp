@@ -1131,6 +1131,16 @@ void ControlPanel::setSpeakerHeight (int index, float metres)
     notifyChanged();
 }
 
+void ControlPanel::setSpeakerArray (int index, int arrayId)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    if (speakers_[(size_t) index].arrayId == arrayId) return;
+    speakers_[(size_t) index].arrayId = arrayId;
+    // Grouping is bookkeeping, not acoustics - nothing to re-solve.
+    rebuildSpeakerBox();
+    refreshEditors();
+}
+
 void ControlPanel::setSpeakerModel (int index, int model)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;

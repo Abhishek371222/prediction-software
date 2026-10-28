@@ -28,7 +28,13 @@ namespace FigPlot
     inline juce::Colour mark()      { return juce::Colour (0xffed2227); }
     inline juce::Colour freq1()     { return juce::Colour (0xffed2227); }
     inline juce::Colour freq2()     { return juce::Colour (0xff145fea); }
-    inline juce::Colour originAxis(){ return juce::Colour (0xff145fea).withAlpha (0.75f); }
+    /** The x = 0 rule: blue, drawn down the sheet. */
+    inline juce::Colour originAxis() { return juce::Colour (0xff145fea).withAlpha (0.75f); }
+    /** The y = 0 rule: red, drawn across it. Two colours because the two
+        lines answer different questions - one is 'where is the stage', the
+        other 'where is the centre line' - and a single colour for both
+        leaves you counting rules to tell which is which. */
+    inline juce::Colour originAxisY() { return juce::Colour (0xffed2227).withAlpha (0.75f); }
     inline juce::Colour cabinet()   { return juce::Colour (0x80d3def1); }   // rgba(211,222,241,0.5)
 
     /** Figma px per metre at the default framing: 48 px per 2 m. */
@@ -126,6 +132,16 @@ namespace FigPlot
         g.drawDashedLine ({ x0, (float) f.getY(), x0, (float) f.getBottom() }, dashes, 2, 1.0f);
     }
 
+    /** Dotted red rule at y = 0, inside @p f only. Same weight and dash as the
+        blue one, so the pair reads as one crosshair on the origin. */
+    inline void drawOriginAxisY (juce::Graphics& g, juce::Rectangle<int> f, float y0)
+    {
+        if (y0 <= f.getY() || y0 >= f.getBottom()) return;
+        const float dashes[] = { 2.0f, 3.0f };
+        g.setColour (originAxisY());
+        g.drawDashedLine ({ (float) f.getX(), y0, (float) f.getRight(), y0 }, dashes, 2, 1.0f);
+    }
+
     /** The distance row above a field, centred on each rule including the two
         on the frame's edges. A figure that would run past either end of the
         frame is pulled back inside its span, so nothing sticks out at the
@@ -147,6 +163,21 @@ namespace FigPlot
             const int tw = font.getStringWidth (txt) + 2;
             if (x < f.getX() - 1 || x > f.getRight() + 1 || tw > f.getWidth() || tw > paneW) return;
             const int lx = juce::jlimit (f.getX(), f.getRight() - tw, x - tw / 2);
+
+            // An end figure pulled inside the frame is dropped if the pull
+            // crowds it against the next figure in: it must keep three
+            // quarters of the usual spacing and clear the neighbour.
+            if (lx != x - tw / 2)
+            {
+                const double inward = lx > x - tw / 2 ? stepM : -stepM;
+                const int nx  = juce::roundToInt (x0 + (m + inward) * ppm);
+                const int ntw = font.getStringWidth (FigPlot::tick (m + inward, stepM, axis)) + 2;
+                const int gap = fig (4.0f);
+                const bool overlaps = inward > 0 ? lx + tw + gap > nx - ntw / 2
+                                                 : lx - gap < nx + ntw / 2;
+                if (overlaps || std::abs (lx + tw / 2 - nx) < 0.75 * stepM * ppm)
+                    return;
+            }
             g.drawText (txt, lx, fig (figTop), tw, h, juce::Justification::centred, false);
         });
     }
@@ -154,16 +185,23 @@ namespace FigPlot
     /** One figure down the left of a field, left-aligned at @p figLeft and
         centred on the rule at @p y. Dropped if it would hang off the frame. */
     inline void drawYLabel (juce::Graphics& g, juce::Rectangle<int> f, int compH, int y,
-                            const juce::String& s, float figLeft, bool atEdges)
+                            const juce::String& s, float figLeft, bool atEdges,
+                            float stepPx = 0.0f)
     {
         // With @p atEdges the figures on the frame's top and bottom rules are
         // kept, pulled inside the frame's height so they never rise into the
         // distance row or drop below the frame; otherwise they are left out.
+        // @p stepPx is the spacing to the next figure: a pulled-in figure that
+        // would then sit on top of it is left out instead.
         const auto& font = g.getCurrentFont();
         const int h = (int) std::ceil (font.getHeight());
         if (y < f.getY() - 1 || y > f.getBottom() + 1 || h > f.getHeight() || h > compH) return;
         if (! atEdges && (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
         const int top = juce::jlimit (f.getY(), f.getBottom() - h, y - h / 2);
+        const int pulled = std::abs (top - (y - h / 2));
+        if (pulled > 0 && stepPx > 0.0f
+            && (stepPx - (float) pulled < (float) h + 2.0f || (float) pulled > 0.25f * stepPx))
+            return;
         const int right = f.getX() - 2;
         const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
                                                  right - 2 - font.getStringWidth (s)));

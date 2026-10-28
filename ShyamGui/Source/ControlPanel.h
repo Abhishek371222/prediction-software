@@ -196,6 +196,8 @@ public:
     void setSpeakerTilt     (int index, float deg);
     void setSpeakerHeight   (int index, float metres);
     void setSpeakerModel    (int index, int model);
+    /** Which array this cabinet belongs to; -1 stands alone. */
+    void setSpeakerArray    (int index, int arrayId);
     void setSpeakerEnabled  (int index, bool on);
     void setSpeakerPolarity (int index, bool inverted);
     void selectSpeaker (int index);

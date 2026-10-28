@@ -161,6 +161,7 @@ struct VenueCamera
     double xCentre = -1.0;    // metres; midpoint of the labelled +22..-24
     double yCentre =  0.0;    // metres; the plan's vertical centre
     double spanM   = 50.0;    // metres across the field
+    double zBase   =  0.0;    // metres; the height on the elevation's bottom edge
 
     static constexpr double kMinSpanM =   4.0;
     static constexpr double kMaxSpanM = 400.0;
@@ -202,6 +203,7 @@ struct VenueCamera
         if (touched || fieldWidthPx < 40) return;
         xCentre = homeX;
         yCentre = homeY;
+        zBase   = 0.0;
         spanM   = juce::jlimit (kMinSpanM, kMaxSpanM,
                                 (double) fieldWidthPx / homePxPerM);
     }
@@ -209,7 +211,7 @@ struct VenueCamera
     void reset()
     {
         touched = false;
-        xCentre = homeX; yCentre = homeY;
+        xCentre = homeX; yCentre = homeY; zBase = 0.0;
     }
 };
 
@@ -317,11 +319,16 @@ protected:
     {
         return camYMid() - ((double) py - f.getCentreY()) / pxPerMetre (f);
     }
-    // Elevation: 0..zTop fills the pane. Deliberately exaggerated - a 16 m
-    // trim across a 50 m room would otherwise be a few pixels tall.
-    static float zToScreen (double m, juce::Rectangle<int> f, double zTop)
+    // Elevation: heights on the same scale as the horizontal, so the profile
+    // zooms with the plan; the camera's zBase sits on the frame's bottom edge.
+    double camZBase() const { return cam_ != nullptr ? cam_->zBase : 0.0; }
+    float zToScreen (double m, juce::Rectangle<int> f) const
     {
-        return (float) (f.getBottom() - (m / juce::jmax (1.0e-9, zTop)) * f.getHeight());
+        return (float) (f.getBottom() - (m - camZBase()) * pxPerMetre (f));
+    }
+    double screenToZ (float py, juce::Rectangle<int> f) const
+    {
+        return camZBase() + ((double) f.getBottom() - py) / pxPerMetre (f);
     }
 
     // Labelled in whatever unit the app is set to, not always metres.
@@ -416,7 +423,8 @@ protected:
     // `atEdges` lets the figures on the frame's top and bottom rules show
     // (the elevation's 0 and its top); otherwise they are left out.
     void drawYLabel (juce::Graphics& g, juce::Rectangle<int> f, int y,
-                     const juce::String& s, float figLeft, bool atEdges = false) const
+                     const juce::String& s, float figLeft, bool atEdges = false,
+                     float stepPx = 0.0f) const
     {
         const auto& font = g.getCurrentFont();
         const int h = (int) std::ceil (font.getHeight());
@@ -428,6 +436,11 @@ protected:
         if (y < f.getY() - 1 || y > f.getBottom() + 1 || h > f.getHeight()) return;
         if (! atEdges && (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
         const int top = juce::jlimit (f.getY(), f.getBottom() - h, y - h / 2);
+        // A pulled-in edge figure that would land on the next one is left out.
+        const int pulled = std::abs (top - (y - h / 2));
+        if (pulled > 0 && stepPx > 0.0f
+            && (stepPx - (float) pulled < (float) h + 2.0f || (float) pulled > 0.25f * stepPx))
+            return;
         const int right = f.getX() - 2;
         const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
                                                  right - 2 - font.getStringWidth (s)));
@@ -441,7 +454,7 @@ protected:
     // same two gestures, reached without leaving the drawing.
     static constexpr double kZoomPerNotch = 1.15;
 
-    void zoomAt (juce::Point<float> p, double factor)
+    virtual void zoomAt (juce::Point<float> p, double factor)
     {
         if (cam_ == nullptr) return;
         const auto f = fieldArea();
@@ -760,11 +773,27 @@ public:
     // Panning only. Shapes are edited in the plan, where both of their
     // horizontal coordinates are visible; dragging here could only ever move
     // one of them and would look like it had lost the other.
+    // Across moves the shared x; up and down moves this pane's own heights,
+    // never the plan's y.
     void mouseDown (const juce::MouseEvent& e) override { lastPx_ = e.position; }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (cam_ != nullptr)
+            cam_->zBase += (double) (e.position.y - lastPx_.y) / pxPerMetre (fieldArea());
         panBy ({ e.position.x - lastPx_.x, 0.0f });
         lastPx_ = e.position;
+    }
+
+    // The wheel keeps the point under the pointer where it is, both ways.
+    void zoomAt (juce::Point<float> p, double factor) override
+    {
+        if (cam_ == nullptr) return;
+        const auto f = fieldArea();
+        const double zUnder = screenToZ (p.y, f);
+        cam_->zoomBy (factor, screenToX (p.x, f), cam_->yCentre);
+        cam_->zBase = zUnder - ((double) f.getBottom() - p.y) / pxPerMetre (f);
+        if (onCameraMoved) onCameraMoved();
+        repaint();
     }
 
     void paint (juce::Graphics& g) override
@@ -776,13 +805,16 @@ public:
         frameIfUntouched (f);
         drawField (g, f);
 
+        const double ppm  = pxPerMetre (f);
+        const double zLo  = camZBase();
+        const double zHi  = zLo + f.getHeight() / ppm;
         g.setColour (gridCol());
-        for (double m = 0.0; m <= kZTop + 1.0e-6; m += stepM())
+        FigPlot::forSteps (zLo, zHi, stepM(), [&] (double m)
         {
-            const int y = juce::roundToInt (zToScreen (m, f, kZTop));
+            const int y = juce::roundToInt (zToScreen (m, f));
             if (y >= f.getY() && y <= f.getBottom())
                 g.drawHorizontalLine (y, (float) f.getX(), (float) f.getRight());
-        }
+        });
         drawXGrid (g, f);
         drawFrame (g, f);
 
@@ -795,24 +827,28 @@ public:
         g.setFont (Brand::figSemi (12.0f));
         g.setColour (tickCol());
         {
-            // The vertical here is exaggerated, so its step is picked from the
-            // pixels per METRE of this pane, not the plan's.
-            const double pxPerZ = (double) f.getHeight() / kZTop;
-            const double st = labelStep (pxPerZ, UiConfig::Scale::fig (14.0f));
-            for (double m = 0.0; m <= kZTop + 1.0e-6; m += st)
+            // The plan's label step, so both axes count alike. The ground's
+            // 0(y) is always shown; the top figure only if it has room.
+            const double st = labelStep (ppm, UiConfig::Scale::fig (40.0f));
+            FigPlot::forSteps (zLo, zHi, st, [&] (double m)
             {
-                const int y = juce::roundToInt (zToScreen (m, f, kZTop));
-                drawYLabel (g, f, y, tick (m), 24.0f, true);
-            }
+                const bool ground = std::abs (m) < st * 1.0e-6;
+                const int y = juce::roundToInt (zToScreen (m, f));
+                drawYLabel (g, f, y, tick (ground ? 0.0 : m), 24.0f, true,
+                            ground ? 0.0f : (float) (st * ppm));
+            });
         }
 
         // The deck is a LINE on z = 0 inside the field, the way the Sources
         // elevation draws it. A thick bar slung under the field read as a
         // horizontal scrollbar.
         {
-            const float g0 = zToScreen (0.0, f, kZTop);
-            g.setColour (groundCol());
-            g.drawLine ((float) f.getX(), g0, (float) f.getRight(), g0, 2.0f);
+            const float g0 = zToScreen (0.0, f);
+            if (g0 >= (float) f.getY() && g0 <= (float) f.getBottom())
+            {
+                g.setColour (groundCol());
+                g.drawLine ((float) f.getX(), g0, (float) f.getRight(), g0, 2.0f);
+            }
         }
 
         // Clipped to the field, as the plan is: a run that reaches past the
@@ -836,7 +872,7 @@ public:
                 // Kept inside the field so a run on the deck is not clipped
                 // down to a sliver by the frame.
                 const float t  = 3.0f;
-                const float zy = juce::jmin (zToScreen (z, f, kZTop), (float) f.getBottom() - t * 0.5f);
+                const float zy = juce::jmin (zToScreen (z, f), (float) f.getBottom() - t * 0.5f);
                 g.setColour (markCol().withAlpha (i == sel_ ? 1.0f : 0.45f));
                 g.drawLine (x0, zy, x1, zy, t);
 
@@ -845,19 +881,18 @@ public:
                 if (e.hasAudHeight())
                 {
                     const float earM = VenueElement::earHeightM (e.height);
-                    const float ey   = zToScreen (z + earM, f, kZTop);
+                    const float ey   = zToScreen (z + earM, f);
                     const float dashes[] = { 3.0f, 3.0f };
                     g.drawDashedLine ({ x0, ey, x1, ey }, dashes, 2, 2.0f);
                 }
                 if (i == sel_) { drawMark (g, x0, zy, true); drawMark (g, x1, zy, true); }
             }
 
-        drawMark (g, xToScreen (0.0, f), zToScreen (0.0, f, kZTop), false);
+        drawMark (g, xToScreen (0.0, f), zToScreen (0.0, f), false);
     }
 
 private:
     juce::Point<float> lastPx_;
-    static constexpr double kZTop = 16.0;
 };
 
 // -----------------------------------------------------------------------------

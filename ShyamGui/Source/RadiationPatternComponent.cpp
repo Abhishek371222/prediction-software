@@ -170,8 +170,6 @@ bool RadiationPatternComponent::applyOrthoSpeakerLayout()
     if (onWillEdit) onWillEdit();
 
     const float gap = juce::jmax (0.1f, orthoSpacingM_);
-    const float worldW = hasData_ ? (float) result_.worldW : 100.0f;
-    const float worldH = hasData_ ? (float) result_.worldH : 100.0f;
 
     if (orthoAlign_ == OrthoAlign::Horizontal)
     {
@@ -184,8 +182,8 @@ bool RadiationPatternComponent::applyOrthoSpeakerLayout()
         for (size_t k = 0; k < idxs.size(); ++k)
         {
             auto& s = speakers_[(size_t) idxs[k]];
-            s.x = juce::jlimit (0.0f, worldW, x0 + (float) k * gap);
-            s.y = juce::jlimit (0.0f, worldH, y);
+            s.x = clampWorldX (x0 + (float) k * gap);
+            s.y = clampWorldY (y);
             if (onSpeakerMoved)
                 onSpeakerMoved (idxs[k], s.x, s.y);
         }
@@ -201,8 +199,8 @@ bool RadiationPatternComponent::applyOrthoSpeakerLayout()
         for (size_t k = 0; k < idxs.size(); ++k)
         {
             auto& s = speakers_[(size_t) idxs[k]];
-            s.x = juce::jlimit (0.0f, worldW, x);
-            s.y = juce::jlimit (0.0f, worldH, y0 + (float) k * gap);
+            s.x = clampWorldX (x);
+            s.y = clampWorldY (y0 + (float) k * gap);
             if (onSpeakerMoved)
                 onSpeakerMoved (idxs[k], s.x, s.y);
         }
@@ -780,8 +778,8 @@ void RadiationPatternComponent::beginMicDrag (int micIndex, juce::Point<float> s
 bool RadiationPatternComponent::placeMicAtWorld (float wx, float wy)
 {
     ensureWorldExtents();
-    wx = juce::jlimit (0.0f, (float) result_.worldW, wx);
-    wy = juce::jlimit (0.0f, (float) result_.worldH, wy);
+    wx = clampWorldX (wx);
+    wy = clampWorldY (wy);
 
     micWasSnapped_ = false;
     float sx = wx, sy = wy;
@@ -818,8 +816,8 @@ bool RadiationPatternComponent::placeMicOnRing (int micIndex, int speakerIndex, 
     auto& mic = mics_[(size_t) micIndex];
     if (onWillEdit) onWillEdit();
     auto placed = MicRingSnap::placeOnRing (spk, radiusM, mic.x, mic.y);
-    mic.x = juce::jlimit (0.0f, (float) result_.worldW, placed.x);
-    mic.y = juce::jlimit (0.0f, (float) result_.worldH, placed.y);
+    mic.x = clampWorldX (placed.x);
+    mic.y = clampWorldY (placed.y);
     mic.ringLocked = true;
     mic.ringRadiusM = radiusM;
     mic.ringSpeaker = speakerIndex;
@@ -837,8 +835,8 @@ void RadiationPatternComponent::setSelectedMicPosition (float x, float y)
     if (selectedMic_ < 0 || selectedMic_ >= (int) mics_.size()) return;
 
     auto& m = mics_[(size_t) selectedMic_];
-    const float nx = juce::jlimit (0.0f, (float) result_.worldW, x);
-    const float ny = juce::jlimit (0.0f, (float) result_.worldH, y);
+    const float nx = clampWorldX (x);
+    const float ny = clampWorldY (y);
     if (std::abs (nx - m.x) < 1.0e-4f && std::abs (ny - m.y) < 1.0e-4f) return;
 
     if (onWillEdit) onWillEdit();
@@ -1136,8 +1134,8 @@ juce::Point<float> RadiationPatternComponent::screenToAnnot (float sx, float sy)
     if (currentAnnotSpace() == AnnotSpace::PolarPlot)
         return screenToPolarNorm (sx, sy);
     auto w = screenToWorld (sx, sy);
-    w.x = juce::jlimit (0.0f, (float) juce::jmax (1.0, result_.worldW), w.x);
-    w.y = juce::jlimit (0.0f, (float) juce::jmax (1.0, result_.worldH), w.y);
+    w.x = clampWorldX (w.x);
+    w.y = clampWorldY (w.y);
     return w;
 }
 
@@ -2099,8 +2097,8 @@ void RadiationPatternComponent::moveSelectionBy (juce::Point<float> deltaAnnot,
         // handled by the dedicated Drag::Mic path (original first snap pattern).
         if (idx < 0 || idx >= (int) mics_.size()) continue;
         auto& mic = mics_[(size_t) idx];
-        mic.x = juce::jlimit (0.0f, (float) result_.worldW, mic.x + deltaWorld.x);
-        mic.y = juce::jlimit (0.0f, (float) result_.worldH, mic.y + deltaWorld.y);
+        mic.x = clampWorldX (mic.x + deltaWorld.x);
+        mic.y = clampWorldY (mic.y + deltaWorld.y);
         mic.ringLocked = false;
         mic.ringSpeaker = -1;
     }
@@ -2109,8 +2107,8 @@ void RadiationPatternComponent::moveSelectionBy (juce::Point<float> deltaAnnot,
     {
         if (idx < 0 || idx >= (int) speakers_.size()) continue;
         auto& spk = speakers_[(size_t) idx];
-        spk.x = juce::jlimit (0.0f, (float) result_.worldW, spk.x + deltaWorld.x);
-        spk.y = juce::jlimit (0.0f, (float) result_.worldH, spk.y + deltaWorld.y);
+        spk.x = clampWorldX (spk.x + deltaWorld.x);
+        spk.y = clampWorldY (spk.y + deltaWorld.y);
         if (onSpeakerMoved)
             onSpeakerMoved (idx, spk.x, spk.y);
     }
@@ -3943,10 +3941,32 @@ void RadiationPatternComponent::updateData (const SimResult& result, const SimPa
 
 void RadiationPatternComponent::ensureWorldExtents() noexcept
 {
+    // Before the first solve the origin comes from the same params as the
+    // size, so the field straddles 0 instead of starting at it.
     if (result_.worldW <= 0.0)
-        result_.worldW = params_.worldW > 0.0 ? params_.worldW : 100.0;
+    {
+        result_.worldW  = params_.worldW > 0.0 ? params_.worldW : 100.0;
+        result_.worldX0 = params_.worldX0;
+    }
     if (result_.worldH <= 0.0)
-        result_.worldH = params_.worldH > 0.0 ? params_.worldH : 100.0;
+    {
+        result_.worldH  = params_.worldH > 0.0 ? params_.worldH : 100.0;
+        result_.worldY0 = params_.worldY0;
+    }
+}
+
+float RadiationPatternComponent::clampWorldX (float x) const noexcept
+{
+    if (result_.worldW <= 0.0) return x;
+    const float x0 = (float) result_.worldX0;
+    return juce::jlimit (x0, x0 + (float) result_.worldW, x);
+}
+
+float RadiationPatternComponent::clampWorldY (float y) const noexcept
+{
+    if (result_.worldH <= 0.0) return y;
+    const float y0 = (float) result_.worldY0;
+    return juce::jlimit (y0, y0 + (float) result_.worldH, y);
 }
 
 bool RadiationPatternComponent::fieldIsPainted() const noexcept
@@ -4057,8 +4077,8 @@ bool RadiationPatternComponent::pasteClipboard()
     for (auto m : clipboard_.mics)
     {
         m.id = nextMicId_++;
-        m.x = juce::jlimit (0.0f, (float) result_.worldW, m.x + worldNudge);
-        m.y = juce::jlimit (0.0f, (float) result_.worldH, m.y + worldNudge);
+        m.x = clampWorldX (m.x + worldNudge);
+        m.y = clampWorldY (m.y + worldNudge);
         m.ringLocked = false;
         m.ringSpeaker = -1;
         m.levelOk = false;
@@ -4072,8 +4092,8 @@ bool RadiationPatternComponent::pasteClipboard()
         toAdd.reserve (clipboard_.speakers.size());
         for (auto s : clipboard_.speakers)
         {
-            s.x = juce::jlimit (0.0f, (float) result_.worldW, s.x + worldNudge);
-            s.y = juce::jlimit (0.0f, (float) result_.worldH, s.y + worldNudge);
+            s.x = clampWorldX (s.x + worldNudge);
+            s.y = clampWorldY (s.y + worldNudge);
             toAdd.push_back (s);
         }
         newSpeakers = onPasteSpeakers (std::move (toAdd));
@@ -4518,9 +4538,8 @@ void RadiationPatternComponent::zoomAboutCentre (float factor)
     const float cy = (float) pb.getCentreY();
     const auto worldUnder = screenToWorld (cx, cy);
     zoom_ = newZoom;
-    origin_.x = cx - (float) pb.getX() - worldUnder.x * worldScaleX();
-    origin_.y = cy - (float) pb.getY()
-                  - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    const auto landed = worldToScreen (worldUnder.x, worldUnder.y);
+    origin_ += juce::Point<float> (cx, cy) - landed;
     noteViewAdjusted();
     clampViewToField();
     layoutTextBoxEditor();
@@ -4924,7 +4943,8 @@ void RadiationPatternComponent::drawFramedGrid (juce::Graphics& g, juce::Rectang
         g.reduceClipRegion (rules);
         drawField (g, pb);
     }
-    FigPlot::drawOriginAxis (g, pb, map.pxAtZero);
+    FigPlot::drawOriginAxis  (g, pb, map.pxAtZero);
+    FigPlot::drawOriginAxisY (g, pb, worldToScreen (0.0f, 0.0f).y);
 }
 
 void RadiationPatternComponent::drawFramedLabels (juce::Graphics& g, juce::Rectangle<int> pb)
@@ -4945,10 +4965,11 @@ void RadiationPatternComponent::drawFramedLabels (juce::Graphics& g, juce::Recta
     g.setColour (FigPlot::tick());
     const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY() - 1.0f);
     const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom() + 1.0f);
+    const float labelPx = std::abs (worldToScreen (0.0f, (float) label).y - worldToScreen (0.0f, 0.0f).y);
     FigPlot::forSteps (juce::jmin (tl.y, br.y), juce::jmax (tl.y, br.y), label, [&] (double m)
     {
         const int y = juce::roundToInt (worldToScreen (0.0f, (float) m).y);
-        FigPlot::drawYLabel (g, pb, getHeight(), y, FigPlot::tick (m, label, "y"), 24.0f, true);
+        FigPlot::drawYLabel (g, pb, getHeight(), y, FigPlot::tick (m, label, "y"), 24.0f, true, labelPx);
     });
 }
 
@@ -5012,7 +5033,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     FigPlot::forSteps (0.0, zTop, labelZ, [&] (double m)
     {
         FigPlot::drawYLabel (g, f, getHeight(), juce::roundToInt (vy ((float) m)),
-                             FigPlot::tick (m, labelZ, "y"), 24.0f, true);
+                             FigPlot::tick (m, labelZ, "y"), 24.0f, true, (float) labelZ * scV);
     });
 
     juce::Graphics::ScopedSaveState clip (g);
@@ -6143,6 +6164,8 @@ void RadiationPatternComponent::drawFramedRays (juce::Graphics& g)
             continue;
         }
 
+        if (! rayVisibleFor (i)) continue;
+
         // The -6 dB coverage edges, solid, out to the frame.
         const float half = juce::degreesToRadians (0.5f * coverageFor (spk.model));
         g.setColour (FigPlot::tick().withAlpha (0.85f));
@@ -6168,8 +6191,10 @@ bool RadiationPatternComponent::rayVisibleFor (int i) const noexcept
     // what it does not get is a line drawn across the whole field claiming a
     // pattern it does not have.
     if (isSubwooferModel (speakers_[(size_t) i].model)) return false;
-    // The framed (Figma) plan always draws every mid's aim and coverage.
-    return showRays_ || framedPlan() || (i == selected_) || isSpeakerSelected (i);
+    // The framed (Figma) plan draws every mid's aim and coverage, or none,
+    // as Show Rays says.
+    if (framedPlan()) return showRays_;
+    return showRays_ || (i == selected_) || isSpeakerSelected (i);
 }
 
 bool RadiationPatternComponent::aimHandleVisibleFor (int i) const noexcept
@@ -7580,8 +7605,8 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
         ensureWorldExtents();
         auto w = screenToWorld (e.position.x, e.position.y);
-        w.x = juce::jlimit (0.0f, (float) result_.worldW, w.x);
-        w.y = juce::jlimit (0.0f, (float) result_.worldH, w.y);
+        w.x = clampWorldX (w.x);
+        w.y = clampWorldY (w.y);
         if (drawGridSnap_)
         {
             const float step = (float) Units::snapStepMetres();
@@ -7589,8 +7614,8 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
             {
                 w.x = std::round (w.x / step) * step;
                 w.y = std::round (w.y / step) * step;
-                w.x = juce::jlimit (0.0f, (float) result_.worldW, w.x);
-                w.y = juce::jlimit (0.0f, (float) result_.worldH, w.y);
+                w.x = clampWorldX (w.x);
+                w.y = clampWorldY (w.y);
             }
         }
         if (onPlaceSpeakerAt)
@@ -8200,8 +8225,8 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
     {
         // Original first snap pattern: mic follows cursor; ring snap + tak on latch.
         auto w = screenToWorld (e.position.x, e.position.y);
-        float nx = juce::jlimit (0.0f, (float) result_.worldW, w.x);
-        float ny = juce::jlimit (0.0f, (float) result_.worldH, w.y);
+        float nx = clampWorldX (w.x);
+        float ny = clampWorldY (w.y);
         snapMicWorld (nx, ny, true);
         auto& mic = mics_[(size_t) selectedMic_];
         if (std::abs (mic.x - nx) > 1.0e-6f || std::abs (mic.y - ny) > 1.0e-6f)
@@ -8306,8 +8331,8 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
     else if (drag_ == Drag::Speaker && draggedSpeaker_ >= 0)
     {
         auto w = screenToWorld (e.position.x, e.position.y);
-        const float nx = juce::jlimit (0.0f, (float) result_.worldW, w.x);
-        const float ny = juce::jlimit (0.0f, (float) result_.worldH, w.y);
+        const float nx = clampWorldX (w.x);
+        const float ny = clampWorldY (w.y);
         if (draggedSpeaker_ < (int) speakers_.size())
         {
             speakers_[(size_t) draggedSpeaker_].x = nx;
@@ -8413,10 +8438,8 @@ void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
     if (std::abs (newZoom - zoom_) < 1e-6f) return;
     const auto worldUnder = screenToWorld (e.position.x, e.position.y);
     zoom_ = newZoom;
-    const auto pb = plotArea();
-    origin_.x = e.position.x - (float) pb.getX() - worldUnder.x * worldScaleX();
-    origin_.y = e.position.y - (float) pb.getY()
-                  - ((float) result_.worldH - worldUnder.y) * worldScaleY();
+    const auto landed = worldToScreen (worldUnder.x, worldUnder.y);
+    origin_ += e.position - landed;
     noteViewAdjusted();
     clampViewToField();
     layoutTextBoxEditor();

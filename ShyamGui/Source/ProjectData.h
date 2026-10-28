@@ -146,6 +146,7 @@ struct ProjectData
             o->setProperty ("tiltDeg", s.tiltDeg);
             o->setProperty ("rotationDeg", s.rotationDeg);
             o->setProperty ("showAimLine", s.showAimLine);
+            o->setProperty ("arrayId", s.arrayId);
             o->setProperty ("filterType",   (int) s.filter.type);
             o->setProperty ("filterFamily", (int) s.filter.family);
             o->setProperty ("filterOrder",  s.filter.order);
@@ -234,6 +235,11 @@ struct ProjectData
                         // Projects saved before the rotation handle point +x.
                         s.rotationDeg = o->hasProperty ("rotationDeg")
                                       ? (float) (double) o->getProperty ("rotationDeg") : 0.0f;
+                        // Absent in projects saved before arrays were modelled;
+                        // -1 reads as "a source of its own", which is what such
+                        // a project meant.
+                        s.arrayId     = o->hasProperty ("arrayId")
+                                      ? (int) o->getProperty ("arrayId") : -1;
                         // Older projects predate the per-unit hide, and every
                         // aiming line was drawn then, so absent means shown.
                         s.showAimLine = (! o->hasProperty ("showAimLine"))

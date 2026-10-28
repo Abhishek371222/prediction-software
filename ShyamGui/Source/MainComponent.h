@@ -169,6 +169,7 @@ private:
     // those cabinets are arranged.
     enum class AddSource { Array, PointSource, SubArray };
     void addSourceAtOrigin (AddSource kind, int count);
+    void setSourceCabinetCount (int sourceIndex, int count);
     void promptAddMultipleSources();
     // The listening planes, in the order they appear in the Sources
     // list. The index is into THAT list, not into the annotation

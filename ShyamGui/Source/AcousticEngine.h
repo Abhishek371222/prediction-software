@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <complex>
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // SpeakerFilter - a crossover section on one cabinet.
@@ -161,7 +162,60 @@ struct Speaker
     // this stalk and knob is the only handle it can be turned by; hiding it is
     // for a plan already crowded with them, not for giving up the aim.
     bool  showAimLine        = true;
+
+    /** Which ARRAY this cabinet belongs to.
+
+        ArrayCalc's model, and the one this panel's Figma already assumes: a
+        SOURCE is an array and an array owns N cabinets. Until now one Speaker
+        was one source, which is why "No. of Cabinets" sat greyed at 1 and why
+        "Rigging Angles (Q21S_1)" listed every speaker in the scene instead of
+        that source's own.
+
+        Cabinets sharing an arrayId are one source, ordered by their position
+        in the vector: cabinet 1 is the top box, and each one's Splay is its
+        angle relative to the one above it. -1 means a cabinet that has not
+        been grouped - it stands as a source of its own, which is what every
+        project saved before this field existed contains. */
+    int   arrayId            = -1;
 };
+
+/** The next free array id for a scene - one past the highest in use. */
+inline int nextArrayId (const std::vector<Speaker>& sp) noexcept
+{
+    int top = 0;
+    for (const auto& s : sp) top = std::max (top, s.arrayId);
+    return top + 1;
+}
+
+/** Index of every cabinet in the array that owns speaker @p index, in order.
+    A cabinet with no array (-1) is an array of one. */
+inline std::vector<int> arrayMembers (const std::vector<Speaker>& sp, int index)
+{
+    std::vector<int> out;
+    if (index < 0 || index >= (int) sp.size()) return out;
+    const int id = sp[(size_t) index].arrayId;
+    if (id < 0) { out.push_back (index); return out; }
+    for (int i = 0; i < (int) sp.size(); ++i)
+        if (sp[(size_t) i].arrayId == id) out.push_back (i);
+    return out;
+}
+
+/** The first cabinet of every array, in scene order - one entry per SOURCE.
+    This is what the Sources list shows: arrays, not boxes. */
+inline std::vector<int> arrayHeads (const std::vector<Speaker>& sp)
+{
+    std::vector<int> heads;
+    std::vector<int> seen;
+    for (int i = 0; i < (int) sp.size(); ++i)
+    {
+        const int id = sp[(size_t) i].arrayId;
+        if (id < 0) { heads.push_back (i); continue; }
+        if (std::find (seen.begin(), seen.end(), id) != seen.end()) continue;
+        seen.push_back (id);
+        heads.push_back (i);
+    }
+    return heads;
+}
 
 // Whether a model is a subwoofer. The Q21S is the sub; the 2" horn is not.
 //

@@ -13,8 +13,12 @@
 //
 // Two things in the Figma have nothing behind them yet, and are shown as
 // unavailable rather than as numbers that would be believed:
-//   * No. of Cabinets - a source is one cabinet today; arrays are not modelled.
 //   * Rigging Points  - loads need cabinet weights, which the model lacks.
+//
+// A SOURCE IS AN ARRAY. The Sources list shows one row per array, not per
+// cabinet; No. of Cabinets is that array's count; and Rigging Angles lists
+// that array's own boxes, each Splay measured from the box above it. The
+// grouping lives on Speaker::arrayId - see AcousticEngine.h.
 // =============================================================================
 class SourcePanel : public juce::Component
 {
@@ -425,6 +429,8 @@ public:
     std::function<void (int index, float deg)>        onTilt;
     std::function<void (int index, float metres)>     onHeight;
     std::function<void (int index, int model)>        onModel;
+    /** The selected source's cabinet count changed. */
+    std::function<void (int sourceIndex, int count)>  onCabinetCount;
     std::function<void (int index, bool on)>          onEnabled;
     std::function<void (int index, bool inverted)>    onPolarity;
     std::function<void()>                             onAddSource;
@@ -438,6 +444,8 @@ public:
     /** Rebuild from the scene. Cheap enough for every change. */
     void setScene (const std::vector<Speaker>& sp, int selected)
     {
+        scene_ = sp;
+        wireCabinetCount();
         if (! rowsMatch (sp))
             buildRows (sp);
         selected_ = juce::jlimit (-1, (int) sp.size() - 1, selected);
@@ -671,15 +679,24 @@ public:
         headSrc_->setBounds (0, y, 0, 0);
         headSrc_->setVisible (false);
         const bool srcOpen = ! headSrc_->isFolded();
-        for (auto& s : sources_) show (srcOpen, { s->system.get(), s->mute.get() });
+        // One row per ARRAY. A cabinet that is not the head of its array is a
+        // box inside a source, not a source, and belongs in Rigging Angles.
+        for (size_t i = 0; i < sources_.size(); ++i)
+            show (srcOpen && isHead ((int) i),
+                  { sources_[i]->system.get(), sources_[i]->mute.get() });
         for (size_t i = 0; i < planes_.size(); ++i)
             planes_[i]->del->setVisible (srcOpen && (int) i == selPlane_);
         if (srcOpen)
         {
             const int listTop = y;
-            for (auto& s : sources_)
+            for (size_t i = 0; i < sources_.size(); ++i)
             {
-                label (s->name, { fig (12.0f), y, fig (160.0f), rowH });
+                if (! isHead ((int) i)) { sourceRowY_.push_back ({ y, y }); continue; }
+                auto& s = sources_[i];
+                const int n = (int) arrayMembers (scene_, (int) i).size();
+                // A source carries its cabinet count, as ArrayCalc's list does.
+                label (s->name + (n > 1 ? "  (" + juce::String (n) + ")" : juce::String()),
+                       { fig (12.0f), y, fig (160.0f), rowH });
                 label ("System", { fig (178.0f), y, fig (60.0f), rowH });
                 ctl (*s->system, 242.0f, 109.0f);
                 ctl (*s->mute,   362.0f, 27.0f);
@@ -771,8 +788,13 @@ public:
 
         // ------------------------------------------------- Rigging Angles
         const bool angOpen = head (*headAng_);
-        for (auto& a : angles_)
-            show (angOpen, { a->ver.get(), a->hor.get(), a->pol.get(), a->mute.get(), a->splay.get() });
+        // Only the selected source's own boxes. The header names one source, so
+        // listing the whole scene under it was the table contradicting its own
+        // title.
+        for (size_t i = 0; i < angles_.size(); ++i)
+            show (angOpen && inSelectedArray ((int) i),
+                  { angles_[i]->ver.get(), angles_[i]->hor.get(), angles_[i]->pol.get(),
+                    angles_[i]->mute.get(), angles_[i]->splay.get() });
         if (angOpen)
         {
             // Each caption centred over its column: Ver. 121..175, Hor.
@@ -789,8 +811,13 @@ public:
             }
             row (false);
 
-            for (auto& a : angles_)
+            int cabNo = 0;
+            for (size_t i = 0; i < angles_.size(); ++i)
             {
+                if (! inSelectedArray ((int) i)) continue;
+                auto& a = angles_[i];
+                // Numbered within the ARRAY - cabinet 1 is its top box.
+                a->num = juce::String (++cabNo);
                 label (a->num + ". " + a->cab, { fig (18.0f), y, fig (98.0f), rowH });
                 ctl (*a->ver,   121.0f, 54.0f);
                 ctl (*a->hor,   186.0f, 53.0f);
@@ -820,6 +847,7 @@ private:
     };
     struct AngleRow
     {
+        int spIndex = -1;              // the cabinet this row edits
         juce::String num, cab;
         std::unique_ptr<FieldBox>   ver, hor, splay;
         std::unique_ptr<SquareMark> pol, mute;
@@ -838,7 +866,9 @@ private:
     void buildFixed()
     {
         headSrc_ = std::make_unique<SectionHead> ("Sources", true);
-        headPos_ = std::make_unique<SectionHead> ("Source Positioning", true);
+        // No plus: this section EDITS the selected source, it does not make
+        // one. Adding is the Sources header's job, one strip above.
+        headPos_ = std::make_unique<SectionHead> ("Source Positioning", false);
         headRig_ = std::make_unique<SectionHead> ("Rigging Points", false);
         headAng_ = std::make_unique<SectionHead> ("Rigging Angles", false);
         headSrc_->onPlus = [this] { if (onAddSource) onAddSource(); };
@@ -911,6 +941,56 @@ private:
         { if (! building_ && onTilt && selected_ >= 0) onTilt (selected_, (float) v); };
         addAndMakeVisible (*posHorAim_);
         addAndMakeVisible (*posVerAim_);
+    }
+
+    /** The cabinet-count box, filled from the selected array and able to
+        change it. It used to be greyed at 1 because a source was one box. */
+    void wireCabinetCount()
+    {
+        if (posCabinets_ == nullptr) return;
+        if (posCabinets_->getNumItems() == 0)
+            for (int n = 1; n <= 24; ++n) posCabinets_->addItem (juce::String (n), n);
+
+        if (posCabinets_->onChange == nullptr)
+            posCabinets_->onChange = [this]
+            {
+                if (building_ || onCabinetCount == nullptr || selected_ < 0) return;
+                onCabinetCount (selected_, posCabinets_->getSelectedId());
+            };
+
+        const bool has = selected_ >= 0 && selected_ < (int) scene_.size();
+        posCabinets_->setEnabled (has);
+        if (has)
+        {
+            building_ = true;
+            posCabinets_->setSelectedId (
+                juce::jlimit (1, 24, (int) arrayMembers (scene_, selected_).size()),
+                juce::dontSendNotification);
+            building_ = false;
+        }
+    }
+
+    /** Is this row's cabinet the HEAD of its array? Only heads are sources. */
+    bool isHead (int i) const
+    {
+        if (i < 0 || i >= (int) scene_.size()) return false;
+        const int id = scene_[(size_t) i].arrayId;
+        if (id < 0) return true;                       // ungrouped stands alone
+        for (int k = 0; k < i; ++k)
+            if (scene_[(size_t) k].arrayId == id) return false;
+        return true;
+    }
+
+    /** Does this cabinet belong to the selected source's array? */
+    bool inSelectedArray (int i) const
+    {
+        if (selected_ < 0 || i < 0
+            || selected_ >= (int) scene_.size() || i >= (int) scene_.size())
+            return false;
+        const int a = scene_[(size_t) selected_].arrayId;
+        const int b = scene_[(size_t) i].arrayId;
+        if (a < 0 || b < 0) return i == selected_;
+        return a == b;
     }
 
     bool rowsMatch (const std::vector<Speaker>& sp) const
@@ -1061,10 +1141,21 @@ private:
             angles_[i]->hor->setValue (num (sp[i].rotationDeg));
             angles_[i]->pol->setToggleState (sp[i].polarityInverted, juce::dontSendNotification);
             angles_[i]->mute->setToggleState (! sp[i].enabled, juce::dontSendNotification);
-            prevRot_[i] = i == 0 ? 0.0f : sp[i - 1].rotationDeg;
-            const float splay = i == 0 ? 0.0f : sp[i].rotationDeg - sp[i - 1].rotationDeg;
+            // Splay is the angle from the box ABOVE THIS ONE IN THE SAME
+            // ARRAY. Taken across the scene it measured the gap between two
+            // unrelated sources, and the first box of every array but the
+            // first carried a splay it had no business having.
+            int above = -1;
+            const int myId = sp[i].arrayId;
+            for (int k = (int) i - 1; k >= 0; --k)
+                if (myId >= 0 ? sp[(size_t) k].arrayId == myId : false) { above = k; break; }
+
+            prevRot_[i] = above < 0 ? 0.0f : sp[(size_t) above].rotationDeg;
+            const float splay = above < 0 ? 0.0f
+                              : sp[i].rotationDeg - sp[(size_t) above].rotationDeg;
             angles_[i]->splay->setValue (num (splay));
-            angles_[i]->splay->setEnabled (i > 0);
+            // The top box of an array has nothing to splay from.
+            angles_[i]->splay->setEnabled (above >= 0);
         }
 
         const bool has = selected_ >= 0 && (size_t) selected_ < sp.size();
@@ -1101,6 +1192,10 @@ private:
     }
 
     PanelLnF lnf_;
+    // The scene as last handed in. Needed because which rows belong to the
+    // selected SOURCE is a question about arrays, not about row order.
+    std::vector<Speaker> scene_;
+
     std::vector<std::unique_ptr<SourceRow>> sources_;
     std::vector<std::unique_ptr<AngleRow>>  angles_;
     std::unique_ptr<SectionHead> headSrc_, headPos_, headRig_, headAng_;

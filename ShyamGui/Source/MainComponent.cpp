@@ -352,6 +352,7 @@ MainComponent::MainComponent (ProjectData project)
     sourcePanel_.onTilt     = [this] (int i, float d)          { controlPanel_.setSpeakerTilt (i, d); };
     sourcePanel_.onHeight   = [this] (int i, float m)          { controlPanel_.setSpeakerHeight (i, m); };
     sourcePanel_.onModel    = [this] (int i, int m)            { controlPanel_.setSpeakerModel (i, m); };
+    sourcePanel_.onCabinetCount = [this] (int i, int n)        { setSourceCabinetCount (i, n); };
     sourcePanel_.onEnabled  = [this] (int i, bool on)          { controlPanel_.setSpeakerEnabled (i, on); };
     sourcePanel_.onPolarity = [this] (int i, bool inv)         { controlPanel_.setSpeakerPolarity (i, inv); };
     sourcePanel_.onAddSource = [this] { showAddShapeMenu (&viewBar_.btnAddSource_); };
@@ -432,19 +433,13 @@ MainComponent::MainComponent (ProjectData project)
     addAndMakeVisible (topMenu_);
     addAndMakeVisible (viewBar_);
     viewBar_.setVisible (kUseTopMenuBar);
-    // The two ray glyphs drive the same handlers the ribbon's did.
+    // The ray glyph drives the same handler the ribbon's did.
     viewBar_.btnRays_.setClickingTogglesState (true);
-    viewBar_.btnRays_.setToggleState (true, juce::dontSendNotification);
+    viewBar_.btnRays_.setToggleState (menuRays_, juce::dontSendNotification);
     viewBar_.btnRays_.onClick = [this]
     {
         menuRays_ = viewBar_.btnRays_.getToggleState();
         if (plotHeader_.onShowRays) plotHeader_.onShowRays (menuRays_);
-    };
-    viewBar_.btnLockRays_.setClickingTogglesState (true);
-    viewBar_.btnLockRays_.onClick = [this]
-    {
-        if (plotHeader_.onLockRays)
-            plotHeader_.onLockRays (viewBar_.btnLockRays_.getToggleState());
     };
     topMenu_.setLogo (logo_.get());
     topMenu_.onMenu = [this] (TopMenuBar::MenuId id, juce::Component* under)
@@ -667,6 +662,7 @@ MainComponent::MainComponent (ProjectData project)
         // Pure overlay - nothing is re-solved, so this never disturbs the map.
         patternComp_.setShowRays (on);
     };
+    patternComp_.setShowRays (menuRays_);
     plotHeader_.onTextLineHeight = [this] (float mult)
     {
         willEdit();
@@ -918,6 +914,7 @@ MainComponent::MainComponent (ProjectData project)
     patternComp_.onSpeakerMoved = [this] (int idx, float x, float y)
     {
         controlPanel_.setSpeakerPosition (idx, x, y);
+        refreshSourcePanel();
         scheduleRecompute();
     };
     // Turning a cabinet changes where it fires, so the field really does have
@@ -2369,6 +2366,7 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             case 203: patternComp_.resetView();                                       break;
 
             case 301: menuRays_ = ! menuRays_;
+                      viewBar_.btnRays_.setToggleState (menuRays_, juce::dontSendNotification);
                       if (plotHeader_.onShowRays) plotHeader_.onShowRays (menuRays_);
                       break;
 
@@ -3074,6 +3072,57 @@ void MainComponent::showAddShapeMenu (juce::Component* under)
 // Both graphs pick this up for free: the plan and the elevation are fed from
 // the same speaker list through syncElevation(), so a source cannot appear in
 // one and be missing from the other.
+// "No. of Cabinets" on the selected source.
+//
+// ArrayCalc's behaviour: typing a count fills the array out to that many
+// cabinets, or takes boxes off the bottom. New boxes inherit the array's plan
+// position and aim and hang below the last one at the cabinet pitch, which is
+// how a line array grows.
+void MainComponent::setSourceCabinetCount (int sourceIndex, int count)
+{
+    const auto sp = controlPanel_.getSpeakers();
+    auto members = arrayMembers (sp, sourceIndex);
+    if (members.empty()) return;
+
+    count = juce::jlimit (1, 24, count);
+    if (count == (int) members.size()) return;
+
+    willEdit();
+
+    if (count < (int) members.size())
+    {
+        // Off the bottom, last first, so the indices above stay valid.
+        std::vector<int> drop (members.begin() + count, members.end());
+        std::sort (drop.begin(), drop.end(), std::greater<int>());
+        for (int i : drop) controlPanel_.removeSpeakers ({ i });
+    }
+    else
+    {
+        const auto& head = sp[(size_t) members.front()];
+        const auto& last = sp[(size_t) members.back()];
+        const int   id   = head.arrayId >= 0 ? head.arrayId
+                                             : nextArrayId (sp);
+        // A head that was standing alone becomes the first box of a real array.
+        if (head.arrayId < 0) controlPanel_.setSpeakerArray (members.front(), id);
+
+        float z = last.baseHeightM;
+        for (int n = (int) members.size(); n < count; ++n)
+        {
+            if (! controlPanel_.addSpeakerAt (head.x, head.y)) break;
+            const int idx = (int) controlPanel_.getSpeakers().size() - 1;
+            z = juce::jmax (0.0f, z - kCabinetPitchM);
+            controlPanel_.setSpeakerArray    (idx, id);
+            controlPanel_.setSpeakerModel    (idx, head.model);
+            controlPanel_.setSpeakerRotation (idx, head.rotationDeg);
+            controlPanel_.setSpeakerTilt     (idx, last.tiltDeg);
+            controlPanel_.setSpeakerHeight   (idx, z);
+        }
+    }
+
+    refreshSourcePanel();
+    commitEdit();
+}
+
 void MainComponent::addSourceAtOrigin (AddSource kind, int count)
 {
     count = juce::jmax (1, count);
@@ -3084,6 +3133,9 @@ void MainComponent::addSourceAtOrigin (AddSource kind, int count)
     willEdit();
 
     const int before = (int) controlPanel_.getSpeakers().size();
+    // One id for everything this call creates: an "Add array" of four boxes
+    // is ONE source with four cabinets, not four sources.
+    const int arrayId = nextArrayId (controlPanel_.getSpeakers());
     int added = 0;
 
     for (int i = 0; i < count; ++i)
@@ -3098,6 +3150,7 @@ void MainComponent::addSourceAtOrigin (AddSource kind, int count)
             break;                      // the scene cap, reported below
 
         const int idx = before + added;
+        controlPanel_.setSpeakerArray    (idx, arrayId);
         controlPanel_.setSpeakerModel    (idx, model);
         controlPanel_.setSpeakerRotation (idx, 0.0f);   // Hor. aiming 0 deg
         controlPanel_.setSpeakerTilt     (idx, 0.0f);

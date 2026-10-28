@@ -84,7 +84,8 @@ public:
         FigPlot::forSteps (lo, hi, labelDb, [&] (double db)
         {
             FigPlot::drawYLabel (g, f, getHeight(), juce::roundToInt (dy (db)),
-                                 juce::String ((int) std::lround (db)) + "db", 24.0f, true);
+                                 juce::String ((int) std::lround (db)) + "db", 24.0f, true,
+                                 (float) (labelDb * f.getHeight() / (hi - lo)));
         });
 
         juce::Graphics::ScopedSaveState clip (g);

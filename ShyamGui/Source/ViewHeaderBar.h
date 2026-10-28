@@ -135,7 +135,6 @@ public:
             addAndMakeVisible (*b);
 
         addAndMakeVisible (btnRays_);
-        addAndMakeVisible (btnLockRays_);
 
         lblSources_.setText ("Sources", juce::dontSendNotification);
         lblView_.setText ("Top View", juce::dontSendNotification);
@@ -156,14 +155,13 @@ public:
         lblSources_.setText (n, juce::dontSendNotification);
         resized(); repaint();
     }
-    /** The aiming-ray tools. They belong to the Sources tab - a venue
-        drawing has no cabinets to aim - so the Venue tab turns them off
-        rather than showing two controls that do nothing. Hidden, not
-        removed: the buttons and their wiring are untouched. */
+    /** The aiming-ray toggle. It belongs to the Sources tab - a venue
+        drawing has no cabinets to aim - so the Venue tab turns it off
+        rather than showing a control that does nothing. Hidden, not
+        removed: the button and its wiring are untouched. */
     void setToolsVisible (bool on)
     {
         btnRays_.setVisible (on);
-        btnLockRays_.setVisible (on);
         resized(); repaint();
     }
 
@@ -228,8 +226,8 @@ public:
         glyphAt (btnAddSource_,   332.0f, 31.0f);
         glyphAt (btnSourcesFold_, 374.0f, 35.0f);
 
-        // --- right cell (x 400..): the title 24 in, the two ray icons (24 px)
-        //     16 px after it, the fold arrow centred 21 from the end.
+        // --- right cell (x 400..): the title 24 in, the ray icon (24 px)
+        //     after it, the fold arrow centred 21 from the end.
         const int rx = sideW_;
         const int titleW = f.getStringWidth (lblView_.getText()) + fig (4.0f);
         lblView_.setBounds (rx + fig (24.0f), 0, titleW, h - 1);
@@ -238,8 +236,7 @@ public:
         {
             const int icon = fig (24.0f);
             const int ix   = lblView_.getRight() + fig (12.0f);
-            btnRays_.setBounds     (ix,              (h - icon) / 2, icon, icon);
-            btnLockRays_.setBounds (ix + fig (36.0f), (h - icon) / 2, icon, icon);
+            btnRays_.setBounds (ix, (h - icon) / 2, icon, icon);
         }
 
         const int fold = fig (35.0f);
@@ -249,11 +246,8 @@ public:
     HeaderGlyphButton btnAddSource_   { "Add",   HeaderGlyphButton::Glyph::Plus };
     HeaderGlyphButton btnSourcesFold_ { "Fold",  HeaderGlyphButton::Glyph::ChevronDown };
     HeaderGlyphButton btnViewOptions_ { "View",  HeaderGlyphButton::Glyph::ChevronDown };
-    RibbonIconButton btnRays_     { "Show Rays", { { "Show Rays.png", "Show Rays Active.png",
-                                                     0, 0, 24, 24 } } };
-    RibbonIconButton btnLockRays_ { "Lock Rays", { { "Show Rays.png", "Show Rays Active.png",
-                                                     -1.5f, 2.5f, 24, 24 },
-                                                   { "Lock Badge.png", nullptr, 13.5f, -1.1f, 12, 12 } } };
+    RibbonIconButton btnRays_ { "Show Rays", { { "Show Rays.png", "Show Rays Active.png",
+                                                 0, 0, 24, 24 } } };
 
 private:
     juce::Label lblSources_, lblView_;
