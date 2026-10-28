@@ -1204,6 +1204,10 @@ void MainComponent::commitEdit()
     if (restoringEdit_) return;
     editBaseline_ = takeEditSnapshot();
     markProjectDirty();
+    // A listening plane drawn, moved or reshaped on the plan changes where
+    // the level is predicted at ear height, so the solve is redone.
+    if (patternComp_.handDrawnSurfaces() != handSurfaces_)
+        scheduleRecompute();
 }
 
 void MainComponent::markProjectDirty()
@@ -2759,6 +2763,7 @@ void MainComponent::timerCallback()
 void MainComponent::runSimulation()
 {
     if (isThreadRunning()) { startTimer (60); return; }   // retry shortly
+    rebuildSurfaces();
     reportStatus ("Computing...", false);
     startThread();
 }
@@ -2774,6 +2779,7 @@ void MainComponent::run()
         p.directivityBEM2inch = directivityBEM2inchTables_;
         p.directivityQ212P  = directivityQ212PTables_;
         p.bemFields         = bemFieldTablesQ21S_;
+        p.surfaces          = surfaces_;
     }
 
     auto result = AcousticEngine::compute (p);
@@ -3255,24 +3261,29 @@ void MainComponent::syncElevation()
     elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
     elevationComp_.updateData (r, p);
 
-    // The audience, seen from the side: the Venue tab's listening planes.
+    // The venue, seen from the side: audience runs at their floor (sloping on
+    // a rake) with the ears above, and stages and props as blocks.
     std::vector<RadiationPatternComponent::ElevPlane> planes;
     for (const auto& el : venue_)
     {
-        if (el.type != VenueElement::Type::Listening) continue;
         RadiationPatternComponent::ElevPlane ep;
         ep.x0 = ep.x1 = el.pts[0].x;
-        ep.z  = el.pts[0].z;
+        float ym = 0.0f;
         for (const auto& pt : el.pts)
         {
             ep.x0 = juce::jmin (ep.x0, pt.x);
             ep.x1 = juce::jmax (ep.x1, pt.x);
-            ep.z  = juce::jmax (ep.z,  pt.z);
+            ym += 0.25f * pt.y;
         }
-        ep.earM = VenueElement::earHeightM (el.height);
+        ep.z0     = (float) el.floorAt (ep.x0, ym);
+        ep.z1     = (float) el.floorAt (ep.x1, ym);
+        ep.solid  = el.type != VenueElement::Type::Listening;
+        ep.earM   = ep.solid ? 0.0f : VenueElement::earHeightM (el.height);
+        ep.colour = el.colour();
         planes.push_back (ep);
     }
     elevationComp_.setElevationPlanes (std::move (planes));
+    syncVenueRig();
 
     // Each model's measured -6 dB beamwidth at the solve frequency, nearest
     // measured band, for the plan's coverage lines.
@@ -3460,8 +3471,67 @@ void MainComponent::deleteVenueElement (int index)
     markProjectDirty();
 }
 
+void MainComponent::rebuildSurfaces()
+{
+    std::vector<ListeningSurface> s;
+    for (const auto& el : venue_)
+    {
+        if (el.type != VenueElement::Type::Listening) continue;
+        ListeningSurface ls;
+        for (const auto& p : el.pts) { ls.xs.push_back (p.x); ls.ys.push_back (p.y); }
+        el.floorPlane (ls.a, ls.b, ls.c);
+        ls.earM = VenueElement::earHeightM (el.height);
+        s.push_back (std::move (ls));
+    }
+    handSurfaces_ = patternComp_.handDrawnSurfaces();
+    s.insert (s.end(), handSurfaces_.begin(), handSurfaces_.end());
+
+    juce::ScopedLock sl (measLock_);
+    surfaces_ = std::move (s);
+}
+
+void MainComponent::syncVenueShapes()
+{
+    std::vector<RadiationPatternComponent::VenueShape> shapes;
+    for (const auto& el : venue_)
+    {
+        if (el.type == VenueElement::Type::Listening) continue;
+        RadiationPatternComponent::VenueShape vs;
+        for (const auto& p : el.pts) vs.pts.push_back ({ p.x, p.y });
+        vs.colour = el.colour();
+        vs.name   = el.name;
+        shapes.push_back (std::move (vs));
+    }
+    patternComp_.setVenueShapes (std::move (shapes));
+}
+
+void MainComponent::syncVenueRig()
+{
+    const auto spk = controlPanel_.getSpeakers();
+    std::vector<VenueRigMark> rig;
+    int subs = 0, mids = 0;
+    for (const auto& s : spk)
+    {
+        // Numbered as the Sources plan numbers them, muted ones included.
+        const bool sub = isSubwooferModel (s.model);
+        const int  n   = sub ? ++subs : ++mids;
+        if (! s.enabled) continue;
+        const auto cab = cabinetFor (s.model);
+        VenueRigMark m;
+        m.x = s.x; m.y = s.y;
+        m.rotDeg  = s.rotationDeg + (s.reverseOrientation ? 180.0f : 0.0f);
+        m.widthM  = cab.widthM; m.depthM = cab.depthM; m.heightM = cab.heightM;
+        m.baseM   = s.baseHeightM;
+        m.sub     = sub;
+        m.tag     = (sub ? "S" : "M") + juce::String (n);
+        rig.push_back (std::move (m));
+    }
+    venueView_.setRig (std::move (rig));
+}
+
 void MainComponent::syncVenueToPlanes()
 {
+    syncVenueShapes();
     auto all = patternComp_.getAnnotations();
 
     // Out with the previous projection.
@@ -3490,7 +3560,9 @@ void MainComponent::syncVenueToPlanes()
         a.listenHgt    = el.height == VenueElement::AudHeight::Standing
                            ? RadiationPatternComponent::Annotation::ListenHeight::Standing
                            : RadiationPatternComponent::Annotation::ListenHeight::Seated;
-        a.showTag      = true;
+        // The Venue tab draws no label; the plane's numbers stay a right-click
+        // away ("Show plane label").
+        a.showTag      = false;
         a.venueIndex   = i;
 
         // A venue element is four free points, so it goes across as a closed
@@ -3539,6 +3611,7 @@ void MainComponent::refreshVenuePanel()
     if (h > 0 && venuePanel_.getHeight() < h)
         venuePanel_.setSize (venuePanel_.getWidth(), h);
     venueView_.setElements (&venue_, venueSel_);
+    syncVenueRig();
     venueView_.repaint();
 }
 
@@ -3916,6 +3989,7 @@ void MainComponent::refreshFrequencyResponse()
         base.directivityBEM2inch = directivityBEM2inchTables_;
         base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields         = bemFieldTablesQ21S_;
+        base.surfaces          = surfaces_;
     }
 
     // The sweep walks the currently-browsed model's own catalogue only; that
@@ -3976,6 +4050,7 @@ bool MainComponent::buildMicCurve (int micIndex,
         base.directivityBEM2inch = directivityBEM2inchTables_;
         base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields           = bemFieldTablesQ21S_;
+        base.surfaces            = surfaces_;
     }
     const int browsedModel = controlPanel_.getBrowsedModel();
 
@@ -4499,7 +4574,8 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
       base.directivity = directivityQ21STables_; base.directivityBEM2inch = directivityBEM2inchTables_;
       base.directivityQ212P = directivityQ212PTables_;
         base.directivityQ212P    = directivityQ212PTables_;
-      base.bemFields = bemFieldTablesQ21S_; }
+      base.bemFields = bemFieldTablesQ21S_;
+      base.surfaces  = surfaces_; }
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
     in.params = base;

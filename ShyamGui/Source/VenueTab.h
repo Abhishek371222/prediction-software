@@ -60,6 +60,37 @@ struct VenueElement
     struct P { float x = 0.0f, y = 0.0f, z = 0.0f; };
     P pts[4];
 
+    /** The floor under the element as a plane z = a + b x + c y, fitted
+        through the four corners: flat, raked, or a corner a little out of
+        true. Corners in a line have no slope across them, so those fall back
+        to the mean height. */
+    void floorPlane (double& a, double& b, double& c) const noexcept
+    {
+        double sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
+        for (const auto& p : pts)
+        {
+            sx += p.x; sy += p.y; sz += p.z;
+            sxx += (double) p.x * p.x; syy += (double) p.y * p.y; sxy += (double) p.x * p.y;
+            sxz += (double) p.x * p.z; syz += (double) p.y * p.z;
+        }
+        const double n = 4.0;
+        auto det3 = [] (double a1, double a2, double a3, double b1, double b2, double b3,
+                        double c1, double c2, double c3)
+        { return a1 * (b2 * c3 - b3 * c2) - a2 * (b1 * c3 - b3 * c1) + a3 * (b1 * c2 - b2 * c1); };
+        const double d = det3 (n, sx, sy, sx, sxx, sxy, sy, sxy, syy);
+        if (std::abs (d) < 1.0e-9) { a = sz / n; b = c = 0.0; return; }
+        a = det3 (sz, sx, sy, sxz, sxx, sxy, syz, sxy, syy) / d;
+        b = det3 (n, sz, sy, sx, sxz, sxy, sy, syz, syy) / d;
+        c = det3 (n, sx, sz, sx, sxx, sxz, sy, sxy, syz) / d;
+    }
+
+    double floorAt (double x, double y) const noexcept
+    {
+        double a, b, c;
+        floorPlane (a, b, c);
+        return a + b * x + c * y;
+    }
+
     // A box of w x d metres about the origin, lying at height z. Everything
     // added lands here; it is dragged or typed somewhere else afterwards.
     static VenueElement centred (const juce::String& nm, Type t,
@@ -215,6 +246,19 @@ struct VenueCamera
     }
 };
 
+// One cabinet of the Sources rig, as the Venue panes show it: where it stands,
+// which way it faces, its footprint and its height. Read-only here - the rig
+// is edited on the Sources tab; this is so the room is drawn around it.
+struct VenueRigMark
+{
+    float x = 0.0f, y = 0.0f;          // plan position, metres
+    float rotDeg = 0.0f;               // facing, CCW from +x
+    float widthM = 0.0f, depthM = 0.0f, heightM = 0.0f;
+    float baseM = 0.0f;                // underside above the deck
+    bool  sub = false;
+    juce::String tag;                  // "S1", "M2"
+};
+
 class VenuePlotBase : public juce::Component
 {
 public:
@@ -222,6 +266,8 @@ public:
     {
         elems_ = e; sel_ = sel; repaint();
     }
+
+    void setRig (const std::vector<VenueRigMark>* r) { rig_ = r; repaint(); }
 
     void setCamera (VenueCamera* c) { cam_ = c; repaint(); }
 
@@ -241,6 +287,11 @@ public:
 protected:
     const std::vector<VenueElement>* elems_ = nullptr;
     int                              sel_   = -1;
+    const std::vector<VenueRigMark>* rig_   = nullptr;
+
+    // The Sources tab's cabinet look: pale blue body, grey hairline edge.
+    static juce::Colour rigFill (bool sub) { return juce::Colour (sub ? 0xffdbe1ea : 0xffd3def1); }
+    static juce::Colour rigEdge()         { return juce::Colour (0xff8f9399); }
 
     // Straight from the sheet the Sources plan and the SPL plot already
     // draw with. These were a private copy here - near enough to look right
@@ -672,6 +723,10 @@ public:
                 for (int i = 0; i < (int) elems_->size(); ++i)
                     drawElement (g, f, (*elems_)[(size_t) i], i == sel_);
 
+            if (rig_ != nullptr)
+                for (const auto& m : *rig_)
+                    drawRigMark (g, f, m);
+
             drawMark (g, xToScreen (0.0, f), yToScreen (0.0, f), false);
         }
     }
@@ -727,6 +782,45 @@ private:
                 in = ! in;
         }
         return in;
+    }
+
+    // A cabinet's footprint, turned to where it faces, with a short dashed
+    // tick off its front face so the aim reads at a glance.
+    void drawRigMark (juce::Graphics& g, juce::Rectangle<int> f, const VenueRigMark& m) const
+    {
+        const float th = juce::degreesToRadians (m.rotDeg);
+        const float cs = std::cos (th), sn = std::sin (th);
+        auto at = [&] (float u, float v)   // u along the facing, v across it
+        {
+            return juce::Point<float> (xToScreen (m.x + u * cs - v * sn, f),
+                                       yToScreen (m.y + u * sn + v * cs, f));
+        };
+        const float hd = 0.5f * m.depthM, hw = 0.5f * m.widthM;
+        juce::Path box;
+        box.startNewSubPath (at (-hd, -hw));
+        box.lineTo (at ( hd, -hw));
+        box.lineTo (at ( hd,  hw));
+        box.lineTo (at (-hd,  hw));
+        box.closeSubPath();
+        g.setColour (rigFill (m.sub));
+        g.fillPath (box);
+        g.setColour (rigEdge());
+        g.strokePath (box, juce::PathStrokeType (1.0f));
+
+        const float reach = juce::jmax (1.0f, 1.5f * m.depthM);
+        const float dashes[] = { 3.0f, 2.0f };
+        g.drawDashedLine ({ at (hd, 0.0f), at (hd + reach, 0.0f) }, dashes, 2, 1.0f);
+
+        g.setFont (Brand::figSemi (8.0f));
+        const auto b = box.getBounds();
+        const int tw = g.getCurrentFont().getStringWidth (m.tag) + 2;
+        g.setColour (tickCol());
+        if (tw <= b.getWidth())
+            g.drawText (m.tag, b, juce::Justification::centred, false);
+        else
+            g.drawText (m.tag, juce::Rectangle<float> (b.getRight() + 2.0f, b.getCentreY() - 6.0f,
+                                                       (float) tw, 12.0f),
+                        juce::Justification::centredLeft, false);
     }
 
     void drawElement (juce::Graphics& g, juce::Rectangle<int> f,
@@ -860,32 +954,70 @@ public:
             for (int i = 0; i < (int) elems_->size(); ++i)
             {
                 const auto& e = (*elems_)[(size_t) i];
-                float lo = e.pts[0].x, hi = e.pts[0].x, z = e.pts[0].z;
-                for (int k = 1; k < 4; ++k)
+                float lo = e.pts[0].x, hi = e.pts[0].x, ym = 0.0f;
+                for (int k = 0; k < 4; ++k)
                 {
                     lo = juce::jmin (lo, e.pts[k].x);
                     hi = juce::jmax (hi, e.pts[k].x);
-                    z  = juce::jmax (z,  e.pts[k].z);
+                    ym += 0.25f * e.pts[k].y;
                 }
+                // The floor at each end, along the element's middle - on a
+                // rake the two differ and the run slopes, as the solver sees it.
+                const double za = e.floorAt (lo, ym), zb = e.floorAt (hi, ym);
                 const float x0 = xToScreen (lo, f);
                 const float x1 = xToScreen (hi, f);
+
+                if (! e.hasAudHeight())
+                {
+                    // A stage or a prop is something solid standing on the
+                    // deck: a block up to its top.
+                    // One lying flat on the deck still gets a band, or it
+                    // would vanish into the deck line.
+                    const float deck = zToScreen (0.0, f), minH = 4.0f;
+                    juce::Path blk;
+                    blk.startNewSubPath (x0, deck);
+                    blk.lineTo (x0, juce::jmin (zToScreen (za, f), deck - minH));
+                    blk.lineTo (x1, juce::jmin (zToScreen (zb, f), deck - minH));
+                    blk.lineTo (x1, deck);
+                    blk.closeSubPath();
+                    g.setColour (e.colour().withAlpha (0.75f));
+                    g.fillPath (blk);
+                    g.setColour (markCol().withAlpha (i == sel_ ? 1.0f : 0.45f));
+                    g.strokePath (blk, juce::PathStrokeType (1.2f));
+                    continue;
+                }
+
                 // Kept inside the field so a run on the deck is not clipped
                 // down to a sliver by the frame.
                 const float t  = 3.0f;
-                const float zy = juce::jmin (zToScreen (z, f), (float) f.getBottom() - t * 0.5f);
+                const float ya = juce::jmin (zToScreen (za, f), (float) f.getBottom() - t * 0.5f);
+                const float yb = juce::jmin (zToScreen (zb, f), (float) f.getBottom() - t * 0.5f);
                 g.setColour (markCol().withAlpha (i == sel_ ? 1.0f : 0.45f));
-                g.drawLine (x0, zy, x1, zy, t);
+                g.drawLine (x0, ya, x1, yb, t);
 
                 // A seating plane also shows where the ears are: a dotted line
-                // the audience height above it.
-                if (e.hasAudHeight())
-                {
-                    const float earM = VenueElement::earHeightM (e.height);
-                    const float ey   = zToScreen (z + earM, f);
-                    const float dashes[] = { 3.0f, 3.0f };
-                    g.drawDashedLine ({ x0, ey, x1, ey }, dashes, 2, 2.0f);
-                }
-                if (i == sel_) { drawMark (g, x0, zy, true); drawMark (g, x1, zy, true); }
+                // the audience height above it - the height the level on the
+                // Sources tab is predicted at.
+                const float earM = VenueElement::earHeightM (e.height);
+                const float dashes[] = { 3.0f, 3.0f };
+                g.drawDashedLine ({ x0, zToScreen (za + earM, f), x1, zToScreen (zb + earM, f) },
+                                  dashes, 2, 2.0f);
+                if (i == sel_) { drawMark (g, x0, ya, true); drawMark (g, x1, yb, true); }
+            }
+
+        // The rig from the side, to scale: the Sources elevation's boxes.
+        if (rig_ != nullptr)
+            for (const auto& m : *rig_)
+            {
+                const float x0 = xToScreen (m.x - 0.5f * m.depthM, f);
+                const float x1 = xToScreen (m.x + 0.5f * m.depthM, f);
+                const float yt = zToScreen (m.baseM + m.heightM, f);
+                const float yb = zToScreen (m.baseM, f);
+                const juce::Rectangle<float> box (x0, yt, x1 - x0, yb - yt);
+                g.setColour (rigFill (m.sub));
+                g.fillRect (box);
+                g.setColour (rigEdge());
+                g.drawRect (box, 1.0f);
             }
 
         drawMark (g, xToScreen (0.0, f), zToScreen (0.0, f), false);
@@ -928,6 +1060,14 @@ public:
         elev_.setElements (e, sel);
     }
 
+    /** The Sources rig, drawn in both panes so the room is laid out around it. */
+    void setRig (std::vector<VenueRigMark> r)
+    {
+        rig_ = std::move (r);
+        top_.setRig (&rig_);
+        elev_.setRig (&rig_);
+    }
+
     std::function<void (int)>                    onSelect;
     std::function<void (int, VenueElement)>      onElementChanged;
     std::function<void (int, int)>               onAction;
@@ -962,6 +1102,7 @@ public:
 
 private:
     VenueCamera        cam_;
+    std::vector<VenueRigMark> rig_;
     VenueTopPlot       top_;
     PaneHeaderBar      elevHead_ { "Elevation view" };
     VenueElevationPlot elev_;

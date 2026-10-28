@@ -194,6 +194,16 @@ private:
     void addVenueElement (VenueElement::Type type);
     void setVenueElement (int index, const VenueElement& e);
     void syncVenueToPlanes();
+    /** The audience the solver predicts onto: every Venue listening element
+        at its real floor and ear height, then the closed listening planes
+        drawn on the plan. Rebuilt before each solve; read under measLock_. */
+    void rebuildSurfaces();
+    std::vector<ListeningSurface> surfaces_;
+    std::vector<ListeningSurface> handSurfaces_;   // the plan's share of the last build
+    /** The non-audience Venue elements, under the Sources plan. */
+    void syncVenueShapes();
+    /** The Sources rig, drawn on the Venue panes. */
+    void syncVenueRig();
     void deleteVenueElement (int index);
     void venueAction (int index, int action);
     void setVenueFurnitureHidden (bool hidden);

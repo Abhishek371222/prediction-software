@@ -238,11 +238,11 @@ public:
         // --- plane ---------------------------------------------------------
         // A shape can be marked as a PLANE: a surface in the venue rather than
         // a note drawn on top of it. Only the type changes how it draws.
-        // listenHgt DOCUMENTS the plane: it says what height the ears are at,
-        // which is what a listening plane is for. It deliberately does NOT
-        // feed the prediction - the engine has no vertical directivity, so a
-        // number that silently changed the map would be a lie. It is printed
-        // on the tag, and the tooltip says so.
+        // listenHgt is the height the ears are at, which is what a listening
+        // plane is for. On a closed plane it sets the listener height the
+        // level is predicted at (3-D distance to each cabinet; directivity
+        // stays horizontal, there being no measured vertical pattern). It is
+        // printed on the tag.
         enum class PlaneType    { Listening = 0, Virtual = 1, Architectural = 2 };
         enum class ListenHeight { Seated = 0, Standing = 1 };
 
@@ -463,10 +463,34 @@ public:
         directly under its plan marker. pxPerM <= 0 falls back to its own. */
     void setElevationXMapping (XMapping m);
 
-    /** A listening plane seen from the side: its run along x, its deck
-        height and the ear height above that. */
-    struct ElevPlane { float x0 = 0.0f, x1 = 0.0f, z = 0.0f, earM = 0.0f; };
+    /** A Venue element seen from the side: its run along x and the floor
+        height at each end of it (they differ on a rake). A listening plane
+        carries the ear height above that floor; a stage or an object is
+        drawn as a solid block from the deck up to its top. */
+    struct ElevPlane
+    {
+        float x0 = 0.0f, x1 = 0.0f, z0 = 0.0f, z1 = 0.0f, earM = 0.0f;
+        bool  solid = false;
+        juce::Colour colour;
+    };
     void setElevationPlanes (std::vector<ElevPlane> p) { elevPlanes_ = std::move (p); repaint(); }
+
+    /** Venue elements that are not audience - a stage, a prop - shown under
+        the plan for reference. They are the Venue tab's to edit; here they
+        neither clip the map nor stop a ray. */
+    struct VenueShape
+    {
+        std::vector<juce::Point<float>> pts;   // world metres
+        juce::Colour colour;
+        juce::String name;
+    };
+    void setVenueShapes (std::vector<VenueShape> s) { venueShapes_ = std::move (s); repaint(); }
+
+    /** Every closed listening plane drawn by hand on the plan, as surfaces
+        for the solver: on the deck, at the posture's ear height. Venue
+        projections are left out - the Venue tab supplies those itself, with
+        their real floor heights. */
+    std::vector<ListeningSurface> handDrawnSurfaces() const;
 
     /** Full -6 dB horizontal coverage per Speaker::model at the current
         frequency, for the framed plan's coverage lines. */
@@ -525,6 +549,15 @@ private:
     XMapping lastEmittedXMap_;
     XMapping elevXMap_;
     std::vector<ElevPlane> elevPlanes_;
+    std::vector<VenueShape> venueShapes_;
+    void drawVenueShapes (juce::Graphics&);
+    static bool isVenuePlane (const Annotation& a) noexcept
+    {
+        return a.venueIndex >= 0 && a.space == AnnotSpace::World && a.pts.size() >= 3;
+    }
+    /** One Venue element, drawn as the Venue tab draws it. */
+    void drawVenueOutline (juce::Graphics&, const std::vector<juce::Point<float>>& worldPts,
+                           juce::Colour colour, bool selected);
 
     juce::Rectangle<int> plotArea() const;
     float worldScaleX() const;

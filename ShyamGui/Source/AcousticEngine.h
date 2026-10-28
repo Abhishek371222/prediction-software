@@ -142,10 +142,10 @@ struct Speaker
     float rotationDeg        = 0.0f;
     bool  enabled            = true;
     // Where the cabinet sits vertically, and how far it is aimed down.
-    // These describe the rig for the elevation view and for reports; the SPL
-    // prediction is a horizontal plane and does not read them. Saying so
-    // plainly matters: the measured data is one horizontal plane per device,
-    // so there is no vertical pattern to predict with. Tilt is positive down.
+    // The height places the acoustic centre for the distance to a listening
+    // surface (see ListeningSurface). Tilt is drawn and reported but not
+    // predicted with: the measured data is one horizontal plane per device,
+    // so there is no vertical pattern to aim. Tilt is positive down.
     float baseHeightM = 0.0f;   // underside of the cabinet above the ground
     float tiltDeg     = 0.0f;   // down-tilt, degrees
     // Which device this unit is: 0 = Q21S, 2 = BEM2inch (matches
@@ -342,6 +342,65 @@ inline CabinetDims cabinetFor (int model) noexcept
              Q21SCabinet::depthM, Q21SCabinet::halfExtentM };
 }
 
+/** Height of a cabinet's acoustic centre above the deck, metres. */
+inline double acousticCentreZ (const Speaker& s) noexcept
+{
+    return (double) s.baseHeightM + 0.5 * (double) cabinetFor (s.model).heightM;
+}
+
+// ---------------------------------------------------------------------------
+// ListeningSurface - an audience area from the Venue tab (or a closed
+// listening plane drawn on the plan): its outline, the floor under it and the
+// ear height above that floor.
+//
+// Inside one, the level is predicted where the ears are: the distance from
+// each cabinet's acoustic centre runs in 3-D, so a raked seating block or a
+// flown rig changes the 1/r spreading and the arrival phase as it should.
+// The directivity is still read in plan, at the horizontal angle - the
+// measured data has no vertical pattern - so this is the geometry of the
+// room, not a vertical coverage prediction.
+//
+// Off every surface the solve is the horizontal plane through each acoustic
+// centre, as it always was.
+// ---------------------------------------------------------------------------
+struct ListeningSurface
+{
+    std::vector<float> xs, ys;            // outline, metres, in order
+    double a = 0.0, b = 0.0, c = 0.0;     // floor: z = a + b x + c y
+    double earM = 3.5 * 0.3048;           // seated
+
+    double earZ (double x, double y) const noexcept { return a + b * x + c * y + earM; }
+
+    bool operator== (const ListeningSurface& o) const noexcept
+    {
+        return xs == o.xs && ys == o.ys && a == o.a && b == o.b && c == o.c && earM == o.earM;
+    }
+
+    bool contains (double x, double y) const noexcept
+    {
+        bool in = false;
+        const size_t n = std::min (xs.size(), ys.size());
+        for (size_t i = 0, j = n - 1; i < n; j = i++)
+        {
+            const double xi = xs[i], yi = ys[i], xj = xs[j], yj = ys[j];
+            if (((yi > y) != (yj > y))
+                && (x < (xj - xi) * (y - yi) / (yj - yi + 1.0e-12) + xi))
+                in = ! in;
+        }
+        return n >= 3 && in;
+    }
+};
+
+/** Ear height at (x, y), if the point is inside a listening surface. Later
+    surfaces sit over earlier ones, as they are drawn. */
+inline bool listeningEarZ (const std::vector<ListeningSurface>& all,
+                           double x, double y, double& z) noexcept
+{
+    for (size_t i = all.size(); i-- > 0;)
+        if (all[i].contains (x, y)) { z = all[i].earZ (x, y); return true; }
+    return false;
+}
+
 // Measured horizontal directivity for one frequency: linear gain vs angle
 // (degree-indexed, 360 entries), normalized so the on-axis (0 deg) gain = 1.
 struct DirectivityPattern
@@ -484,6 +543,10 @@ struct SimParams
     // (not a stamped ±5 m island).
     std::vector<BemFieldPattern> bemFields;
     bool useMeasuredDirectivity = true;
+
+    // The audience: where the level is predicted at ear height. Empty is the
+    // plain horizontal-plane solve.
+    std::vector<ListeningSurface> surfaces;
 };
 
 struct SimResult

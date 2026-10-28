@@ -4857,6 +4857,7 @@ void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
             drawField (g, pb);
         drawLayout      (g, pb);
         drawFramedGrid  (g, pb);
+        drawVenueShapes (g);
         drawSplValues   (g, pb);
         drawSpeakerRays (g, pb);
         drawSpeakers    (g, pb);
@@ -4902,6 +4903,54 @@ void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
                 if (safe != nullptr && safe->onPlanViewChanged) safe->onPlanViewChanged();
             });
         }
+    }
+}
+
+void RadiationPatternComponent::drawVenueShapes (juce::Graphics& g)
+{
+    // The whole venue, as the Venue tab draws it: stages and props, then the
+    // audience planes projected from it, in that tab's order.
+    for (const auto& s : venueShapes_)
+        drawVenueOutline (g, s.pts, s.colour, false);
+    for (size_t i = 0; i < annotations_.size(); ++i)
+        if (isVenuePlane (annotations_[i]))
+            drawVenueOutline (g, annotations_[i].pts, annotations_[i].colour,
+                              isAnnotationSelected ((int) i));
+}
+
+void RadiationPatternComponent::drawVenueOutline (juce::Graphics& g,
+                                                  const std::vector<juce::Point<float>>& worldPts,
+                                                  juce::Colour colour, bool selected)
+{
+    // The Venue tab's look, so an element is the same thing on both tabs: its
+    // type colour at 75%, a red hairline at 45%, full red with corner and
+    // edge marks when selected. Over a painted map the fill drops to a tint,
+    // or the level it is there to show would be covered.
+    if (worldPts.size() < 3) return;
+    juce::Path p;
+    for (size_t i = 0; i < worldPts.size(); ++i)
+    {
+        const auto sp = worldToScreen (worldPts[i].x, worldPts[i].y);
+        if (i == 0) p.startNewSubPath (sp); else p.lineTo (sp);
+    }
+    p.closeSubPath();
+
+    g.setColour (colour.withAlpha (fieldIsPainted() ? 0.18f : 0.75f));
+    g.fillPath (p);
+    g.setColour (FigPlot::mark().withAlpha (selected ? 1.0f : 0.45f));
+    g.strokePath (p, juce::PathStrokeType (1.2f));
+
+    if (! selected) return;
+    const float r = (float) UiConfig::Scale::px (5);
+    g.setColour (FigPlot::mark());
+    for (size_t i = 0; i < worldPts.size(); ++i)
+    {
+        const auto& n = worldPts[(i + 1) % worldPts.size()];
+        const auto a = worldToScreen (worldPts[i].x, worldPts[i].y);
+        const auto b = worldToScreen (n.x, n.y);
+        const auto m = (a + b) * 0.5f;
+        g.fillRect (a.x - r * 0.5f, a.y - r * 0.5f, r, r);
+        g.fillRect (m.x - r * 0.5f, m.y - r * 0.5f, r, r);
     }
 }
 
@@ -5002,7 +5051,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     for (const auto& s : speakers_)
         topM = juce::jmax (topM, s.baseHeightM + cabinetFor (s.model).heightM);
     for (const auto& p : elevPlanes_)
-        topM = juce::jmax (topM, p.z + p.earM);
+        topM = juce::jmax (topM, juce::jmax (p.z0, p.z1) + p.earM);
     const double step = FigPlot::baseStepM();
     const double zTop = juce::jmax (16.0, std::ceil ((topM * 1.15) / step) * step);
     const float  scV  = (float) (f.getHeight() / zTop);
@@ -5044,24 +5093,45 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     g.drawLine ((float) f.getX(), vy (0.0f), (float) f.getRight(), vy (0.0f), 2.0f);
     FigPlot::drawOriginAxis (g, f, x0);
 
-    // Listening planes: a red run at deck height and a dotted line at the
-    // ears, the Venue tab's elevation marks.
+    // Stages and props first, as blocks from the deck up to their top, so the
+    // audience runs read over them.
     for (const auto& p : elevPlanes_)
     {
-        const float a = hx (juce::jmin (p.x0, p.x1)), b = hx (juce::jmax (p.x0, p.x1));
+        if (! p.solid) continue;
+        // One lying flat on the deck still gets a band, or it would vanish
+        // into the deck line.
+        const float deck = vy (0.0f), minH = 4.0f;
+        juce::Path blk;
+        blk.startNewSubPath (hx (p.x0), deck);
+        blk.lineTo (hx (p.x0), juce::jmin (vy (p.z0), deck - minH));
+        blk.lineTo (hx (p.x1), juce::jmin (vy (p.z1), deck - minH));
+        blk.lineTo (hx (p.x1), deck);
+        blk.closeSubPath();
+        g.setColour (p.colour.withAlpha (0.75f));
+        g.fillPath (blk);
+        g.setColour (FigPlot::mark().withAlpha (0.45f));
+        g.strokePath (blk, juce::PathStrokeType (1.2f));
+    }
+
+    // Listening planes: a red run along the floor - sloping on a rake - and
+    // a dotted line at the ears, the Venue tab's elevation marks.
+    for (const auto& p : elevPlanes_)
+    {
+        if (p.solid) continue;
         const float t = 3.0f;
-        const float zy = juce::jmin (vy (p.z), (float) f.getBottom() - t * 0.5f);
+        const float floorY = (float) f.getBottom() - t * 0.5f;
+        const float a = hx (p.x0), b = hx (p.x1);
+        const float ya = juce::jmin (vy (p.z0), floorY), yb = juce::jmin (vy (p.z1), floorY);
         g.setColour (FigPlot::mark());
-        g.drawLine (a, zy, b, zy, t);
+        g.drawLine (a, ya, b, yb, t);
         const float msz = (float) fig (8.0f);
-        FigPlot::drawMark (g, a, zy, msz);
-        FigPlot::drawMark (g, b, zy, msz);
+        FigPlot::drawMark (g, a, ya, msz);
+        FigPlot::drawMark (g, b, yb, msz);
         if (p.earM > 0.0f)
         {
             const float dashes[] = { 3.0f, 3.0f };
-            const float ey = vy (p.z + p.earM);
             g.setColour (FigPlot::mark().withAlpha (0.7f));
-            g.drawDashedLine ({ a, ey, b, ey }, dashes, 2, 1.0f);
+            g.drawDashedLine ({ a, vy (p.z0 + p.earM), b, vy (p.z1 + p.earM) }, dashes, 2, 1.0f);
         }
     }
 
@@ -5422,6 +5492,54 @@ RadiationPatternComponent::annotationsFromVar (const juce::var& v)
 }
 
 // ---------------------------------------------------------------------------
+std::vector<ListeningSurface> RadiationPatternComponent::handDrawnSurfaces() const
+{
+    std::vector<ListeningSurface> out;
+    for (const auto& a : annotations_)
+    {
+        if (! a.isPlane || a.planeType != Annotation::PlaneType::Listening) continue;
+        if (a.venueIndex >= 0 || a.space != AnnotSpace::World || a.pts.size() < 2) continue;
+
+        ListeningSurface s;
+        s.earM = Annotation::listenHeightM (a.listenHgt);
+        auto add = [&s] (juce::Point<float> p) { s.xs.push_back (p.x); s.ys.push_back (p.y); };
+
+        switch (a.kind)
+        {
+            case Annotation::Kind::Rectangle:
+            case Annotation::Kind::Square:
+            {
+                const auto r = normalisedShapeRect (a.pts[0], a.pts[1], a.kind);
+                const auto c = r.getCentre();
+                add (rotateAround (r.getTopLeft(),     c, a.rotationDeg));
+                add (rotateAround (r.getTopRight(),    c, a.rotationDeg));
+                add (rotateAround (r.getBottomRight(), c, a.rotationDeg));
+                add (rotateAround (r.getBottomLeft(),  c, a.rotationDeg));
+                break;
+            }
+            case Annotation::Kind::Circle:
+            {
+                const float rad = a.pts[0].getDistanceFrom (a.pts[1]);
+                constexpr int kSteps = 48;
+                for (int i = 0; rad > 1.0e-6f && i < kSteps; ++i)
+                {
+                    const float ang = (float) i / kSteps * 2.0f * (float) M_PI;
+                    add ({ a.pts[0].x + rad * std::cos (ang), a.pts[0].y + rad * std::sin (ang) });
+                }
+                break;
+            }
+            case Annotation::Kind::Polyline:
+                if (a.closed)
+                    for (const auto& p : a.pts) add (p);
+                break;
+            default:
+                break;   // an open plane has no inside to stand in
+        }
+        if (s.xs.size() >= 3) out.push_back (std::move (s));
+    }
+    return out;
+}
+
 bool RadiationPatternComponent::listeningClipPath (juce::Path& out) const
 {
     const auto pb = plotArea();
@@ -5490,6 +5608,23 @@ bool RadiationPatternComponent::listeningClipPath (juce::Path& out) const
                 any = true;
                 break;
             }
+
+            case Annotation::Kind::Polyline:
+                // Closed, it is an outline - every Venue audience comes over
+                // as one - and the audience is inside it, like a rectangle.
+                if (a.closed && a.pts.size() >= 3)
+                {
+                    for (size_t i = 0; i < a.pts.size(); ++i)
+                    {
+                        const auto sp = annotateToScreen (a, a.pts[i]);
+                        if (i == 0) out.startNewSubPath (sp);
+                        else        out.lineTo (sp);
+                    }
+                    out.closeSubPath();
+                    any = true;
+                    break;
+                }
+                [[fallthrough]];
 
             default:
             {
@@ -7219,6 +7354,11 @@ void RadiationPatternComponent::drawAnnotations (juce::Graphics& g, juce::Rectan
     {
         const auto& a = annotations_[ai];
         if (a.space != space) continue;
+
+        // An audience from the Venue tab is drawn with the venue, under the
+        // grid and the rig - see drawVenueShapes().
+        if (framedPlan() && isVenuePlane (a))
+            continue;
 
         if (a.kind == Annotation::Kind::Rectangle
             || a.kind == Annotation::Kind::Square

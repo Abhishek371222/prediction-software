@@ -126,6 +126,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        double z = 0.0;            // acoustic centre above the deck
         SpeakerFilter filter;      // applied per smoothing sub-band
         std::complex<double> hCentre { 1.0, 0.0 };  // H at fOwn: pressure, interference, polar
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
@@ -158,6 +159,7 @@ SimResult AcousticEngine::compute (const SimParams& p)
         Src src;
         src.x        = s.x;
         src.y        = s.y;
+        src.z        = acousticCentreZ (s);
         src.gainLin  = std::pow (10.0, s.gainDB / 20.0);
         // Free rotation plus the Reverse flag, which still flips it end for end.
         src.facing   = s.rotationDeg * M_PI / 180.0
@@ -348,10 +350,16 @@ SimResult AcousticEngine::compute (const SimParams& p)
         {
             const double X = res.worldX0 + col * dx;
 
+            // On an audience area the listener is at ear height over its
+            // floor; elsewhere, level with each source.
+            double earZ = 0.0;
+            const bool onSurface = listeningEarZ (p.surfaces, X, Y, earZ);
+
             for (size_t i = 0; i < srcs.size(); ++i)
             {
                 const auto& s = srcs[i];
-                const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y));
+                const double dz = onSurface ? earZ - s.z : 0.0;
+                const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y) + dz * dz);
                 rGeom[i]   = rg;
                 rSpread[i] = std::max (rg, s.halfExtent);
                 theta[i]   = std::atan2 (Y - s.y, X - s.x);
@@ -628,6 +636,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     struct Src
     {
         double x, y, gainLin, facing, delaySec, polPhase;
+        double z = 0.0;            // acoustic centre above the deck
         SpeakerFilter filter;      // applied per smoothing sub-band
         int    model;
         double halfExtent = (double) Q21SCabinet::halfExtentM;  // own cabinet's 1/r floor
@@ -646,6 +655,7 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
         if (! s.enabled) continue;
         Src src;
         src.x = s.x; src.y = s.y;
+        src.z = acousticCentreZ (s);
         src.gainLin = std::pow (10.0, s.gainDB / 20.0);
         src.facing = s.rotationDeg * M_PI / 180.0
                    + (s.reverseOrientation ? M_PI : 0.0);
@@ -693,11 +703,15 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
     const int mCount = p.octaveSmoothing ? Mband : 1;
 
     const double X = x, Y = y;
+    // A probe on an audience area listens at ear height, as the map does.
+    double earZ = 0.0;
+    const bool onSurface = listeningEarZ (p.surfaces, X, Y, earZ);
     std::vector<double> rGeom (srcs.size()), rSpread (srcs.size()), theta (srcs.size());
     for (size_t i = 0; i < srcs.size(); ++i)
     {
         const auto& s = srcs[i];
-        const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y));
+        const double dz = onSurface ? earZ - s.z : 0.0;
+        const double rg = std::sqrt ((X - s.x) * (X - s.x) + (Y - s.y) * (Y - s.y) + dz * dz);
         rGeom[i] = rg;
         rSpread[i] = std::max (rg, srcs[i].halfExtent);
         theta[i] = std::atan2 (Y - s.y, X - s.x);
