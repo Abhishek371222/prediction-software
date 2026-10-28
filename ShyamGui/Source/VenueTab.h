@@ -423,12 +423,15 @@ protected:
         // Vertically the same rule as the top row: a figure whose line sits
         // within a half-line of the frame would be drawn half outside it, so
         // it is left out rather than clipped in half.
-        if (atEdges ? (y - h / 2 < 0 || y + h / 2 > getHeight())
-                    : (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        // On the edges the figure is pulled inside the frame's height, so the
+        // top one never rises into the distance row at the corner.
+        if (y < f.getY() - 1 || y > f.getBottom() + 1 || h > f.getHeight()) return;
+        if (! atEdges && (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        const int top = juce::jlimit (f.getY(), f.getBottom() - h, y - h / 2);
         const int right = f.getX() - 2;
         const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
                                                  right - 2 - font.getStringWidth (s)));
-        g.drawText (s, x, y - h / 2, juce::jmax (1, right - x), h,
+        g.drawText (s, x, top, juce::jmax (1, right - x), h,
                     juce::Justification::centredLeft, false);
     }
 

@@ -12,7 +12,7 @@ namespace VenueSkin
 {
     inline juce::Colour panelBg()   { return juce::Colour (0xffffffff); }
     inline juce::Colour rowBg()     { return juce::Colour (0xfff0f0f0); }
-    inline juce::Colour rowSel()    { return juce::Colour (0xffebb2b3); }
+    inline juce::Colour rowSel()    { return Brand::selection(); }
     inline juce::Colour rowRule()   { return juce::Colour (0x33000000); }
     inline juce::Colour pointRule() { return juce::Colour (0xff999999); }
     inline juce::Colour edge()      { return juce::Colour (0xff000000); }
@@ -23,9 +23,8 @@ namespace VenueSkin
 //
 // A ComboBox's popup is drawn by its LookAndFeel, not by the box's own colour
 // IDs, so styling the box left the list that drops out of it in the default
-// scheme. Sampled from the reference: the list is the same grey as a value
-// box, and the row under the cursor carries the same pink as a selected
-// element row - one highlight colour for "this is the one", wherever it is.
+// scheme. The open list is the Sources panel's (SourcePanel::drawListItem),
+// so every dropdown in the side panels drops the same white list.
 class VenueComboLnF : public juce::LookAndFeel_V4
 {
 public:
@@ -38,8 +37,8 @@ public:
         // The CLOSED box too. Taking over a combo's LookAndFeel replaces the
         // panel's, so anything this one leaves unset falls back to the JUCE
         // default - which is how Aud. Height ended up a dark box on a white
-        // panel. A per-component colour (the selected row's pink) still wins
-        // over these, so setting a default here is safe.
+        // panel. A per-component colour still wins over these, so setting a
+        // default here is safe.
         setColour (juce::ComboBox::backgroundColourId,             kList);
         setColour (juce::ComboBox::outlineColourId,                juce::Colours::transparentBlack);
         setColour (juce::ComboBox::textColourId,                   VenueSkin::ink());
@@ -52,9 +51,13 @@ public:
 
     void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
     {
-        g.fillAll (kList);
-        g.setColour (VenueSkin::edge().withAlpha (0.45f));
-        g.drawRect (0, 0, w, h, 1);
+        SourcePanel::drawListBackground (g, w, h);
+    }
+
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int,
+                                    int& idealWidth, int& idealHeight) override
+    {
+        SourcePanel::listItemSize (text, isSeparator, itemFont_, idealWidth, idealHeight);
     }
 
     /** V4's box, with the solid 14 x 8 triangle the section headers use in
@@ -79,16 +82,15 @@ public:
         g.fillPath (t);
     }
 
-    /** No tick: the pink row already marks the current choice. */
+    /** The Sources panel's list: no tick, the current choice in blue. */
     void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
                             bool isSeparator, bool isActive, bool isHighlighted,
-                            bool, bool hasSubMenu, const juce::String& text,
-                            const juce::String& shortcutKeyText,
-                            const juce::Drawable* icon, const juce::Colour* textColour) override
+                            bool isTicked, bool, const juce::String& text,
+                            const juce::String&, const juce::Drawable*,
+                            const juce::Colour*) override
     {
-        juce::LookAndFeel_V4::drawPopupMenuItem (g, area, isSeparator, isActive, isHighlighted,
-                                                 false, hasSubMenu, text, shortcutKeyText,
-                                                 icon, textColour);
+        SourcePanel::drawListItem (g, area, isSeparator, isActive, isHighlighted, isTicked,
+                                   text, itemFont_);
     }
 
 private:
@@ -238,8 +240,8 @@ public:
     {
         g.fillAll (VenueSkin::panelBg());
 
-        // Every element row carries a band: #F0F0F0 for the rest, the pink
-        // for the one being edited.
+        // Every element row carries a band: #F0F0F0 for the rest, the
+        // selection blue for the one being edited.
         for (size_t i = 0; i < rowY_.size(); ++i)
         {
             const auto r = rowY_[i];
@@ -434,18 +436,10 @@ private:
             t.setSelectedId (e[i].type == VenueElement::Type::Structure ? 2
                            : e[i].type == VenueElement::Type::Object    ? 3 : 1,
                              juce::dontSendNotification);
-            // The selected row's dropdown takes the row's pink with a white
-            // outline, as drawn.
-            if ((int) i == sel_)
-            {
-                t.setColour (juce::ComboBox::backgroundColourId, VenueSkin::rowSel());
-                t.setColour (juce::ComboBox::outlineColourId, juce::Colours::white);
-            }
-            else
-            {
-                t.removeColour (juce::ComboBox::backgroundColourId);
-                t.removeColour (juce::ComboBox::outlineColourId);
-            }
+            // The dropdown keeps its grey box on the blue selected row, as
+            // the Sources list draws it.
+            t.removeColour (juce::ComboBox::backgroundColourId);
+            t.removeColour (juce::ComboBox::outlineColourId);
             t.repaint();
         }
 

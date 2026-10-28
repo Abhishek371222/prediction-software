@@ -6,6 +6,7 @@
 #include "MicReceiver.h"
 #include <vector>
 #include <functional>
+#include <map>
 
 // ---------------------------------------------------------------------------
 // RadiationPatternComponent - 2D world renderer + CAD-style draw overlays.
@@ -440,7 +441,7 @@ public:
     /** Figma V1.1 Sources drawing: the Venue tab's sheet, grid and outside
         distance labels instead of the full-bleed heatmap chrome. Applies to
         the plan and the elevation; polar views are untouched. */
-    void setFigmaFrame (bool on) { figmaFrame_ = on; viewInit_ = false; repaint(); }
+    void setFigmaFrame (bool on) { figmaFrame_ = on; viewInit_ = false; buildImage(); repaint(); }
 
     /** Where world x lands on this component: px = pxAtZero + x * pxPerM. */
     struct XMapping
@@ -462,6 +463,15 @@ public:
         height and the ear height above that. */
     struct ElevPlane { float x0 = 0.0f, x1 = 0.0f, z = 0.0f, earM = 0.0f; };
     void setElevationPlanes (std::vector<ElevPlane> p) { elevPlanes_ = std::move (p); repaint(); }
+
+    /** Full -6 dB horizontal coverage per Speaker::model at the current
+        frequency, for the framed plan's coverage lines. */
+    void setCoverageDeg (std::map<int, float> deg)
+    {
+        if (deg == coverageDeg_) return;
+        coverageDeg_ = std::move (deg);
+        repaint();
+    }
 
     /** SPL of the last solve along the line y = @p alongY, @p n points from
         x0 to x1. Each point is (x m, dB); dB is absolute when the solve has
@@ -501,6 +511,13 @@ private:
     void drawFramedGrid (juce::Graphics&, juce::Rectangle<int> pb);
     void drawFramedLabels (juce::Graphics&, juce::Rectangle<int> pb);
     void drawFramedElevation (juce::Graphics&);
+    /** Figma plan marks: a sub's short dashed stub; a mid's two solid
+        coverage lines and its dashed aim line. */
+    void drawFramedRays (juce::Graphics&);
+    /** "S1" for the first sub, "M1" for the first mid or top. */
+    juce::String framedTag (int index) const;
+    float coverageFor (int model) const;
+    std::map<int, float> coverageDeg_;
     XMapping lastEmittedXMap_;
     XMapping elevXMap_;
     std::vector<ElevPlane> elevPlanes_;

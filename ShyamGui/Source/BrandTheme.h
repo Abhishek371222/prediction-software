@@ -131,6 +131,8 @@ namespace Brand
     inline juce::Colour red()       { return juce::Colour (0xffed2227); }
     inline juce::Colour accent()    { return red(); }
     inline juce::Colour onAccent()  { return juce::Colour (0xfffffafa); }
+    /** Figma: the one "this is the one" fill - selected rows, menu hover. Black text on it. */
+    inline juce::Colour selection() { return juce::Colour (0xffd4e3fe); }
     inline juce::Colour success()   { return juce::Colour (0xff46c37b); }
     inline juce::Colour warning()   { return juce::Colour (0xfff0b04f); }
     inline juce::Colour danger()    { return juce::Colour (0xffe95b5b); }
@@ -805,8 +807,8 @@ namespace Brand
 
             setColour (juce::PopupMenu::backgroundColourId,           panel());
             setColour (juce::PopupMenu::textColourId,                 text());
-            setColour (juce::PopupMenu::highlightedBackgroundColourId, accent());
-            setColour (juce::PopupMenu::highlightedTextColourId,      onAccent());
+            setColour (juce::PopupMenu::highlightedBackgroundColourId, selection());
+            setColour (juce::PopupMenu::highlightedTextColourId,      text());
 
             setColour (juce::ToggleButton::textColourId,            text());
             setColour (juce::ToggleButton::tickColourId,            accent());

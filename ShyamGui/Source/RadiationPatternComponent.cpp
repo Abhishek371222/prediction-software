@@ -3959,15 +3959,16 @@ bool RadiationPatternComponent::fieldIsPainted() const noexcept
 
 juce::Colour RadiationPatternComponent::plotInk() const
 {
-    if (fieldIsPainted()) return Brand::white();
-    // The framed sheet is light grey in both themes, so its ink is fixed too.
-    return figmaFrame_ ? Brand::charcoal() : Brand::axisLabel();
+    // The framed sheet is light grey in both themes, and its map is only a
+    // wash over it, so its ink is fixed too.
+    if (figmaFrame_) return Brand::charcoal();
+    return fieldIsPainted() ? Brand::white() : Brand::axisLabel();
 }
 
 juce::Colour RadiationPatternComponent::plotOnInk() const
 {
-    if (fieldIsPainted()) return Brand::charcoal();
-    return figmaFrame_ ? FigPlot::field() : Brand::plotBg();
+    if (figmaFrame_) return FigPlot::field();
+    return fieldIsPainted() ? Brand::charcoal() : Brand::plotBg();
 }
 
 void RadiationPatternComponent::setSpeakers (const std::vector<Speaker>& speakers, int selectedIndex)
@@ -4350,16 +4351,47 @@ bool RadiationPatternComponent::showingBemHeatmap() const noexcept
 }
 
 // ---------------------------------------------------------------------------
+namespace
+{
+    // The widest figure the framed colour bar prints beside itself.
+    int framedBarLabelW()
+    {
+        return Brand::figSemi (12.0f).getStringWidth ("-88 db") + 2;
+    }
+
+    // The strip the framed colour bar needs: the bar, its figures, a margin
+    // either side - and no more, so the map keeps the rest of the frame.
+    double framedBarNeedPx()
+    {
+        using UiConfig::Scale::fig;
+        return (double) (fig (6.0f) * 2 + fig (16.0f) + 4 + framedBarLabelW());
+    }
+}
+
 juce::Rectangle<int> RadiationPatternComponent::plotArea() const
 {
     if (framedPlan())
-        return framedFieldBox().withTrimmedRight (UiConfig::Scale::fig (FigPlot::kPlanStrip));
+    {
+        // The colour bar's strip is whole cells too, so the grid's right edge
+        // is a rule; with no map there is no bar and the grid fills the frame.
+        const auto fb = framedFieldBox();
+        if (! (hasData_ && showField_)) return fb;
+        const double cell = FigPlot::baseStepM() * FigPlot::snappedPxPerM (fb.getWidth());
+        const int cells = (int) std::ceil (framedBarNeedPx() / juce::jmax (1.0, cell));
+        return fb.withTrimmedRight (juce::roundToInt (cells * cell));
+    }
     return getLocalBounds().withTrimmedRight (kColourbarW + 8);
 }
 
 juce::Rectangle<int> RadiationPatternComponent::framedFieldBox() const
 {
-    return FigPlot::inset (getLocalBounds(), FigPlot::kPlan);
+    // Whole cells down as well as across, so the top and bottom edges are
+    // rules; what is left over drops below the frame.
+    auto box = FigPlot::inset (getLocalBounds(), FigPlot::kPlan);
+    const double cell = FigPlot::baseStepM() * FigPlot::snappedPxPerM (box.getWidth());
+    if (cell >= 1.0)
+        box.setHeight (juce::roundToInt (juce::jmax (1.0, std::floor (box.getHeight() / cell)) * cell));
+    return box;
 }
 
 RadiationPatternComponent::XMapping RadiationPatternComponent::planXMapping() const
@@ -4457,15 +4489,18 @@ void RadiationPatternComponent::fitView()
 
     if (framedPlan() && s > 1.0e-6f)
     {
-        // The Figma framing rather than the whole field: 48 px per 2 m, the
-        // origin 6 m in from the left so the throw runs across the sheet, and
-        // y = 0 on the centre line. Wheel and middle-drag reach the rest.
+        // The Figma framing rather than the whole field: about 48 px per 2 m,
+        // exactly whole cells across, the origin three cells in from the left
+        // so the throw runs across the sheet, and y = 0 on (or half a cell
+        // off) the centre line - every edge on a rule. Wheel and middle-drag
+        // reach the rest.
         zoom_ = juce::jlimit (minZoomForFit(), kMaxZoom,
-                              UiConfig::Scale::figf (FigPlot::kDefaultPxPerM) / s);
-        constexpr float kLeftEdgeM = -6.0f;
-        origin_.x = -(kLeftEdgeM - (float) result_.worldX0) * worldScaleX();
-        origin_.y = 0.5f * (float) pb.getHeight()
-                  - (float) (result_.worldY0 + result_.worldH) * worldScaleY();
+                              FigPlot::snappedPxPerM (framedFieldBox().getWidth()) / s);
+        const double step = FigPlot::baseStepM();
+        origin_.x = -((float) FigPlot::openingLeftM() - (float) result_.worldX0) * worldScaleX();
+        const int rows = juce::jmax (1, juce::roundToInt (pb.getHeight() / (step * worldScaleY())));
+        const float topM = (float) (std::floor (rows / 2.0) * step);
+        origin_.y = (topM - (float) (result_.worldY0 + result_.worldH)) * worldScaleY();
     }
     viewInit_   = true;
     // An explicit fit is the user asking for the default framing back.
@@ -4640,7 +4675,9 @@ void RadiationPatternComponent::buildImage()
     const int H = result_.height;
     if (W <= 0 || H <= 0) return;
 
-    fieldImage_ = juce::Image (juce::Image::RGB, W, H, false);
+    // On the framed sheet the map is a wash over the grey, as in Figma.
+    const bool wash = figmaFrame_;
+    fieldImage_ = juce::Image (wash ? juce::Image::ARGB : juce::Image::RGB, W, H, true);
     juce::Image::BitmapData bm (fieldImage_, juce::Image::BitmapData::writeOnly);
 
     const auto mode = params_.viewMode;
@@ -4671,6 +4708,15 @@ void RadiationPatternComponent::buildImage()
                     // db Floor only blacks out levels at/below the floor.
                     const float t = ColourMaps::relDbToColourT (dB, (float) params_.dBfloor);
                     c = ColourMaps::sevenColor (t);
+                }
+                if (wash)
+                {
+                    const float step = ColourMaps::kContourStepDB;
+                    const float lvl = params_.bandedSPL
+                                          ? -std::floor ((-dB) / step + 1.0e-4f) * step
+                                          : dB;
+                    c = c.withAlpha (ColourMaps::sheetWashAlpha (
+                        ColourMaps::relDbToColourT (lvl, (float) params_.dBfloor)));
                 }
             }
 
@@ -4810,9 +4856,12 @@ void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
     if (hasData_ && showField_)
     {
         using UiConfig::Scale::fig;
-        // Figma: a 16 x 440 bar 19 px past the grid and 8 px under the top,
-        // leaving room below it for the "Rel. SPL" caption.
-        const juce::Rectangle<int> bar (pb.getRight() + fig (19.0f), frameBox.getY() + fig (8.0f),
+        // Figma: a 16 px bar 8 px under the top, leaving room below it for
+        // the "Rel. SPL" caption; bar and figures centred in the strip.
+        const int stripW = frameBox.getRight() - pb.getRight();
+        const int groupW = fig (16.0f) + 4 + framedBarLabelW();
+        const juce::Rectangle<int> bar (pb.getRight() + juce::jmax (fig (6.0f), (stripW - groupW) / 2),
+                                        frameBox.getY() + fig (8.0f),
                                         fig (16.0f),
                                         juce::jmax (20, frameBox.getHeight() - fig (40.0f)));
         drawColourbar (g, frameBox.withLeft (pb.getRight()), bar);
@@ -4844,19 +4893,37 @@ void RadiationPatternComponent::drawFramedGrid (juce::Graphics& g, juce::Rectang
     if (ppm <= 1.0e-6) return;
     const double step = FigPlot::gridStepM (ppm, UiConfig::Scale::figf (30.0f));
 
-    // Over a heatmap the light rule is softened so it reads as a grid on
-    // the map rather than a mesh across it.
-    g.setColour (FigPlot::grid().withAlpha (fieldIsPainted() ? 0.55f : 1.0f));
+    juce::RectangleList<int> rules;
     const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY());
     const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom());
     FigPlot::forSteps (juce::jmin (tl.y, br.y), juce::jmax (tl.y, br.y), step, [&] (double m)
     {
         const int y = juce::roundToInt (worldToScreen (0.0f, (float) m).y);
         if (y > pb.getY() && y < pb.getBottom())
-            g.drawHorizontalLine (y, (float) pb.getX(), (float) pb.getRight());
+            rules.addWithoutMerging ({ pb.getX(), y, pb.getWidth(), 1 });
     });
     const auto map = planXMapping();
-    FigPlot::drawXGrid (g, pb, map.pxAtZero, map.pxPerM, step);
+    FigPlot::forSteps ((pb.getX() - map.pxAtZero) / map.pxPerM,
+                       (pb.getRight() - map.pxAtZero) / map.pxPerM, step, [&] (double m)
+    {
+        const int x = juce::roundToInt (map.pxAtZero + m * map.pxPerM);
+        if (x > pb.getX() && x < pb.getRight())
+            rules.addWithoutMerging ({ x, pb.getY(), 1, pb.getHeight() });
+    });
+
+    // The sheet's own rule, the same with mapping on or off. Over the map the
+    // wash is laid once more along each rule, so the grid darkens with the
+    // map beneath it (Figma's box: #6288A4 rules on #8BB2CE) instead of
+    // cutting light lines through it, and fades back to the plain rule where
+    // the map does.
+    g.setColour (FigPlot::grid());
+    g.fillRectList (rules);
+    if (fieldIsPainted())
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (rules);
+        drawField (g, pb);
+    }
     FigPlot::drawOriginAxis (g, pb, map.pxAtZero);
 }
 
@@ -4871,16 +4938,17 @@ void RadiationPatternComponent::drawFramedLabels (juce::Graphics& g, juce::Recta
 
     // Figma: SemiBold 12, the top row 25 px under the pane, the side column
     // 24 px in - the Venue tab's numbers.
-    FigPlot::drawXLabels (g, pb, map.pxAtZero, map.pxPerM, label, 25.0f);
+    FigPlot::drawXLabels (g, pb, map.pxAtZero, map.pxPerM, label, 25.0f, getWidth());
 
+    // A pixel past each edge, so a rule lying on the frame keeps its figure.
     g.setFont (Brand::figSemi (12.0f));
     g.setColour (FigPlot::tick());
-    const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY());
-    const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom());
+    const auto tl = screenToWorld ((float) pb.getX(),     (float) pb.getY() - 1.0f);
+    const auto br = screenToWorld ((float) pb.getRight(), (float) pb.getBottom() + 1.0f);
     FigPlot::forSteps (juce::jmin (tl.y, br.y), juce::jmax (tl.y, br.y), label, [&] (double m)
     {
         const int y = juce::roundToInt (worldToScreen (0.0f, (float) m).y);
-        FigPlot::drawYLabel (g, pb, getHeight(), y, FigPlot::tick (m, label, "y"), 24.0f, false);
+        FigPlot::drawYLabel (g, pb, getHeight(), y, FigPlot::tick (m, label, "y"), 24.0f, true);
     });
 }
 
@@ -4903,8 +4971,8 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     float x0 = elevXMap_.pxAtZero, ppm = elevXMap_.pxPerM;
     if (ppm <= 1.0e-6f)
     {
-        ppm = figf (FigPlot::kDefaultPxPerM);
-        x0  = (float) f.getX() + 6.0f * ppm;
+        ppm = FigPlot::snappedPxPerM (f.getWidth());
+        x0  = (float) f.getX() - (float) FigPlot::openingLeftM() * ppm;
     }
     auto hx = [&] (float m) { return x0 + m * ppm; };
 
@@ -4938,7 +5006,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     g.drawRect (f, 1);
 
     // Figma: the distance row 20 px under the pane, the heights 24 px in.
-    FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f);
+    FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f, getWidth());
     g.setFont (Brand::figSemi (12.0f));
     g.setColour (FigPlot::tick());
     FigPlot::forSteps (0.0, zTop, labelZ, [&] (double m)
@@ -5468,8 +5536,10 @@ void RadiationPatternComponent::drawField (juce::Graphics& g, juce::Rectangle<in
     {
         // Off the audience, the colour map's own floor - the shade a silent
         // field would be. The bare component background is white in the light
-        // theme, which left a glaring slab where the map stopped.
-        g.fillAll (ColourMaps::sevenColor (0.0f));
+        // theme, which left a glaring slab where the map stopped. The framed
+        // sheet is already that floor: the wash fades into it.
+        if (! figmaFrame_)
+            g.fillAll (ColourMaps::sevenColor (0.0f));
         g.reduceClipRegion (audience);
     }
 
@@ -5986,6 +6056,8 @@ void RadiationPatternComponent::drawSpeakerDimensions (juce::Graphics& g,
 void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
                                                  juce::Rectangle<int> plotBounds)
 {
+    if (framedPlan()) { drawFramedRays (g); return; }
+
     // Long enough to leave the plot from anywhere inside it, so the rays end
     // at the edge of the canvas rather than stopping somewhere in the field.
     // The caller has already clipped to the plot area.
@@ -6022,6 +6094,72 @@ void RadiationPatternComponent::drawSpeakerRays (juce::Graphics& g,
     }
 }
 
+float RadiationPatternComponent::coverageFor (int model) const
+{
+    const auto it = coverageDeg_.find (model);
+    return (it != coverageDeg_.end() && it->second > 1.0f && it->second < 359.0f) ? it->second : 90.0f;
+}
+
+juce::String RadiationPatternComponent::framedTag (int index) const
+{
+    if (index < 0 || index >= (int) speakers_.size()) return {};
+    const bool sub = isSubwooferModel (speakers_[(size_t) index].model);
+    int n = 0;
+    for (int i = 0; i <= index; ++i)
+        if (isSubwooferModel (speakers_[(size_t) i].model) == sub) ++n;
+    return (sub ? "S" : "M") + juce::String (n);
+}
+
+void RadiationPatternComponent::drawFramedRays (juce::Graphics& g)
+{
+    const auto pb = plotArea();
+    const float reach = 2.0f * (float) juce::jmax (pb.getWidth(), pb.getHeight());
+    const float ppm = worldScaleX();
+    const float aimDash[] = { 4.0f, 3.0f };
+    const float subDash[] = { 3.0f, 2.0f };
+
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        const auto& spk = speakers_[(size_t) i];
+        if (! spk.enabled) continue;
+
+        const auto c = worldToScreen (spk.x, spk.y);
+        const float th = juce::degreesToRadians (
+            spk.rotationDeg + (spk.reverseOrientation ? 180.0f : 0.0f));
+        const juce::Point<float> dir { std::cos (th), -std::sin (th) };
+        const float halfDepth = 0.5f * cabinetFor (spk.model).depthM * ppm;
+        const auto front = c + dir * halfDepth;
+        const bool live = ! lockRays_
+                       && ((drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
+                           || (i == selected_) || isSpeakerSelected (i));
+
+        if (isSubwooferModel (spk.model))
+        {
+            // A sub has no axis worth a line across the field: a short stub
+            // off its front face says which way it faces, nothing more.
+            const float len = juce::jmax ((float) UiConfig::Scale::fig (24.0f), 2.8f * halfDepth);
+            g.setColour ((live ? Brand::accent() : FigPlot::tick()).withAlpha (0.85f));
+            g.drawDashedLine ({ front, front + dir * len }, subDash, 2, 1.0f);
+            continue;
+        }
+
+        // The -6 dB coverage edges, solid, out to the frame.
+        const float half = juce::degreesToRadians (0.5f * coverageFor (spk.model));
+        g.setColour (FigPlot::tick().withAlpha (0.85f));
+        for (const float a : { th - half, th + half })
+        {
+            const juce::Point<float> d { std::cos (a), -std::sin (a) };
+            g.drawLine ({ front, front + d * reach }, 1.0f);
+        }
+
+        // The aim, dashed, stopping where it lands on a plane.
+        const auto end = clipRayAtPlanes (c, c + dir * reach);
+        g.setColour (live ? Brand::accent().withAlpha (0.95f)
+                          : FigPlot::tick().withAlpha (lockRays_ ? 0.30f : 0.45f));
+        g.drawDashedLine ({ front, end }, aimDash, 2, live ? 1.6f : 1.0f);
+    }
+}
+
 bool RadiationPatternComponent::rayVisibleFor (int i) const noexcept
 {
     if (i < 0 || i >= (int) speakers_.size()) return false;
@@ -6030,7 +6168,8 @@ bool RadiationPatternComponent::rayVisibleFor (int i) const noexcept
     // what it does not get is a line drawn across the whole field claiming a
     // pattern it does not have.
     if (isSubwooferModel (speakers_[(size_t) i].model)) return false;
-    return showRays_ || (i == selected_) || isSpeakerSelected (i);
+    // The framed (Figma) plan always draws every mid's aim and coverage.
+    return showRays_ || framedPlan() || (i == selected_) || isSpeakerSelected (i);
 }
 
 bool RadiationPatternComponent::aimHandleVisibleFor (int i) const noexcept
@@ -6266,6 +6405,45 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
 
         auto box = speakerFootprintScreen (spk);
 
+        // Figma plan: a pale rounded box with a soft grey edge - subs grey-
+        // blue, mids blue - and its short name upright inside it.
+        if (framedPlan())
+        {
+            {
+                juce::Graphics::ScopedSaveState rs (g);
+                if (std::abs (spk.rotationDeg) > 0.01f)
+                    g.addTransform (juce::AffineTransform::rotation (
+                        -juce::degreesToRadians (spk.rotationDeg), c.x, c.y));
+                const auto fill = isSubwooferModel (spk.model) ? juce::Colour (0xffdbe1ea)
+                                                               : juce::Colour (0xffd3def1);
+                g.setColour (fill.withMultipliedAlpha (alpha));
+                g.fillRoundedRectangle (box, 2.0f);
+                g.setColour ((isSel ? Brand::accent() : juce::Colour (0xff8f9399))
+                                 .withMultipliedAlpha (alpha));
+                g.drawRoundedRectangle (box, 2.0f, isSel ? 1.8f : 1.0f);
+                if (spk.polarityInverted)
+                {
+                    const float d = juce::jlimit (3.0f, 6.0f, box.getWidth() * 0.18f);
+                    g.setColour (Brand::red().withAlpha (0.95f * alpha));
+                    g.fillEllipse (box.getRight() - d - 1.5f, box.getY() + 1.5f, d, d);
+                }
+                if (showSpeakerDims_)
+                    drawSpeakerDimensions (g, box, spk, alpha);
+            }
+
+            const auto tag  = framedTag (i);
+            const auto font = Brand::figSemi (8.0f);
+            g.setFont (font);
+            g.setColour (FigPlot::tick().withAlpha (alpha));
+            const float tw = (float) font.getStringWidth (tag) + 2.0f, th = font.getHeight();
+            const bool inside = box.getWidth() >= tw + 2.0f && box.getHeight() >= th;
+            const juce::Rectangle<float> tr = inside
+                ? juce::Rectangle<float> (tw, th).withCentre (c)
+                : juce::Rectangle<float> (box.getRight() + 2.0f, c.y - th * 0.5f, tw, th);
+            g.drawText (tag, tr, juce::Justification::centred, false);
+            continue;
+        }
+
         // Everything that belongs to the cabinet turns with it. Screen Y runs
         // downwards, so a counter-clockwise world rotation is a negative one
         // here. The name label is drawn outside this block, upright, because a
@@ -6500,6 +6678,14 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
     g.setFont (placed ? Brand::figSemi (12.0f)
                       : Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
 
+    // On the framed sheet the map is a wash over the grey, so the key is too.
+    const auto keyColour = [placed] (juce::Colour c, float db, float floor)
+    {
+        if (! placed) return c;
+        return FigPlot::field().overlaidWith (
+            c.withAlpha (ColourMaps::sheetWashAlpha (ColourMaps::relDbToColourT (db, floor))));
+    };
+
     const int tickH = UiConfig::Scale::px (14);
     auto drawTick = [&] (int db, int ty)
     {
@@ -6519,7 +6705,7 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
         for (int i = 0; i < bands; ++i)
         {
             const float db = -step * (float) i;
-            g.setColour (ColourMaps::splBandForFloor (db, floor, step));
+            g.setColour (keyColour (ColourMaps::splBandForFloor (db, floor, step), db, floor));
             g.fillRect ((float) barX, barY + i * bh, (float) barW, bh + 0.5f);
             drawTick ((int) std::lround (db), (int) (barY + i * bh));
         }
@@ -6535,7 +6721,7 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
             const float frac = (float) yy / (float) juce::jmax (1, barH - 1); // 0 at top
             const float db = -frac * span;
             const float t = ColourMaps::relDbToColourT (db, floor);
-            g.setColour (ColourMaps::sevenColor (t));
+            g.setColour (keyColour (ColourMaps::sevenColor (t), db, floor));
             g.fillRect (barX, barY + yy, barW, 1);
         }
         g.setColour (outline);

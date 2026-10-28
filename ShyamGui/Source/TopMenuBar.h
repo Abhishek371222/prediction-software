@@ -3,17 +3,18 @@
 #include "BrandTheme.h"
 
 // =============================================================================
-// TopMenuBar - the application's top strip, as the Figma draws it:
+// TopMenuBar - the application's top strip, as the Figma draws it
+// (Source screen - 1.3, "Group 964"):
 //
-//   [ ATOMIK* ] | File | Venue | Sources | Mapping | Export | ... | Settings |
-//                                                           | INTEGREL.ATOMIK |
+//   [ ATOMIK* ]   File  Venue  Sources  Mapping  Export   ...   (gear) | INTEGRAL.ATOMIK
+//                              -------
 //
 // It replaces the two-row title band + icon ribbon with one strip. The ribbon
 // is not deleted - it is hidden, and everything it carried is reachable from
 // one of the five menus, so no action is lost in the move.
 //
-// The wordmark cell is exactly the sidebar's width, so the rule under it lines
-// up with the sidebar's own edge and the menus start where the plot starts.
+// The menus start on the sidebar's edge, so the first cell lines up with the
+// plot below it. The strip is white with black ink in both themes.
 // =============================================================================
 class TopMenuBar : public juce::Component
 {
@@ -22,27 +23,21 @@ public:
 
     TopMenuBar()
     {
-        auto cell = [this] (juce::TextButton& b, const juce::String& text, MenuId id)
+        auto wire = [this] (juce::Button& b, MenuId id)
         {
-            b.setButtonText (text);
-            b.setComponentID ("topMenu");
-            b.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight
-                               | juce::Button::ConnectedOnTop  | juce::Button::ConnectedOnBottom);
-            b.setColour (juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-            b.setColour (juce::TextButton::buttonOnColourId, Brand::btnIn());
-            b.setColour (juce::TextButton::textColourOffId,  Brand::text());
-            b.setColour (juce::TextButton::textColourOnId,   Brand::text());
             b.setTriggeredOnMouseDown (true);
+            b.setMouseCursor (juce::MouseCursor::PointingHandCursor);
             b.onClick = [this, id, &b] { if (onMenu) onMenu (id, &b); };
             addAndMakeVisible (b);
         };
-
-        cell (btnFile_,     "File",     File);
-        cell (btnVenue_,    "Venue",    Venue);
-        cell (btnSources_,  "Sources",  Sources);
-        cell (btnMapping_,  "Mapping",  Mapping);
-        cell (btnExport_,   "Export",   Export);
-        cell (btnSettings_, "Settings", Settings);
+        wire (btnFile_,     File);
+        wire (btnVenue_,    Venue);
+        wire (btnSources_,  Sources);
+        wire (btnMapping_,  Mapping);
+        wire (btnExport_,   Export);
+        wire (btnSettings_, Settings);
+        btnSettings_.setTooltip ("Settings");
+        btnSources_.setActive (true);
 
         projectLabel_.setJustificationType (juce::Justification::centred);
         projectLabel_.setInterceptsMouseClicks (false, false);
@@ -52,7 +47,13 @@ public:
     /** Which TAB is showing. File / Mapping / Export drop a menu and are
         gone again, so they never take this - only the two that change what
         the window is displaying. */
-    void setActiveTab (MenuId id) { if (activeTab_ != id) { activeTab_ = id; repaint(); } }
+    void setActiveTab (MenuId id)
+    {
+        if (activeTab_ == id) return;
+        activeTab_ = id;
+        for (auto* t : tabs())
+            t->setActive (t == buttonFor (id));
+    }
 
     /** Called with the menu that was clicked and the button it hangs under. */
     std::function<void (MenuId, juce::Component*)> onMenu;
@@ -85,79 +86,132 @@ public:
             logo_->drawWithin (g, lb, juce::RectanglePlacement::centred, 1.0f);
         }
 
-        // Every menu cell, Settings included, is outlined #D5D3D3; the open
-        // tab is filled #DFDFDF.
-        // The cells are painted UNDER the transparent buttons.
-        const auto* active = buttonFor (activeTab_);
-        for (auto* b : { &btnFile_, &btnVenue_, &btnSources_, &btnMapping_, &btnExport_ })
-        {
-            const bool on = b == active;
-            if (on)
-            {
-                g.setColour (kTabActive);
-                g.fillRect (b->getBounds());
-            }
-            g.setColour (kRule);
-            g.drawRect (b->getBounds(), 1);
-        }
-        g.setColour (kRule);
-        g.drawRect (btnSettings_.getBounds(), 1);
-
-        g.setColour (kBound);
+        // Figma: a 1 px black edge round the strip, and a 1 px black rule
+        // closing off the project name's cell.
+        g.setColour (kInk);
+        g.drawHorizontalLine (0, 0.0f, (float) r.getRight());
         g.drawHorizontalLine (r.getBottom() - 1, 0.0f, (float) r.getRight());
+        g.drawVerticalLine (projectBox_.getX(), 0.0f, (float) r.getBottom());
     }
 
     void resized() override
     {
         const int h = getHeight();
-
         using UiConfig::Scale::fig;
-        projectLabel_.setFont (Brand::topMenu());
-        projectLabel_.setBorderSize ({});
-        projectLabel_.setColour (juce::Label::textColourId, juce::Colours::black);
 
-        // Figma V1.1 cells, from the panel edge (x 400): File at -1 (80 wide),
-        // Venue 78 (92), Sources 169 (89), Mapping 257 (87), Export 343 (81).
-        // Neighbours share their 1 px edge. The words are centred, as drawn.
-        const struct { float x, w; } cells[] = {
-            { -1.0f, 80.0f }, { 78.0f, 92.0f }, { 169.0f, 89.0f }, { 257.0f, 87.0f }, { 343.0f, 81.0f } };
-        int i = 0;
-        for (auto* b : { &btnFile_, &btnVenue_, &btnSources_, &btnMapping_, &btnExport_ })
+        // Figma: five 120 px cells from the sidebar's edge (x 399), each word
+        // centred in its cell, full strip height.
+        const int cellW = fig (120.0f);
+        int x = sideW_ - 1;
+        for (auto* t : tabs())
         {
-            b->setLookAndFeel (nullptr);
-            const auto& c = cells[i++];
-            const int cx = c.x < 0.0f ? sideW_ - 1 : sideW_ + fig (c.x);
-            b->setBounds (cx, 0, fig (c.w), h - 1);
+            t->setBounds (x, 1, cellW, h - 2);
+            x += cellW;
         }
 
-        // Settings (80, ending at 1699) and the project name (221) close the
-        // right-hand end. A long file name elides inside its cell; the window
-        // title has it in full.
-        const int projW = fig (221.0f);
-        projectBox_ = { getWidth() - projW, 0, projW, h - 1 };
-        btnSettings_.setBounds (projectBox_.getX() - fig (80.0f), 0, fig (80.0f), h - 1);
-        projectLabel_.setBounds (projectBox_);
+        // Figma: the project name's cell is the last 222 px; the 26 px gear
+        // sits 8 px before it, 16 px down. The gear's button is the full
+        // strip height and centred on the glyph, so it is an easy target.
+        const int projW = fig (222.0f);
+        projectBox_ = { getWidth() - projW, 0, projW, h };
+        const int gearCx = projectBox_.getX() - fig (8.0f) - fig (13.0f);
+        const int hitW   = fig (42.0f);
+        btnSettings_.setBounds (gearCx - hitW / 2, 1, hitW, h - 2);
+
+        projectLabel_.setFont (Brand::figMed (16.0f));
+        projectLabel_.setBorderSize ({});
+        projectLabel_.setColour (juce::Label::textColourId, kInk);
+        projectLabel_.setBounds (projectBox_.withTrimmedLeft (1).reduced (fig (8.0f), 1));
     }
 
-    juce::TextButton btnFile_, btnVenue_, btnSources_, btnMapping_, btnExport_, btnSettings_;
+private:
+    // ---- A menu word: Montserrat 16, black, centred; the open tab carries
+    //      Figma's red underline (2 px, #ED2227, round ends, 4 px above the
+    //      strip's bottom edge). Hover shows the same line in grey.
+    class Tab : public juce::Button
+    {
+    public:
+        Tab (const juce::String& text, bool semiBold)
+            : juce::Button (text), semiBold_ (semiBold) {}
+
+        void setActive (bool on) { if (active_ != on) { active_ = on; repaint(); } }
+
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            using UiConfig::Scale::figf;
+            const auto b = getLocalBounds().toFloat();
+            g.setFont (semiBold_ ? Brand::figSemi (16.0f) : Brand::figMed (16.0f));
+            g.setColour (down ? kInk.withAlpha (0.6f) : kInk);
+            g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
+
+            if (active_ || over)
+            {
+                const float th = juce::jmax (1.5f, figf (2.0f));
+                // The strip's bottom edge is 1 px below this button.
+                const float y  = b.getBottom() + 1.0f - figf (5.0f);
+                juce::Path p;
+                p.startNewSubPath (b.getX() + figf (1.0f), y);
+                p.lineTo (b.getRight() - figf (1.0f), y);
+                g.setColour (active_ ? kAccent : kHover);
+                g.strokePath (p, juce::PathStrokeType (th, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+            }
+        }
+
+    private:
+        bool semiBold_ = false;
+        bool active_   = false;
+    };
+
+    // ---- The Settings gear: Figma's 26 px glyph, centred in its button.
+    class Gear : public juce::Button
+    {
+    public:
+        Gear() : juce::Button ("Settings"), img_ (Brand::assetImage ("ToolIcons/Settings.png")) {}
+
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            const float s = UiConfig::Scale::figf (26.0f);
+            const auto box = juce::Rectangle<float> (s, s).withCentre (getLocalBounds().toFloat().getCentre());
+            if (over || down)
+            {
+                g.setColour (kHover.withAlpha (down ? 0.9f : 0.6f));
+                g.fillEllipse (box.expanded (UiConfig::Scale::figf (5.0f)));
+            }
+            if (img_.isValid())
+            {
+                g.setOpacity (1.0f);
+                g.drawImage (img_, box, juce::RectanglePlacement::centred);
+            }
+        }
+
+    private:
+        juce::Image img_;
+    };
+
+    inline static const juce::Colour kWhite  { 0xffffffff };
+    inline static const juce::Colour kInk    { 0xff000000 };
+    inline static const juce::Colour kAccent { 0xffed2227 };
+    inline static const juce::Colour kHover  { 0xffd5d3d3 };
+
+public:
+    Tab  btnFile_     { "File", true }, btnVenue_ { "Venue", false }, btnSources_ { "Sources", false },
+         btnMapping_  { "Mapping", false }, btnExport_ { "Export", false };
+    Gear btnSettings_;
 
 private:
-    // Figma V1.1 strip colours.
-    const juce::Colour kWhite        { juce::Colour (0xffffffff) };
-    const juce::Colour kTabActive    { juce::Colour (0xffdfdfdf) };
-    const juce::Colour kRule         { juce::Colour (0xffd5d3d3) };
-    const juce::Colour kBound        { juce::Colour (0xff000000) };
+    std::array<Tab*, 5> tabs() { return { &btnFile_, &btnVenue_, &btnSources_, &btnMapping_, &btnExport_ }; }
 
-    const juce::TextButton* buttonFor (MenuId id) const
+    Tab* buttonFor (MenuId id)
     {
         switch (id)
         {
+            case File:     return &btnFile_;
             case Venue:    return &btnVenue_;
             case Sources:  return &btnSources_;
-            case File:     return &btnFile_;
             case Mapping:  return &btnMapping_;
             case Export:   return &btnExport_;
-            case Settings: return &btnSettings_;
+            case Settings: break;
         }
         return nullptr;
     }

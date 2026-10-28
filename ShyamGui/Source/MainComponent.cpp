@@ -32,6 +32,8 @@ static void setModelFrequency (SimParams& p, int model, double hz)
 // the build - hidden, not deleted - and every action it carried is in one
 // of the five menus.
 static constexpr bool kUseTopMenuBar = true;
+// The Sources "Distance Vs. dbSPL" pane: built, but hidden until it is wanted.
+static constexpr bool kShowSplPane = false;
 
 // The bottom strip - "Last run" / "Elapsed" and the two export buttons - is
 // hidden, and the height it used to hold goes to the plots above it. The code
@@ -337,8 +339,14 @@ MainComponent::MainComponent (ProjectData project)
     // Picking a cabinet row drops the plane selection, so the list never shows
     // two chosen rows - and the plane's Delete goes away with it, which is the
     // point: it belongs to the row you are actually on.
-    sourcePanel_.onSelect   = [this] (int i)                  { selectedPlane_ = -1;
-                                                                controlPanel_.selectSpeaker (i); };
+    // Choosing a source in the list selects it everywhere: the plan, the
+    // elevation and the Source Positioning / Rigging Angles sections.
+    sourcePanel_.onSelect   = [this] (int i)
+    {
+        selectedPlane_ = -1;
+        controlPanel_.selectSpeaker (i);
+        if (controlPanel_.onSelectionChanged) controlPanel_.onSelectionChanged (i);
+    };
     sourcePanel_.onPosition = [this] (int i, float x, float y) { controlPanel_.setSpeakerPosition (i, x, y); };
     sourcePanel_.onRotation = [this] (int i, float d)          { controlPanel_.setSpeakerRotation (i, d); };
     sourcePanel_.onTilt     = [this] (int i, float d)          { controlPanel_.setSpeakerTilt (i, d); };
@@ -833,6 +841,7 @@ MainComponent::MainComponent (ProjectData project)
         patternComp_.setSpeakers (controlPanel_.getSpeakers(), idx);
         patternComp_.selectOnlySpeaker (idx);
         patternComp_.repaint();
+        elevationComp_.setSpeakers (controlPanel_.getSpeakers(), idx);
         refreshSourcePanel();
     };
     controlPanel_.onAddSpeakerRequest = [this]
@@ -854,6 +863,10 @@ MainComponent::MainComponent (ProjectData project)
     {
         syncMicSelectionToPanel();
         controlPanel_.setSelectedSpeakers (patternComp_.getSelectedSpeakers(), idx);
+        // A unit clicked on the plan is the one the side panel edits.
+        selectedPlane_ = -1;
+        elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+        refreshSourcePanel();
         if (plotHeader_.btnOrtho_.getToggleState())
         {
             patternComp_.syncOrthoSpacingFromSelection();
@@ -2597,10 +2610,11 @@ void MainComponent::resized()
         // Figma V1.1 (Source screen 1.3.1): 30 px pane headers; under them
         // the plan (560), the elevation (360) and the dB pane (360) share
         // what is left in that ratio. A folded pane hands its share back.
+        // The dB pane is hidden for now: plan and elevation take it all.
         const int hdrH   = juce::jmax (18, UiConfig::Scale::fig (30.0f));
-        const int avail  = juce::jmax (0, bodyH - hdrH * 2);
+        const int avail  = juce::jmax (0, bodyH - hdrH * (kShowSplPane ? 2 : 1));
         const bool elevOpen = ! elevHeader_.isFolded();
-        const bool splOpen  = ! splHeader_.isFolded();
+        const bool splOpen  = kShowSplPane && ! splHeader_.isFolded();
         const float total = 560.0f + (elevOpen ? 360.0f : 0.0f) + (splOpen ? 360.0f : 0.0f);
         const int elevH  = elevOpen ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
         const int splH   = splOpen  ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
@@ -2615,7 +2629,7 @@ void MainComponent::resized()
         splPlot_.setBounds     (plotX, yy, centreW, splH);
         splPlot_.setVisible (splH > 0);
         elevHeader_.setVisible (true);
-        splHeader_.setVisible (true);
+        splHeader_.setVisible (kShowSplPane);
     }
     else if (venueMode_)
     {
@@ -3206,6 +3220,26 @@ void MainComponent::syncElevation()
         planes.push_back (ep);
     }
     elevationComp_.setElevationPlanes (std::move (planes));
+
+    // Each model's measured -6 dB beamwidth at the solve frequency, nearest
+    // measured band, for the plan's coverage lines.
+    {
+        std::map<int, float> cov;
+        const double hz = lastParams_.frequency;
+        juce::ScopedLock sl (measLock_);
+        const std::pair<int, const MeasuredSet*> sets[] = {
+            { 0, &measuredQ21S_ }, { 2, &measuredBEM2inch_ }, { 3, &measuredQ212P_ } };
+        for (const auto& [model, set] : sets)
+        {
+            const MeasuredFreq* best = nullptr;
+            for (const auto& mf : set->freqs)
+                if (mf.beamwidthDeg > 1.0f
+                    && (best == nullptr || std::abs (mf.hz - hz) < std::abs (best->hz - hz)))
+                    best = &mf;
+            if (best != nullptr) cov[model] = best->beamwidthDeg;
+        }
+        patternComp_.setCoverageDeg (std::move (cov));
+    }
     syncStackedPanes();
 }
 

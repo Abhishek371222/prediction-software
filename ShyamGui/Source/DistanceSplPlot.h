@@ -77,7 +77,7 @@ public:
         g.setColour (FigPlot::frame());
         g.drawRect (f, 1);
 
-        FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f);
+        FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f, getWidth());
         g.setFont (Brand::figSemi (12.0f));
         g.setColour (FigPlot::tick());
         const double labelDb = (f.getHeight() / (hi - lo)) * kStepDb >= figf (14.0f) ? kStepDb : kStepDb * 2.0;

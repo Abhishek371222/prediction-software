@@ -38,7 +38,6 @@ namespace FigPlot
         bar's strip, which sits INSIDE the frame but outside the grid. */
     struct Insets { float l, t, r, b; };
     constexpr Insets kPlan      { 66.0f, 53.0f, 32.0f, 27.0f };
-    constexpr float  kPlanStrip = 100.0f;
     constexpr Insets kPane      { 66.0f, 41.0f, 32.0f, 44.0f };
 
     inline juce::Rectangle<int> inset (juce::Rectangle<int> r, Insets i)
@@ -62,6 +61,19 @@ namespace FigPlot
                 return baseStepM() * k;
         return baseStepM() * 250.0;
     }
+
+    /** The opening scale for a frame @p framePx wide: as near 48 px per 2 m as
+        lands a whole number of cells across it, so both side edges sit on a
+        rule and the corners carry a figure instead of a part cell. */
+    inline float snappedPxPerM (int framePx)
+    {
+        const double cell = baseStepM() * UiConfig::Scale::figf (kDefaultPxPerM);
+        const double n = juce::jmax (1.0, std::round ((double) framePx / cell));
+        return (float) ((double) framePx / (n * baseStepM()));
+    }
+
+    /** The left edge the panes open on: three cells left of the origin. */
+    inline double openingLeftM() { return -3.0 * baseStepM(); }
 
     /** Label step: a whole multiple of the grid step, so every number sits on a rule. */
     inline double labelStepM (double gridM, double pxPerM, double wantPx)
@@ -114,10 +126,12 @@ namespace FigPlot
         g.drawDashedLine ({ x0, (float) f.getY(), x0, (float) f.getBottom() }, dashes, 2, 1.0f);
     }
 
-    /** The distance row above a field, centred on each rule; a label is
-        skipped unless its text fits inside the frame. */
+    /** The distance row above a field, centred on each rule including the two
+        on the frame's edges. A figure that would run past either end of the
+        frame is pulled back inside its span, so nothing sticks out at the
+        corners into the height column; one that still does not fit is skipped. */
     inline void drawXLabels (juce::Graphics& g, juce::Rectangle<int> f, float x0, float ppm,
-                             double stepM, float figTop, const char* axis = "x")
+                             double stepM, float figTop, int paneW, const char* axis = "x")
     {
         if (ppm <= 0.0f) return;
         using UiConfig::Scale::fig;
@@ -125,15 +139,15 @@ namespace FigPlot
         g.setFont (font);
         g.setColour (tick());
         const int h = (int) std::ceil (font.getHeight());
-        const double lo = (f.getX() - x0) / ppm, hi = (f.getRight() - x0) / ppm;
+        const double lo = (f.getX() - 1 - x0) / ppm, hi = (f.getRight() + 1 - x0) / ppm;
         forSteps (lo, hi, stepM, [&] (double m)
         {
             const int x = juce::roundToInt (x0 + m * ppm);
             const auto txt = FigPlot::tick (m, stepM, axis);
-            const int tw = font.getStringWidth (txt);
-            if (x - tw / 2 < f.getX() || x + tw / 2 > f.getRight()) return;
-            g.drawText (txt, x - tw / 2 - 2, fig (figTop), tw + 4, h,
-                        juce::Justification::centred, false);
+            const int tw = font.getStringWidth (txt) + 2;
+            if (x < f.getX() - 1 || x > f.getRight() + 1 || tw > f.getWidth() || tw > paneW) return;
+            const int lx = juce::jlimit (f.getX(), f.getRight() - tw, x - tw / 2);
+            g.drawText (txt, lx, fig (figTop), tw, h, juce::Justification::centred, false);
         });
     }
 
@@ -142,14 +156,18 @@ namespace FigPlot
     inline void drawYLabel (juce::Graphics& g, juce::Rectangle<int> f, int compH, int y,
                             const juce::String& s, float figLeft, bool atEdges)
     {
+        // With @p atEdges the figures on the frame's top and bottom rules are
+        // kept, pulled inside the frame's height so they never rise into the
+        // distance row or drop below the frame; otherwise they are left out.
         const auto& font = g.getCurrentFont();
         const int h = (int) std::ceil (font.getHeight());
-        if (atEdges ? (y - h / 2 < 0 || y + h / 2 > compH)
-                    : (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        if (y < f.getY() - 1 || y > f.getBottom() + 1 || h > f.getHeight() || h > compH) return;
+        if (! atEdges && (y - h / 2 < f.getY() || y + h / 2 > f.getBottom())) return;
+        const int top = juce::jlimit (f.getY(), f.getBottom() - h, y - h / 2);
         const int right = f.getX() - 2;
         const int x = juce::jmax (0, juce::jmin (UiConfig::Scale::fig (figLeft),
                                                  right - 2 - font.getStringWidth (s)));
-        g.drawText (s, x, y - h / 2, juce::jmax (1, right - x), h,
+        g.drawText (s, x, top, juce::jmax (1, right - x), h,
                     juce::Justification::centredLeft, false);
     }
 

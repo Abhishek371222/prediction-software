@@ -137,6 +137,19 @@ inline juce::Colour splBand (float dB, float stepDB = 6.0f)
     return sevenColor (relDbToColourT (bandTopDB, 0.0f));
 }
 
+// Opacity of the map where it is laid as a wash over the Figma sheet: half
+// strength at -24 dB (Figma's box is #3281B9 at 50% over #E4E4E4), a little
+// more towards 0 dB, easing out to nothing at the floor so the quietest
+// ground shows the sheet rather than black.
+inline float sheetWashAlpha (float t) noexcept
+{
+    constexpr float knee = 1.0f / 3.0f;
+    t = juce::jlimit (0.0f, 1.0f, t);
+    if (t >= knee) return 0.5f + 0.15f * (t - knee) / (1.0f - knee);
+    const float u = t / knee;
+    return 0.5f * u * u * (3.0f - 2.0f * u);
+}
+
 inline juce::Colour splBandForFloor (float dB, float floorDB, float stepDB = 6.0f)
 {
     if (floorDB < 0.0f && dB <= floorDB)

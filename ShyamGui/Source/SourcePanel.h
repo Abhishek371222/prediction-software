@@ -33,7 +33,7 @@ public:
     static juce::Colour listRule()   { return juce::Colour (0xffc8c8c8); }
     static juce::Colour rowRule()    { return juce::Colour (0xffc8c8c8); }
     /** The chosen row, as the Venue tab paints it. */
-    static juce::Colour rowSelect()  { return juce::Colour (0xffebb2b3); }
+    static juce::Colour rowSelect()  { return Brand::selection(); }
 
     /** 20 not 20.0, 2.5 as 2.5 - the Figma reads "20 ft" and "5 Deg". */
     static juce::String num (double v)
@@ -55,14 +55,84 @@ public:
         g.fillPath (t);
     }
 
+    //---------------------------------------------- open dropdown list
+    // Figma: a white list in a #CCCCCC hairline, a grey rule under every
+    // item, the current choice in the selection blue and no tick; the item
+    // under the pointer takes a paler blue. Shared with the Venue panel.
+    static juce::Colour listEdge() { return juce::Colour (0xffcccccc); }
+    static juce::Colour listSep()  { return juce::Colour (0xffc8c8c8); }
+
+    static void drawListBackground (juce::Graphics& g, int w, int h)
+    {
+        g.fillAll (Brand::white());
+        g.setColour (listEdge());
+        g.drawRect (0, 0, w, h, 1);
+    }
+
+    static void drawListItem (juce::Graphics& g, juce::Rectangle<int> area, bool isSeparator,
+                              bool isActive, bool isHighlighted, bool isTicked,
+                              const juce::String& text, const juce::Font& font)
+    {
+        using UiConfig::Scale::fig;
+        if (isSeparator)
+        {
+            g.setColour (listSep());
+            g.fillRect (area.getX(), area.getCentreY(), area.getWidth(), 1);
+            return;
+        }
+        if (isActive && (isTicked || isHighlighted))
+        {
+            g.setColour (isTicked ? Brand::selection()
+                                  : Brand::selection().interpolatedWith (Brand::white(), 0.5f));
+            g.fillRect (area);
+        }
+        g.setColour (listSep());
+        g.fillRect (area.getX(), area.getBottom() - 1, area.getWidth(), 1);
+        g.setColour (Brand::text().withAlpha (isActive ? 1.0f : 0.4f));
+        g.setFont (font);
+        g.drawText (text, area.withTrimmedLeft (fig (8.0f)).withTrimmedRight (fig (6.0f)),
+                    juce::Justification::centredLeft, true);
+    }
+
+    static void listItemSize (const juce::String& text, bool isSeparator, const juce::Font& font,
+                              int& idealWidth, int& idealHeight)
+    {
+        using UiConfig::Scale::fig;
+        idealHeight = isSeparator ? fig (7.0f) : fig (26.0f);
+        idealWidth  = font.getStringWidth (text) + fig (28.0f);
+    }
+
     class PanelLnF : public juce::LookAndFeel_V4
     {
     public:
+        juce::Font getPopupMenuFont() override { return Brand::figMed (12.0f); }
+
+        void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
+        {
+            drawListBackground (g, w, h);
+        }
+
+        void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
+                                bool isSeparator, bool isActive, bool isHighlighted,
+                                bool isTicked, bool, const juce::String& text,
+                                const juce::String&, const juce::Drawable*,
+                                const juce::Colour*) override
+        {
+            drawListItem (g, area, isSeparator, isActive, isHighlighted, isTicked,
+                          text, getPopupMenuFont());
+        }
+
+        void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int,
+                                        int& idealWidth, int& idealHeight) override
+        {
+            listItemSize (text, isSeparator, getPopupMenuFont(), idealWidth, idealHeight);
+        }
+
         void drawComboBox (juce::Graphics& g, int w, int h, bool,
                            int, int, int, int, juce::ComboBox& box) override
         {
             // Figma: a flat #D9D9D9 box, no outline. A row can tint its own
-            // combo (the selected element's is pink) via backgroundColourId.
+            // combo via backgroundColourId.
             const auto fill = box.isColourSpecified (juce::ComboBox::backgroundColourId)
                                 ? box.findColour (juce::ComboBox::backgroundColourId)
                                 : fieldFill();
@@ -302,11 +372,26 @@ public:
     class LoadBar : public juce::Component
     {
     public:
+        /** @p share of the rated load, 1 = full; negative when no figure is
+            available (cabinets carry no weights yet) - the rig is then taken
+            as okay and no percentage is shown. */
+        void setLoad (float share)
+        {
+            share_ = share;
+            if (share < 0.0f)      { state_ = "LOAD OKAY"; shareText_ = {}; }
+            else
+            {
+                state_ = share > 1.0f ? "LOAD NOT OKAY" : "LOAD OKAY";
+                shareText_ = juce::String (juce::roundToInt (share * 100.0f)) + "% of Total Load";
+            }
+            repaint();
+        }
+
         void paint (juce::Graphics& g) override
         {
-            // Red says "this is the load state". Grey says "there is no load
-            // state to show" - the truth until cabinets carry weights.
-            g.fillAll (unavailable_ ? juce::Colour (0xff9a9a9a) : juce::Colour (0xfff55b5b));
+            // Figma: black while the rig is within its rating, red once it
+            // is over.
+            g.fillAll (share_ > 1.0f ? juce::Colour (0xffed2227) : juce::Colour (0xff000000));
             // Figma: the state in Medium 16 at x 14, the share in Medium 12
             // from x 285.
             using UiConfig::Scale::fig;
@@ -318,14 +403,15 @@ public:
             const auto shareFont = Brand::figMed (12.0f);
             g.setFont (shareFont);
             const int right = getWidth() - fig (8.0f);
-            const int left  = juce::jmin (fig (285.0f), right - shareFont.getStringWidth (share_));
-            g.drawText (share_, juce::Rectangle<int> (left, 0, right - left, getHeight()),
+            const int left  = juce::jmin (fig (285.0f), right - shareFont.getStringWidth (shareText_));
+            g.drawText (shareText_, juce::Rectangle<int> (left, 0, right - left, getHeight()),
                         juce::Justification::centredLeft, true);
         }
 
-        juce::String state_ = "LOAD NOT CALCULATED";
-        juce::String share_ = "needs cabinet weights";
-        bool         unavailable_ = true;
+    private:
+        juce::String state_     = "LOAD OKAY";
+        juce::String shareText_;
+        float        share_     = -1.0f;
     };
 
     //-------------------------------------------------------------- panel
@@ -388,8 +474,24 @@ public:
 
     int getContentHeight() const { return contentH_; }
 
-    void mouseDown (const juce::MouseEvent& e) override
+    void mouseDown (const juce::MouseEvent& ev) override
     {
+        const auto e = ev.getEventRelativeTo (this);
+
+        // A click on a row's own dropdown or M selects that row as well, so
+        // the sections below follow whichever source was just touched.
+        if (ev.eventComponent != this)
+        {
+            if (! e.mods.isPopupMenu())
+                for (size_t i = 0; i < sourceRowY_.size(); ++i)
+                    if (sourceRowY_[i].contains (e.y) && (int) i != selected_)
+                    {
+                        if (onSelect) onSelect ((int) i);
+                        break;
+                    }
+            return;
+        }
+
         if (! e.mods.isPopupMenu()) return;
 
         // Right-click a row: select it, so the menu plainly names what goes.
@@ -428,7 +530,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& e) override
     {
-        if (e.mods.isPopupMenu()) return;
+        if (e.mods.isPopupMenu() || e.eventComponent != this) return;
 
         // Clicking a source row selects it, as clicking a unit on the plan does.
         for (size_t i = 0; i < sourceRowY_.size(); ++i)
@@ -469,9 +571,8 @@ public:
         if (selPlane_ < 0 && selected_ >= 0 && (size_t) selected_ < sourceRowY_.size())
         {
             const auto r = sourceRowY_[(size_t) selected_];
-            // The Venue tab's pink, flat across the row. The old 7% accent
-            // wash was so faint the chosen row was hard to find, and the red
-            // edge beside it is not something the Venue list draws.
+            // The selection blue, flat across the row, as the Venue list
+            // draws it. No red edge.
             g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
         }
@@ -481,9 +582,8 @@ public:
         if (selPlane_ >= 0 && (size_t) selPlane_ < planeRowY_.size())
         {
             const auto r = planeRowY_[(size_t) selPlane_];
-            // The Venue tab's pink, flat across the row. The old 7% accent
-            // wash was so faint the chosen row was hard to find, and the red
-            // edge beside it is not something the Venue list draws.
+            // The selection blue, flat across the row, as the Venue list
+            // draws it. No red edge.
             g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
         }
@@ -878,6 +978,8 @@ private:
             };
             addAndMakeVisible (*row->system);
             addAndMakeVisible (*row->mute);
+            row->system->addMouseListener (this, false);
+            row->mute->addMouseListener (this, false);
             sources_.push_back (std::move (row));
 
             auto a = std::make_unique<AngleRow>();
