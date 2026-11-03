@@ -34,17 +34,19 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.5** | 2026-10-16 | Q212P as a third cabinet, measured at six bands; Show Values follows the cursor as an SPL probe; subs ignore Show Rays |
 | **1.4.6** | 2026-10-24 | Each cabinet model is simulated at its own frequency; the Mapping ribbon follows the Figma: Ortho split from Ortho Controls, Plane Prediction named in full, every cluster centred on its plate |
 | **1.5.0** | 2026-10-28 | Venue tab: the room as its own screen, wired to the solver; one plot style across every tab |
+| **1.5.1** | 2026-11-03 | Sources and Mapping to the Figma; one source holds many cabinets (mounting, ground stacks, interdistance, symmetry, rigging lever angles); audiences heard at ear height; elevation snap and vertical zoom; Apply Layout |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
 
-## [Unreleased]
+## [1.5.1] - 2026-11-03
 
-Work since v1.5.0, not yet cut as a release: the Sources and Mapping screens
-rebuilt to the Figma frames, venue audiences heard at ear height, arrays hung
-the ArrayCalc way, and type that stays readable at every window size.
+**Atomik Integral v1.5.1** - the Sources and Mapping screens rebuilt to the
+Figma frames, one source holding a whole array or sub row, venue audiences
+heard at ear height, arrays hung the ArrayCalc way on the real rigging holes,
+and type that stays readable at every window size.
 
 ### Added
 
@@ -115,6 +117,18 @@ the ArrayCalc way, and type that stays readable at every window size.
 - **File > Apply Layout...** replaces the sources with those of a saved
   project (positions, angles, mounts, gains, delays), with no duplicates;
   undoable.
+- **Rigging lever angles** from the supplied bracket table (-15 to +15 deg in
+  3 deg steps; configuration A leans up, B down). Single Pick lists the real
+  holes and sets the source's tilt. The Rigging Angles cell is a closed list
+  of the eleven angles a cabinet's link allows: click to open, wheel to step,
+  an off-list value shows as the nearest allowed one. A sub's Hor. Rot. stays
+  free.
+- **Coverage tables** for the Q212P and Q21S; only the Q212P draws angle
+  lines on the plan.
+- **Navbar Locate button** brings the view back to the rig when it has been
+  panned or zoomed away.
+- Right-click a plane: **Reverse mapping**, to map the whole area instead of
+  only the planes.
 
 ### Changed
 
@@ -143,8 +157,20 @@ the ArrayCalc way, and type that stays readable at every window size.
   Pick ...), one size and weight. "INTER-DISTANCE" reads **Interdistance** and
   is greyed for tops; No. of Cabinets shows the real count.
 - Sources are named **Q212P-1**, with the count as **(Arrays_3)**.
-- Venue panes: the left-drag pan is reversed (the view follows the drag) on
-  both axes, in the plan and the elevation.
+- Venue panes: a left-drag carries the drawing with the hand on both axes, in
+  the plan and the elevation.
+- The frequency response is distance-compensated and read as relative dB,
+  referenced to 1 m from the nearest cabinet. The floating Frequency Response
+  window no longer opens; the pane under the plan is its one home.
+- Array Symmetry is a mirror icon in the Rigging Angles header. The elevation
+  draws one straight line up from each flown box instead of a bumper and
+  ropes.
+- Field labels and values up to 15 / 13 px, the Rigging Angles grid to 12 px.
+  Every number box takes the mouse wheel, also while its editor is open;
+  length steps follow the snap increment.
+- Interdistance sits beside No. of Cabinets; the Sources list folds from the
+  strip's chevron; the crosshair moved to the view strip beside Show Rays.
+- The Mapping tab's view-strip dropdown is hidden.
 - **Angle convention:** Hor. Aim 0 forward, +90 right, -90 left, 180 rear;
   Ver. Aim + up, - down. Subs show no Ver. Aim.
 - The mouse wheel over the source panel scrolls it unless a field is being
@@ -171,6 +197,10 @@ the ArrayCalc way, and type that stays readable at every window size.
   the plot edges dropped.
 - Deleting a multi-cabinet source from the plan now asks first, as from the
   list; pasted and added sources get fresh ids; Single Pick angle sign.
+- A view you set now survives a tab switch (it came back somewhere else after
+  the tab re-solved).
+- Deleting a projected plane on Sources deletes the Venue element it came
+  from; the Venue / Sources sync runs both ways.
 
 ---
 

@@ -109,6 +109,17 @@ banner(ws, "Atomik Integral - Changelog",
        "Generated from CHANGELOG.md  |  follows Keep a Changelog + SemVer", 4)
 
 rows = [
+    ["1.5.1", "2026-11-03", "One source, many cabinets; Sources and Mapping to the Figma",
+     "One source holds a whole array or sub row: System, No. of Cabinets (1-48), "
+     "Mounting, Pos. X / Y / Z, Hor. Aim, Mute and Delete act on every cabinet of the "
+     "source; count changes about a fixed centre with the same id; Ground / Stacked / "
+     "Flown mounting with automatic Q212P ground stacks; centre-to-centre "
+     "interdistance; Array Symmetry; rigging angles from the bracket table (-15 to +15 "
+     "deg in 3 deg steps); Hor. +90 right / Ver. + up; elevation Snap pill with cursor "
+     "marker and V- / V+ vertical zoom; File > Apply Layout with no duplicates; "
+     "audiences heard at ear height; Mapping tab with Frequency Response pane and "
+     "Low / High Pass filters; navbar Locate button; sources named Q212P-1 (Arrays_3); "
+     "delete asks first for multi-cabinet sources; fresh ids on paste / add"],
     ["1.4.4", "2026-10-14", "Figma icon ribbon; mouse wheel sets any number box",
      "Mapping ribbon drawn from the Figma icon set - Rays, Mapping Type, Options, "
      "Plane, Mic and Range - in three states: grey unavailable, black available, red "
