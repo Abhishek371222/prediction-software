@@ -618,6 +618,16 @@ MainComponent::MainComponent (ProjectData project)
         plotHeader_.setMicArmed (patternComp_.isAddMicArmed());
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
     };
+    patternComp_.onMicIdsRenumbered = [this] (const std::vector<std::pair<int, int>>& remap)
+    {
+        // Keep the Listen window on the same mic after its number changes;
+        // if that mic was the one deleted, drop it so the listener closes.
+        if (listenMicId_ < 0) return;
+        int next = -1;
+        for (const auto& p : remap)
+            if (p.first == listenMicId_) { next = p.second; break; }
+        listenMicId_ = next;
+    };
     patternComp_.onMicsChanged = [this]
     {
         syncMicSelectionToPanel();
@@ -3788,6 +3798,7 @@ void MainComponent::setMappingMode (bool on)
     topMenu_.setActiveTab (on ? TopMenuBar::Mapping : TopMenuBar::Sources);
     sourcePanel_.setMappingLayout (on);
     viewBar_.setMicVisible (on);
+    patternComp_.setMicsShown (on);
 
     // The tab is a map: SPL mapping goes on with it, and whatever was set
     // before comes back on the way out.

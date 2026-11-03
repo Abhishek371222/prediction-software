@@ -412,8 +412,75 @@ public:
             angle, and it beats selecting the text to type one character. A box
             that cannot take it - no step set, disabled, or mid-edit - hands
             the wheel back to the panel so the sidebar still scrolls. */
+        // ---- up/down spinner -------------------------------------------
+        // Every box with a step wears a small up/down pair at its right edge.
+        // A click there steps the value (held, it keeps stepping) and never
+        // opens the editor; a click anywhere else types, as before.
+        bool hasSpinner() const noexcept { return spin_ || wheelStep_ > 0.0; }
+        int  spinnerWidth() const { return hasSpinner() ? UiConfig::Scale::fig (13.0f) : 0; }
+        bool onSpinner (juce::Point<float> p) const
+        {
+            return hasSpinner() && p.x >= (float) (getWidth() - spinnerWidth());
+        }
+
+        /** One step up (+1) or down (-1), through the same path as the wheel. */
+        void stepBy (int dir)
+        {
+            juce::MouseWheelDetails w {};
+            w.deltaY = dir > 0 ? 1.0f : -1.0f;
+            wheelNudge (w);
+        }
+
+        void drawSpinner (juce::Graphics& g) const
+        {
+            using UiConfig::Scale::fig;
+            const float cx = (float) getWidth() - (float) spinnerWidth() * 0.5f;
+            const float cy = (float) getHeight() * 0.5f;
+            const float hw = (float) fig (3.5f), hh = (float) fig (3.5f), gap = (float) fig (1.5f);
+            g.setColour (Brand::text().withMultipliedAlpha (isEnabled() ? 0.85f : 0.35f));
+            juce::Path p;
+            p.addTriangle (cx - hw, cy - gap, cx + hw, cy - gap, cx, cy - gap - hh);
+            p.addTriangle (cx - hw, cy + gap, cx + hw, cy + gap, cx, cy + gap + hh);
+            g.fillPath (p);
+        }
+
+        void mouseMove (const juce::MouseEvent& e) override
+        {
+            setMouseCursor (onSpinner (e.position) ? juce::MouseCursor::PointingHandCursor
+                                                   : juce::MouseCursor::NormalCursor);
+            juce::Label::mouseMove (e);
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (spinDir_ != 0) { spinDir_ = 0; repeat_.stopTimer(); return; }
+            juce::Label::mouseUp (e);
+        }
+
+        void mouseDoubleClick (const juce::MouseEvent& e) override
+        {
+            // A quick second click on an arrow is another step, not an edit.
+            if (onSpinner (e.position)) { if (isEnabled()) stepBy (e.position.y < getHeight() * 0.5f ? 1 : -1); return; }
+            juce::Label::mouseDoubleClick (e);
+        }
+
         void mouseDown (const juce::MouseEvent& e) override
         {
+            if (onSpinner (e.position))
+            {
+                if (! isEnabled()) return;
+                spinDir_ = e.position.y < getHeight() * 0.5f ? 1 : -1;
+                stepBy (spinDir_);
+                // Held: wait a moment, then repeat quickly.
+                repeat_.fn = [this]
+                {
+                    if (spinDir_ == 0) { repeat_.stopTimer(); return; }
+                    stepBy (spinDir_);
+                    repeat_.startTimer (70);
+                };
+                repeat_.startTimer (400);
+                return;
+            }
             if (allowed_.empty() || ! isEnabled()) { juce::Label::mouseDown (e); return; }
 
             juce::PopupMenu m;
@@ -587,40 +654,35 @@ public:
         {
             g.setColour (isEnabled() ? fill_ : fill_.withAlpha (0.55f));
             g.fillRect (getLocalBounds());
+            // The arrows stay while typing, so a half-typed value can be
+            // stepped too.
+            if (hasSpinner()) drawSpinner (g);
             if (isBeingEdited()) return;
 
             using UiConfig::Scale::fig;
             const auto f = Brand::figMed (fontPx_);
             g.setFont (f);
             g.setColour (Brand::text().withMultipliedAlpha (isEnabled() ? 1.0f : 0.45f));
+            const int spinW = spinnerWidth();
             if (inline_)
             {
-                const int arrowW = spin_ ? fig (11.0f) : arrow_ ? fig (24.0f) : 0;
+                const int arrowW = hasSpinner() ? spinW : arrow_ ? fig (24.0f) : 0;
                 g.drawText (getText() + (unit_.isEmpty() ? juce::String() : " " + unit_),
                             getLocalBounds().withTrimmedLeft (fig (inset_)).withTrimmedRight (arrowW),
                             juce::Justification::centredLeft, true);
-                if (spin_)
-                {
-                    const float cx = (float) getWidth() - (float) fig (6.0f);
-                    const float cy = (float) getHeight() * 0.5f;
-                    const float hw = (float) fig (3.0f), hh = (float) fig (3.0f), gap = (float) fig (1.5f);
-                    juce::Path p;
-                    p.addTriangle (cx - hw, cy - gap, cx + hw, cy - gap, cx, cy - gap - hh);
-                    p.addTriangle (cx - hw, cy + gap, cx + hw, cy + gap, cx, cy + gap + hh);
-                    g.fillPath (p);
-                }
-                else if (arrow_) drawDropArrow (g, getWidth(), getHeight(), isEnabled());
+                if (! hasSpinner() && arrow_) drawDropArrow (g, getWidth(), getHeight(), isEnabled());
                 return;
             }
 
             // Figma: value and unit in the same Medium black; the unit's right
-            // edge is 10 px in from the box's.
+            // edge is 10 px in from the box's (and clear of the arrows).
+            const auto body = getLocalBounds().withTrimmedRight (spinW);
             const int unitW = unit_.isEmpty() ? 0 : f.getStringWidth (unit_) + fig (14.0f);
-            g.drawText (getText(), getLocalBounds().withTrimmedLeft (fig (inset_))
-                                                   .withTrimmedRight (juce::jmax (fig (2.0f), unitW)),
+            g.drawText (getText(), body.withTrimmedLeft (fig (inset_))
+                                       .withTrimmedRight (juce::jmax (fig (2.0f), unitW)),
                         juce::Justification::centredLeft, true);
             if (unit_.isNotEmpty())
-                g.drawText (unit_, getLocalBounds().withTrimmedRight (fig (10.0f)),
+                g.drawText (unit_, body.withTrimmedRight (spinW > 0 ? fig (4.0f) : fig (10.0f)),
                             juce::Justification::centredRight, false);
         }
 
@@ -636,11 +698,19 @@ public:
             ed->setColour (juce::TextEditor::highlightedTextColourId, Brand::text());
             ed->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
             ed->setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
-            ed->setBounds (getLocalBounds().withTrimmedLeft (juce::jmax (0, UiConfig::Scale::fig (inset_) - 2)));
+            ed->setBounds (getLocalBounds().withTrimmedLeft (juce::jmax (0, UiConfig::Scale::fig (inset_) - 2))
+                                           .withTrimmedRight (spinnerWidth()));
 
         }
 
     private:
+        struct RepeatTimer : juce::Timer
+        {
+            std::function<void()> fn;
+            void timerCallback() override { if (fn) fn(); }
+        };
+        RepeatTimer repeat_;
+        int         spinDir_ = 0;
         juce::String unit_;
         float fontPx_ = PanelType::value;
         double wheelStep_ = 0.0;
@@ -1413,15 +1483,24 @@ private:
     void setMountingForModel (int model)
     {
         if (posMounting_ == nullptr) return;
-        const int want = isSubwooferModel (model) ? 2 : 3;
-        if (posMounting_->getNumItems() == want && posMounting_->getItemText (1) == "Stacked") return;
+        // Item ids are always the mount plus one. A sub stands: Ground or
+        // Stacked. The Q212P is only Stacked or Flown - no Ground. Other tops
+        // get all three.
+        const bool q212p = (model == 3);
+        const bool sub   = isSubwooferModel (model);
+        const bool hasGround = ! q212p, hasFlown = ! sub;
+        const int  want = (hasGround ? 1 : 0) + 1 + (hasFlown ? 1 : 0);
+        if (posMounting_->getNumItems() == want
+            && (posMounting_->getItemId (0) == 1) == hasGround
+            && (posMounting_->getItemId (want - 1) == 3) == hasFlown)
+            return;
 
         const int keep = posMounting_->getSelectedId();
         posMounting_->clear (juce::dontSendNotification);
-        posMounting_->addItem ("Ground", 1);
+        if (hasGround) posMounting_->addItem ("Ground", 1);
         posMounting_->addItem ("Stacked", 2);
-        if (want == 3) posMounting_->addItem ("Flown", 3);
-        if (keep >= 1 && keep <= want)
+        if (hasFlown)  posMounting_->addItem ("Flown", 3);
+        if (posMounting_->indexOfItemId (keep) >= 0)
             posMounting_->setSelectedId (keep, juce::dontSendNotification);
     }
 
@@ -1575,7 +1654,9 @@ private:
             for (auto* it : items) c->addItem (it, id++);
             addAndMakeVisible (*c);
         };
-        combo (posSystem_,   { "Q212P", "Q21S", "BEM 2inch" });
+        // BEM 2inch is withheld from the UI (as in the Speaker Model picker):
+        // its item id 3 is simply not offered.
+        combo (posSystem_,   { "Q212P", "Q21S" });
         // Item 1 is always Ground; item 2 is whatever OFF the ground means for
         // this cabinet, and its name changes with the model - see
         // setMountingForModel(). Built here with the default pair so the combo
@@ -1692,18 +1773,18 @@ private:
         posVerAim_->setInlineUnit (true, true);
         posHorAim_->setWheelStep (1.0);
         posVerAim_->setWheelStep (1.0);
-        posHorAim_->setTooltip ("Horizontal aim of the whole source: 0 forward, +90 right, "
-                                "-90 left, 180 rear.");
+        posHorAim_->setTooltip ("Horizontal aim of the whole source: 0 forward, +90 left "
+                                "(counter-clockwise), -90 right, 180 rear.");
         posVerAim_->setTooltip ("Vertical aim of the whole source: 0 level, +90 up, -90 down.");
         // Hor. Aim turns the whole source to the typed heading; each box
-        // keeps its offset from it. Panel convention is positive right, the
-        // scene's is counter-clockwise, hence the sign.
+        // keeps its offset from it. Positive is counter-clockwise, the same
+        // way the plan's angles and the rotation handle count.
         posHorAim_->onCommit = [this] (double v)
         {
             if (building_ || onArrayRotation == nullptr || selected_ < 0
                 || selected_ >= (int) scene_.size()) return;
             const float heading = sourceHeadingDeg (scene_, selected_);
-            const float delta   = wrap180 ((float) -v - heading);
+            const float delta   = wrap180 ((float) v - heading);
             onArrayRotation (selected_, scene_[(size_t) selected_].rotationDeg + delta);
         };
         posVerAim_->onCommit = [this] (double v)
@@ -1875,8 +1956,7 @@ private:
                        + juce::String (sp[i].arrayId >= 0 ? sp[i].arrayId : idx + 1);
             row->system = std::make_unique<juce::ComboBox>();
             row->system->addItem ("Q212P", 1);
-            row->system->addItem ("Q21S", 2);
-            row->system->addItem ("BEM 2inch", 3);
+            row->system->addItem ("Q21S", 2);   // BEM 2inch (3) withheld from the UI
             row->system->onChange = [this, idx]
             {
                 if (building_ || onModel == nullptr) return;
@@ -1938,13 +2018,13 @@ private:
                 // A sub's last column is its own horizontal rotation. A top's
                 // is its vertical angle from its neighbour in the hang (the
                 // box above when flown, below when stacked); the anchor box
-                // has none, its angle being the array's Ver. Aim. Both are
-                // shown in the panel's convention - positive right, positive
-                // up - and handed on in the scene's.
+                // has none, its angle being the array's Ver. Aim. Rotation is
+                // counter-clockwise positive, as the scene keeps it; the splay
+                // is shown positive up and handed on positive down.
                 if (building_ || (size_t) idx >= scene_.size()) return;
                 if (isSubwooferModel (scene_[(size_t) idx].model))
                 {
-                    if (onRotation) onRotation (idx, (float) -v);
+                    if (onRotation) onRotation (idx, (float) v);
                     return;
                 }
                 if (onSplay) onSplay (idx, (float) -v);
@@ -1989,7 +2069,7 @@ private:
     {
         if (building_ || selected_ < 0) return;
         const float m = (float) Units::displayToMetres (v);
-        if (axis == 2) { if (onHeight) onHeight (selected_, m); return; }
+        if (axis == 2) { if (onHeight) onHeight (selected_, m - topOffsetM_); return; }
         if (onPosition) onPosition (selected_, axis == 0 ? m : lastX_, axis == 1 ? m : lastY_);
     }
 
@@ -2027,9 +2107,10 @@ private:
 
             prevTilt_[i] = ref < 0 ? 0.0f : sp[(size_t) ref].tiltDeg;
             const bool sub = isSubwooferModel (sp[i].model);
-            // Shown positive right / positive up; the scene is
-            // counter-clockwise and positive down.
-            angles_[i]->angle->setValue (num (sub ? wrap180 (-sp[i].rotationDeg)
+            // A sub's rotation is shown counter-clockwise positive, like
+            // Hor. Aim and the plan (turned up the plan = positive). A top's
+            // splay is shown positive up; the scene's tilt is positive down.
+            angles_[i]->angle->setValue (num (sub ? wrap180 (sp[i].rotationDeg)
                                             : ref < 0 ? 0.0f : -(sp[i].tiltDeg - prevTilt_[i])));
             // The anchor box has no neighbour to be angled from.
             angles_[i]->angle->setEnabled (sub || ref >= 0);
@@ -2070,8 +2151,12 @@ private:
             posMounting_->setSelectedId (sourceMount (sp, selected_) + 1, juce::dontSendNotification);
             posXYZ_[0]->setValue (num (Units::metresToDisplay (ref.cx)));
             posXYZ_[1]->setValue (num (Units::metresToDisplay (ref.cy)));
-            posXYZ_[2]->setValue (num (Units::metresToDisplay (ref.z)));
-            posHorAim_->setValue (num (wrap180 (-sourceHeadingDeg (sp, selected_))));
+            // Pos. Z is the TOP of the source; the model keeps the bottom,
+            // so remember the gap to turn a typed top back into it.
+            const float topZ = sourceTopM (sp, selected_);
+            topOffsetM_ = topZ - ref.z;
+            posXYZ_[2]->setValue (num (Units::metresToDisplay (topZ)));
+            posHorAim_->setValue (num (wrap180 (sourceHeadingDeg (sp, selected_))));
             posVerAim_->setValue (num (-sp[(size_t) aimBox()].tiltDeg));
             posInterdist_->setValue (num (Units::metresToDisplay (rowSpacingM (sp, selected_))));
             symToggle_->setToggleState (sel.symmetric, juce::dontSendNotification);
@@ -2171,6 +2256,7 @@ private:
     int   angDragOffset0_ = 0;
     juce::Range<int> angGripY_;
     float lastX_ = 0, lastY_ = 0, lastHeight_ = 0;
+    float topOffsetM_ = 0;   // source top minus its reference (bottom) height
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SourcePanel)
 };

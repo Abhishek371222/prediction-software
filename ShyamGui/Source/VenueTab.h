@@ -565,6 +565,16 @@ public:
 
         if (elems_ == nullptr) { grab_ = Grab::Pan; return; }
 
+        // Ctrl + drag (or the middle button) pans from anywhere, even over a
+        // shape - the same gesture as the Mapping plot - and leaves the
+        // selection as it was.
+        if (e.mods.isCtrlDown() || e.mods.isCommandDown() || e.mods.isMiddleButtonDown())
+        {
+            grab_ = Grab::Pan;
+            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+            return;
+        }
+
         // Handles belong to the SELECTED element only - that is what the
         // drawing shows, and picking a handle on a shape you have not chosen
         // would move something you cannot see the numbers for.
@@ -674,6 +684,7 @@ public:
     {
         grab_ = Grab::None;
         grabIdx_ = -1;
+        setMouseCursor (juce::MouseCursor::NormalCursor);
     }
 
     void paint (juce::Graphics& g) override

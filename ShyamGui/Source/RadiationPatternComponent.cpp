@@ -606,6 +606,7 @@ void RadiationPatternComponent::clearMics()
 {
     mics_.clear();
     selectedMic_ = -1;
+    hoveredMic_ = -1;
     selectedMics_.clear();
     addMicArmed_ = false;
     nextMicId_ = 1;
@@ -659,6 +660,7 @@ void RadiationPatternComponent::setMics (std::vector<MicReceiver> m)
 {
     mics_ = std::move (m);
     selectedMic_ = -1;
+    hoveredMic_ = -1;
     selectedMics_.clear();
     nextMicId_ = 1;
     for (const auto& mic : mics_)
@@ -870,6 +872,7 @@ void RadiationPatternComponent::setSelectedMicPosition (float x, float y)
 
 int RadiationPatternComponent::micHitTest (juce::Point<float> worldPt, float radiusM) const
 {
+    if (! micsShown_) return -1;
     for (int i = (int) mics_.size() - 1; i >= 0; --i)
     {
         const auto& m = mics_[(size_t) i];
@@ -890,9 +893,31 @@ juce::String RadiationPatternComponent::micCoordText (const MicReceiver& m)
     return one (m.x) + ", " + one (m.y) + " " + Units::lengthUnit();
 }
 
-juce::String RadiationPatternComponent::micLabelText (const MicReceiver& m) const
+void RadiationPatternComponent::renumberMics()
+{
+    // Names follow the order on the plot: delete Mic 2 of three and the last
+    // one becomes Mic 2, not a "Mic 1, Mic 3" with a hole in it.
+    // remap lists EVERY surviving mic (oldId -> newId), so an id missing from
+    // it means that mic was deleted.
+    std::vector<std::pair<int, int>> remap;
+    for (int i = 0; i < (int) mics_.size(); ++i)
+    {
+        auto& m = mics_[(size_t) i];
+        remap.push_back ({ m.id, i + 1 });
+        m.id = i + 1;
+    }
+    nextMicId_ = (int) mics_.size() + 1;
+    if (onMicIdsRenumbered)
+        onMicIdsRenumbered (remap);
+}
+
+juce::String RadiationPatternComponent::micLabelText (const MicReceiver& m, bool full) const
 {
     juce::String label = micDisplayName (m);
+    // At rest a mic shows only its name; the readings appear while the
+    // cursor is over it, so a plot with several mics stays readable.
+    if (! full)
+        return label;
     // Where the mic actually stands, in the unit on show - the same reading a
     // speaker carries in its X / Y fields. A level means little without the
     // seat it was taken at, and reading the position off the axes by eye is
@@ -919,6 +944,7 @@ juce::String RadiationPatternComponent::micLabelText (const MicReceiver& m) cons
 int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) const
 {
     // Hit the drawn glyph + label (screen px), not a tiny world-metre radius.
+    if (! micsShown_) return -1;
     for (int i = (int) mics_.size() - 1; i >= 0; --i)
     {
         const auto& m = mics_[(size_t) i];
@@ -931,7 +957,7 @@ int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) co
 
         // Same flip the painter applies, or the label you can see beside a
         // mic at the right-hand edge would not be the label you can click.
-        const juce::String label = micLabelText (m);
+        const juce::String label = micLabelText (m, i == hoveredMic_);
         const float fh = juce::jmax (13.0f, Brand::UI::scaledFont (15.0f));
         const float tw = juce::jmax (40.0f, (float) label.length() * fh * 0.56f + fh);
         const auto pb = plotArea().toFloat();
@@ -945,9 +971,29 @@ int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) co
     return -1;
 }
 
+void RadiationPatternComponent::setMicsShown (bool on)
+{
+    if (micsShown_ == on) return;
+    micsShown_ = on;
+    if (! on)
+    {
+        // Out of Mapping the mics are not there: nothing armed to place one,
+        // nothing selected that a Delete or a drag could reach.
+        if (addMicArmed_) setAddMicArmed (false);
+        if (! selectedMics_.empty() || selectedMic_ >= 0)
+        {
+            selectedMics_.clear();
+            selectedMic_ = -1;
+            if (onMicsChanged) onMicsChanged();
+        }
+        hoveredMic_ = -1;
+    }
+    repaint();
+}
+
 void RadiationPatternComponent::drawMics (juce::Graphics& g)
 {
-    if (mics_.empty()) return;
+    if (mics_.empty() || ! micsShown_) return;
     for (int i = 0; i < (int) mics_.size(); ++i)
     {
         const auto& m = mics_[(size_t) i];
@@ -967,7 +1013,9 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
             g.drawEllipse (s.x - 9.0f * ms, s.y - 11.0f * ms,
                            18.0f * ms, 18.0f * ms, 1.4f * ms);
 
-        const juce::String label = micLabelText (m);
+        const bool showFull = (i == hoveredMic_)
+                           || (drag_ == Drag::Mic && i == selectedMic_);
+        const juce::String label = micLabelText (m, showFull);
         const float fh = juce::jmax (13.0f, Brand::UI::scaledFont (15.0f));
         g.setFont (Brand::tech (fh, true));
         // Charcoal, not panelDark: this pill sits on the canvas, which is
@@ -1361,7 +1409,7 @@ void RadiationPatternComponent::collectObjectSnapAxes (std::vector<float>& xs,
 
     if (space == AnnotSpace::World)
     {
-        for (int i = 0; i < (int) mics_.size(); ++i)
+        for (int i = 0; micsShown_ && i < (int) mics_.size(); ++i)
         {
             if (ignoreSelected && isMicSelected (i)) continue;
             addX (mics_[(size_t) i].x);
@@ -2427,7 +2475,7 @@ void RadiationPatternComponent::applyMarqueeSelection (bool addToExisting)
 
     if (space == AnnotSpace::World)
     {
-        for (int i = 0; i < (int) mics_.size(); ++i)
+        for (int i = 0; micsShown_ && i < (int) mics_.size(); ++i)
         {
             auto s = worldToScreen (mics_[(size_t) i].x, mics_[(size_t) i].y);
             if (box.contains (s) && ! isMicSelected (i))
@@ -4196,6 +4244,7 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
 int RadiationPatternComponent::micAtScreen (juce::Point<float> p) const noexcept
 {
     // Matches the drawn glyph, which is about 10 px across with a stand below.
+    if (! micsShown_) return -1;
     for (int i = (int) mics_.size(); --i >= 0;)
         if (worldToScreen (mics_[(size_t) i].x, mics_[(size_t) i].y)
                 .getDistanceFrom (p) <= 12.0f)
@@ -4392,6 +4441,8 @@ bool RadiationPatternComponent::deleteSelection()
                 mics_.erase (mics_.begin() + idx);
         selectedMics_.clear();
         selectedMic_ = -1;
+        hoveredMic_ = -1;
+        renumberMics();
         if (onMicsChanged) onMicsChanged();
     }
 
@@ -5497,6 +5548,18 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             fwd[(size_t) members[k]] = pose[k].forwardM;
     }
 
+    // The side view looks along world Y, so a cabinet turned in the Top View
+    // has to turn here too: only the X part of its heading shows. Facing -x
+    // it fires to the left; turned side-on, its aim runs into the screen.
+    std::vector<float> hc (speakers_.size(), 1.0f), hs (speakers_.size(), 0.0f);
+    for (size_t i = 0; i < speakers_.size(); ++i)
+    {
+        const auto& s = speakers_[i];
+        const float hd = juce::degreesToRadians (s.rotationDeg + (s.reverseOrientation ? 180.0f : 0.0f));
+        hc[i] = std::cos (hd);
+        hs[i] = std::sin (hd);
+    }
+
     // The plan's aim line, seen from the side: out of each top's front face
     // along its tilt, under Show Rays like the plan's. Drawn before the boxes
     // so a hang's lines run behind the boxes below.
@@ -5509,10 +5572,14 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             const auto& s = speakers_[(size_t) i];
             if (! s.enabled || isSubwooferModel (s.model)) continue;
             const auto cab = cabinetFor (s.model);
-            const juce::Point<float> c { hx (s.x + fwd[(size_t) i]), vy (s.baseHeightM + 0.5f * cab.heightM) };
+            const float cx = hc[(size_t) i];
+            const juce::Point<float> c { hx (s.x + fwd[(size_t) i] * cx), vy (s.baseHeightM + 0.5f * cab.heightM) };
             const float th = juce::degreesToRadians (s.tiltDeg);
-            const juce::Point<float> axis { std::cos (th), std::sin (th) * kV };
-            const auto dir = axis / juce::jmax (1.0e-6f, axis.getDistanceFromOrigin());
+            const juce::Point<float> axis { std::cos (th) * cx, std::sin (th) * kV };
+            const float axisLen = axis.getDistanceFromOrigin();
+            // Aimed straight into the screen with no tilt: nothing to draw.
+            if (axisLen < 1.0e-3f) continue;
+            const auto dir = axis / axisLen;
             const auto front = c + axis * (0.5f * cab.depthM * ppm);
             const bool live = ! lockRays_ && i == selected_;
             g.setColour (live ? Brand::accent().withAlpha (0.95f)
@@ -5520,7 +5587,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             // Down to the deck, where the plan's line ends too.
             const float land = aimLandingM (speakers_, i);
             juce::Point<float> end = front + dir * reach;
-            if (land >= 0.0f) end = { hx (s.x + land), vy (0.0f) };
+            if (land >= 0.0f) end = { hx (s.x + land * cx), vy (0.0f) };
             g.drawDashedLine ({ front, end }, aimDash, 2, live ? 1.6f : 1.0f);
             if (land >= 0.0f)
             {
@@ -5541,11 +5608,19 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         const auto cab = cabinetFor (s.model);
         // Drawn square on the plan's scale, tilted, then stretched by the
         // vertical zoom about its centre.
-        const float w = cab.depthM * ppm, h = cab.heightM * ppm;
+        // Turned in the plan, the side shows depth and width mixed by the
+        // heading, and the tilt reads shallower (side-on) or mirrored (facing
+        // left) - the box is what you would see from the side.
+        const float cx = hc[(size_t) i], sx = hs[(size_t) i];
+        const float w = (cab.depthM * std::abs (cx) + cab.widthM * std::abs (sx)) * ppm;
+        const float h = cab.heightM * ppm;
         const float cy = vy (s.baseHeightM + 0.5f * cab.heightM);
-        const juce::Rectangle<float> box (hx (s.x + fwd[(size_t) i]) - 0.5f * w, cy - 0.5f * h, w, h);
+        const juce::Rectangle<float> box (hx (s.x + fwd[(size_t) i] * cx) - 0.5f * w, cy - 0.5f * h, w, h);
         const bool sel = i == selected_;
-        const auto xf = juce::AffineTransform::rotation (juce::degreesToRadians (s.tiltDeg),
+        const float thR = juce::degreesToRadians (s.tiltDeg);
+        float seenTilt = std::atan2 (std::sin (thR), std::cos (thR) * std::abs (cx));
+        if (cx < 0.0f) seenTilt = -seenTilt;
+        const auto xf = juce::AffineTransform::rotation (seenTilt,
                                                          box.getCentreX(), box.getCentreY())
                             .followedBy (juce::AffineTransform::scale (1.0f, kV, box.getCentreX(), box.getCentreY()));
         {
@@ -8131,6 +8206,23 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // Ctrl + left-drag pans the view from any tool. A Ctrl+click that does
+    // not move is replayed on mouse-up as the normal Ctrl+click, so adding
+    // to the selection with Ctrl still works.
+    if (! replayingCtrlClick_
+        && e.mods.isLeftButtonDown()
+        && (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        && currentAnnotSpace() != AnnotSpace::PolarPlot
+        && plotArea().contains (e.getPosition()))
+    {
+        drag_ = Drag::Pan;
+        ctrlPanPending_ = true;
+        ctrlPanMoved_ = false;
+        lastMouse_ = e.position;
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        return;
+    }
+
     const auto pb = plotArea();
     // Polar uses full bounds as the plot frame; SPL uses the trimmed plot area.
     const bool inPlot = (currentAnnotSpace() == AnnotSpace::PolarPlot)
@@ -8751,7 +8843,18 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
                 elevDragMoved_ = true;
                 if (onWillEdit) onWillEdit();
             }
-            const auto v = e.position - elevRayPivot_;
+            auto v = e.position - elevRayPivot_;
+            // A cabinet turned to face left in the plan fires left here too,
+            // so its aim is dragged out to the left; side-on, the horizontal
+            // run is foreshortened by the heading and is undone the same way.
+            float cx = 1.0f;
+            if (elevRayIdx_ < (int) speakers_.size())
+            {
+                const auto& s = speakers_[(size_t) elevRayIdx_];
+                cx = std::cos (juce::degreesToRadians (s.rotationDeg + (s.reverseOrientation ? 180.0f : 0.0f)));
+            }
+            if (std::abs (cx) < 0.05f) return;
+            v.x /= cx;
             if (v.x < 4.0f) return;
             // Undo the vertical zoom so the angle is the physical one.
             const float k = juce::jmax (1.0e-6f, elevZoomY_);
@@ -9033,6 +9136,14 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (drag_ == Drag::Pan && ctrlPanPending_ && ! ctrlPanMoved_)
+    {
+        // A few pixels of slack so a shaky Ctrl+click is still a click.
+        if (e.getDistanceFromDragStart() < 4)
+            return;
+        ctrlPanMoved_ = true;
+    }
+
     if (drag_ == Drag::Pan)
     {
         // View-only: slides the window over the fixed field, no re-solve, so
@@ -9137,6 +9248,17 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
     {
         drag_ = Drag::None;
         updateMouseCursorForTool();
+        const bool replay = ctrlPanPending_ && ! ctrlPanMoved_;
+        ctrlPanPending_ = false;
+        ctrlPanMoved_ = false;
+        if (replay)
+        {
+            // It was a Ctrl+click, not a pan: run it as one.
+            replayingCtrlClick_ = true;
+            mouseDown (e);
+            mouseUp (e);
+            replayingCtrlClick_ = false;
+        }
         repaint();
         return;
     }
@@ -9393,6 +9515,15 @@ void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
         repaint();
     }
 
+    {
+        const int over = micHitTestScreen (e.position);
+        if (over != hoveredMic_)
+        {
+            hoveredMic_ = over;
+            repaint();
+        }
+    }
+
     const bool tracking = (tool_ == Tool::Ruler && pendingAnchor_)
                        || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty());
     if (tracking)
@@ -9430,6 +9561,7 @@ void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
     }
 
     if (magValid_) { magValid_ = false; magImage_ = juce::Image(); repaint(); }
+    if (hoveredMic_ >= 0) { hoveredMic_ = -1; repaint(); }
     hoverValid_ = false;
     const bool hadProbe = splProbeValid_;
     splProbeValid_ = false;

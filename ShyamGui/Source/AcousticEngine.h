@@ -453,6 +453,17 @@ inline int sourceMount (const std::vector<Speaker>& sp, int index)
     const auto members = arrayMembers (sp, index);
     if (members.empty()) return Mount::Ground;
     const auto& head = sp[(size_t) members.front()];
+    // The Q212P is only ever stacked or flown - it has no Ground mount. A
+    // source recorded as Ground (a new one, or an older project) stands on
+    // the deck as a stack instead.
+    if (head.model == 3)
+    {
+        if (head.mount == Mount::Flown || head.mount == Mount::Stacked) return head.mount;
+        if (head.mount == Mount::Ground) return Mount::Stacked;
+        if (arrayHangs (sp, members))
+            return sp[(size_t) members.back()].baseHeightM <= 0.01f ? Mount::Stacked : Mount::Flown;
+        return head.baseHeightM > 0.01f ? Mount::Flown : Mount::Stacked;
+    }
     if (head.mount >= Mount::Ground && head.mount <= Mount::Flown) return head.mount;
     // One column: stood on the deck it is a stack, clear of it a hang.
     if (arrayHangs (sp, members))
@@ -541,6 +552,22 @@ inline float rowSpacingM (const std::vector<Speaker>& sp, int index)
         if (d > 0.01f) return d;
     }
     return defaultRowSpacingM (head.model);
+}
+
+/** Height of the TOP of the source owning @p index: the highest box top in
+    the array, stack or row. This is what the Pos. Z field reads and sets. */
+inline float sourceTopM (const std::vector<Speaker>& sp, int index)
+{
+    float top = 0.0f;
+    bool any = false;
+    for (int m : arrayMembers (sp, index))
+    {
+        const auto& s = sp[(size_t) m];
+        const float t = s.baseHeightM + cabinetFor (s.model).heightM;
+        top = any ? std::max (top, t) : t;
+        any = true;
+    }
+    return top;
 }
 
 /** Lay out every cabinet of the source owning @p index from the source's

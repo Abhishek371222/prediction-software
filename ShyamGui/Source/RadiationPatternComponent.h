@@ -248,6 +248,9 @@ public:
     std::vector<MicReceiver> getMics() const { return mics_; }
     void setMics (std::vector<MicReceiver> m);
     int  getSelectedMic() const noexcept { return selectedMic_; }
+    /** Mics belong to the Mapping tab: off, they are neither drawn nor hit. */
+    void setMicsShown (bool on);
+    bool micsShown() const noexcept { return micsShown_; }
     /** Move the selected mic to an exact world point - the sidebar's X / Y
         fields, which is the only way to place one to the centimetre. */
     void setSelectedMicPosition (float x, float y);
@@ -416,6 +419,9 @@ public:
         follow. */
     std::function<void(bool)>              onMapWholeAreaChanged;
     std::function<void()>                  onMicsChanged;
+    // Fired after a delete renumbers the remaining mics 1..N: (oldId, newId)
+    // for every surviving mic, so anything holding a mic by id can follow it.
+    std::function<void (const std::vector<std::pair<int, int>>&)> onMicIdsRenumbered;
     std::function<void()>                  onAddMicArmedChanged;
     std::function<void()>                  onAddSpeakerArmedChanged;
     /** Place a new speaker at world (x, y) metres - MainComponent → ControlPanel. */
@@ -787,7 +793,8 @@ private:
     void drawMics (juce::Graphics& g);
     int  micHitTest (juce::Point<float> worldPt, float radiusM) const;
     int  micHitTestScreen (juce::Point<float> screenPt) const;
-    juce::String micLabelText (const MicReceiver& m) const;
+    juce::String micLabelText (const MicReceiver& m, bool full = true) const;
+    void         renumberMics();
     static juce::String micCoordText (const MicReceiver& m);
     void snapMicWorld (float& wx, float& wy, bool playSoundIfNewClip);
     void beginMicDrag (int micIndex, juce::Point<float> screenPos);
@@ -1044,6 +1051,11 @@ private:
     // Virtual mics
     std::vector<MicReceiver> mics_;
     int                      selectedMic_ = -1;           // primary
+    int                      hoveredMic_  = -1;           // mic under the cursor: shows its full label
+    bool                     micsShown_ = false;          // only on the Mapping tab
+    bool                     ctrlPanPending_ = false;     // Ctrl+left press: pan if dragged, click if not
+    bool                     ctrlPanMoved_   = false;
+    bool                     replayingCtrlClick_ = false;
     bool                     addMicArmed_ = false;
     bool                     addSpeakerArmed_ = false;
     int                      nextMicId_ = 1;
