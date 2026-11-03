@@ -5,6 +5,7 @@
 #include "RadiationPatternComponent.h"
 #include "InfoPanel.h"
 #include "MeasurementData.h"
+#include "CoverageTables.h"
 #include "BrandTheme.h"
 #include "AppSettings.h"
 #include "ProjectData.h"
@@ -20,6 +21,7 @@
 #include "MicRefLockDialog.h"
 #include "CommandTerminal.h"
 #include "DistanceSplPlot.h"
+#include "MappingPane.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent - owns all sub-panels, runs AcousticEngine::compute on a
@@ -150,6 +152,9 @@ private:
     // the same renderer in ElevationSide mode, fed the same solve - a
     // display only, so none of its editing is switched on.
     PaneHeaderBar  elevHeader_ { "Elevation view" };
+    HeaderPillButton elevSnapBtn_ { "Snap", true };
+    HeaderPillButton elevZoomOutBtn_ { "V-", false };
+    HeaderPillButton elevZoomInBtn_ { "V+", false };
     PaneHeaderBar  splHeader_  { "Distance Vs. dbSPL" };
     RadiationPatternComponent elevationComp_;
     DistanceSplPlot           splPlot_;
@@ -171,6 +176,11 @@ private:
     void addSourceAtOrigin (AddSource kind, int count);
     void setSourceCabinetCount (int sourceIndex, int count);
     void promptAddMultipleSources();
+    void addSeparatePointSources (int n);
+    /** Every cabinet of every source the given cabinets belong to. */
+    std::vector<int> wholeSources (const std::vector<int>& cabinets) const;
+    /** Delete the sources owning these cabinets, all their boxes at once. */
+    void deleteSources (std::vector<int> cabinets);
     // The listening planes, in the order they appear in the Sources
     // list. The index is into THAT list, not into the annotation
     // vector, which also holds free drawings - planeAnnotIndex maps
@@ -190,6 +200,11 @@ private:
     VenuePanel                venuePanel_;
     juce::Viewport            venueScroll_;
     void setVenueMode (bool on);
+    /** The plan's / elevation's view, when it is one the user set and so
+        worth carrying across a tab switch. */
+    void rememberPlanView();
+    void applyPlanView();
+    RadiationPatternComponent::ViewState planViewKeep_, elevViewKeep_;
     void refreshVenuePanel();
     void addVenueElement (VenueElement::Type type);
     void setVenueElement (int index, const VenueElement& e);
@@ -207,6 +222,19 @@ private:
     void deleteVenueElement (int index);
     void venueAction (int index, int action);
     void setVenueFurnitureHidden (bool hidden);
+
+    // --- the Mapping tab -------------------------------------------------
+    // The Sources plan with SPL mapping on, the Frequency Response pane
+    // under it, Filters in the side panel and the Calculate footer.
+    bool                mappingMode_ = false;
+    int                 mappingPrevMenu_ = 0;   // menuMapping_ to restore on leaving
+    PaneHeaderBar       frHeader_ { "Frequency Response" };
+    MappingResponsePlot frPlot_;
+    MappingFooter       mapFooter_;
+    // Auto - Calculate off holds edits back until Calculate is pressed.
+    bool                autoCalc_ = true, calcPending_ = false, forceRun_ = false;
+    void setMappingMode (bool on);
+    void syncMappingFooter();
     // Measured off ArrayCalc V12: a new array is created with its frame
     // at 8.00 m. The cabinet pitch and sub spacing are ours - the
     // reference tool reads them from its own cabinet database, which we
@@ -280,6 +308,9 @@ private:
     void openProjectInNewWindow();
     void openProjectInCurrentWindow();
     void loadProjectFile (const juce::File& f);
+    /** File > Apply Layout: this scene's sources replaced by a saved file's. */
+    void applyLayout();
+    void applyLayoutFile (const juce::File& f);
     static bool launchAppInstance (const juce::String& args = {});
     void refreshHeaderIcons();
     std::unique_ptr<class PreferencesComponent> prefsPanel_;

@@ -504,7 +504,7 @@ namespace Brand
     // 1.22 em for Montserrat), so the size goes in as a point height.
     inline juce::Font fig (float figmaPx, const juce::Font& face)
     {
-        return face.withPointHeight (juce::jmax (7.0f, UiConfig::Scale::figf (figmaPx)));
+        return face.withPointHeight (juce::jmax (7.0f, UiConfig::Scale::figText (figmaPx)));
     }
     inline juce::Font figMed  (float figmaPx) { return fig (figmaPx, techMed (12.0f)); }
     inline juce::Font figSemi (float figmaPx) { return fig (figmaPx, techSemi (12.0f)); }

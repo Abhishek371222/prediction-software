@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "BrandTheme.h"
 #include "UiChrome.h"
+#include "TopMenuBar.h"   // for the crosshair, which this strip now carries
 
 // The hairlines in this strip and in the pane headers under it. Brand::border
 // is the panel edge colour and reads as a hard black rule across a pale band -
@@ -74,6 +75,39 @@ private:
     bool  folded_ = false;
 };
 
+// A small outlined text button for a pane header's own tools; a toggle fills
+// red while it is on.
+class HeaderPillButton : public juce::Button
+{
+public:
+    HeaderPillButton (const juce::String& text, bool toggle) : juce::Button (text)
+    {
+        setButtonText (text);
+        setClickingTogglesState (toggle);
+    }
+
+    void paintButton (juce::Graphics& g, bool hl, bool down) override
+    {
+        const auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const bool on = getClickingTogglesState() && getToggleState();
+        if (on)
+        {
+            g.setColour (Brand::accent());
+            g.fillRoundedRectangle (r, 3.0f);
+        }
+        else if (hl || down)
+        {
+            g.setColour (Brand::text().withAlpha (down ? 0.14f : 0.07f));
+            g.fillRoundedRectangle (r, 3.0f);
+        }
+        g.setColour (on ? Brand::accent() : Brand::text().withAlpha (0.55f));
+        g.drawRoundedRectangle (r, 3.0f, 1.0f);
+        g.setColour (on ? Brand::onAccent() : Brand::text());
+        g.setFont (Brand::figMed (12.0f));
+        g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
+    }
+};
+
 // The header over a stacked pane - "Elevation view", "Distance Vs. dbSPL".
 // Same grey band as the strip above, with a fold chevron on the right, so the
 // three panes down the middle read as one stack rather than three widgets.
@@ -95,6 +129,14 @@ public:
     std::function<void (bool folded)> onFold;
     bool isFolded() const noexcept { return folded_; }
 
+    /** Buttons laid out right to left, left of the fold chevron. */
+    void setTools (std::initializer_list<juce::Component*> tools)
+    {
+        tools_.assign (tools.begin(), tools.end());
+        for (auto* t : tools_) addAndMakeVisible (t);
+        resized();
+    }
+
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xffdfdede));
@@ -115,10 +157,21 @@ public:
     {
         const int b = UiConfig::Scale::fig (35.0f);
         fold_.setBounds (getWidth() - UiConfig::Scale::fig (21.0f) - b / 2, (getHeight() - b) / 2, b, b);
+        const int th = juce::jmin (getHeight() - 6, UiConfig::Scale::fig (22.0f));
+        const int gap = UiConfig::Scale::fig (6.0f);
+        int right = fold_.getX() - gap;
+        for (auto it = tools_.rbegin(); it != tools_.rend(); ++it)
+        {
+            auto* t = *it;
+            const int w = UiConfig::Scale::fig (t->getName().length() > 2 ? 46.0f : 28.0f);
+            t->setBounds (right - w, (getHeight() - th) / 2, w, th);
+            right -= w + gap;
+        }
     }
 
 private:
     juce::String      title_;
+    std::vector<juce::Component*> tools_;
     bool              folded_ = false;
     HeaderGlyphButton fold_ { "Fold", HeaderGlyphButton::Glyph::ChevronDown };
 };
@@ -135,6 +188,11 @@ public:
             addAndMakeVisible (*b);
 
         addAndMakeVisible (btnRays_);
+        btnMic_.setClickingTogglesState (false);
+        addChildComponent (btnMic_);
+        btnLocate_.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        btnLocate_.setTooltip ("Back to the action - frame the rig, mics and venue");
+        addAndMakeVisible (btnLocate_);
 
         lblSources_.setText ("Sources", juce::dontSendNotification);
         lblView_.setText ("Top View", juce::dontSendNotification);
@@ -165,6 +223,13 @@ public:
         resized(); repaint();
     }
 
+    /** The Mapping tab's mic glyph, after the rays. */
+    void setMicVisible (bool on)
+    {
+        btnMic_.setVisible (on);
+        resized(); repaint();
+    }
+
     void setViewName (const juce::String& n)
     {
         lblView_.setText (n, juce::dontSendNotification);
@@ -173,6 +238,20 @@ public:
 
     // Figma V1.1: 30 px.
     int preferredHeight() const { return juce::jmax (18, UiConfig::Scale::fig (30.0f)); }
+
+    /** The left edge of the fold chevron at the far right. Anything else put
+        in this strip measures its own right edge from here, so the gap to the
+        chevron stays the same at every window size. */
+    int optionsLeft() const noexcept { return btnViewOptions_.getX(); }
+
+    /** The right edge of the view title and its ray glyph - where the strip's
+        left-hand furniture stops and free space begins. */
+    int toolsRight() const noexcept
+    {
+        // The crosshair is always last and always present, so it is the end
+        // of the strip's left-hand furniture whatever else is showing.
+        return btnLocate_.getRight();
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -232,11 +311,26 @@ public:
         const int titleW = f.getStringWidth (lblView_.getText()) + fig (4.0f);
         lblView_.setBounds (rx + fig (24.0f), 0, titleW, h - 1);
 
-        if (btnRays_.isVisible())
         {
             const int icon = fig (24.0f);
-            const int ix   = lblView_.getRight() + fig (12.0f);
-            btnRays_.setBounds (ix, (h - icon) / 2, icon, icon);
+            int right = lblView_.getRight() - fig (8.0f);   // as if a 24 px icon ended here
+            if (btnRays_.isVisible())
+            {
+                btnRays_.setBounds (right + fig (20.0f), (h - icon) / 2, icon, icon);
+                right = btnRays_.getRight();
+            }
+            // MAPPING V1.1: the mic 20 px after the rays.
+            if (btnMic_.isVisible())
+            {
+                btnMic_.setBounds (right + fig (20.0f), (h - icon) / 2, icon, icon);
+                right = btnMic_.getRight();
+            }
+            // The crosshair closes the group, the same 20 px after whatever
+            // came last. It acts on what the canvas is showing, so it belongs
+            // with the rays and the mic rather than up among the tabs - and
+            // unlike those two it is laid out on EVERY tab, because framing
+            // the view is something the Venue sheet wants as much as the plan.
+            btnLocate_.setBounds (right + fig (20.0f), (h - icon) / 2, icon, icon);
         }
 
         const int fold = fig (35.0f);
@@ -248,6 +342,8 @@ public:
     HeaderGlyphButton btnViewOptions_ { "View",  HeaderGlyphButton::Glyph::ChevronDown };
     RibbonIconButton btnRays_ { "Show Rays", { { "Show Rays.png", "Show Rays Active.png",
                                                  0, 0, 24, 24 } } };
+    RibbonIconButton btnMic_  { "Mic", { { "Mic.png", "Mic Active.png", 2, 2, 20, 20 } } };
+    TopMenuBar::Locate btnLocate_;
 
 private:
     juce::Label lblSources_, lblView_;

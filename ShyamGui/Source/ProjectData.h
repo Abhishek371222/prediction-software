@@ -64,6 +64,10 @@ struct ProjectData
     juce::var venue;
     juce::var rangeRings;      // metres, the reference rings the user added
     juce::var rangesVisible;   // whether those rings are drawn
+    // Reverse mapping: false (or absent) maps on the planes only, true maps
+    // across the whole area. Absent in projects saved before it existed,
+    // which lands on the old behaviour.
+    juce::var mapWholeArea;
 
     juce::File file;   // backing file on disk (empty until first save)
 
@@ -147,6 +151,9 @@ struct ProjectData
             o->setProperty ("rotationDeg", s.rotationDeg);
             o->setProperty ("showAimLine", s.showAimLine);
             o->setProperty ("arrayId", s.arrayId);
+            o->setProperty ("mount", s.mount);
+            o->setProperty ("spacingM", s.spacingM);
+            o->setProperty ("symmetric", s.symmetric);
             o->setProperty ("filterType",   (int) s.filter.type);
             o->setProperty ("filterFamily", (int) s.filter.family);
             o->setProperty ("filterOrder",  s.filter.order);
@@ -166,6 +173,8 @@ struct ProjectData
             root->setProperty ("rangeRings", rangeRings);
             root->setProperty ("rangesVisible", rangesVisible);
         }
+        if (mapWholeArea.isBool() && (bool) mapWholeArea)
+            root->setProperty ("mapWholeArea", mapWholeArea);
         root->setProperty ("format", "atmk-1");
 
         return juce::var (root);
@@ -182,6 +191,7 @@ struct ProjectData
             p.venue    = root->getProperty ("venue");
             p.rangeRings = root->getProperty ("rangeRings");
             p.rangesVisible = root->getProperty ("rangesVisible");
+            p.mapWholeArea  = root->getProperty ("mapWholeArea");
 
             if (auto mv = root->getProperty ("meta"); auto* m = mv.getDynamicObject())
             {
@@ -240,6 +250,13 @@ struct ProjectData
                         // a project meant.
                         s.arrayId     = o->hasProperty ("arrayId")
                                       ? (int) o->getProperty ("arrayId") : -1;
+                        // Absent before sources carried their own deployment:
+                        // -1 reads the mount from the heights, as it was then.
+                        s.mount       = o->hasProperty ("mount")
+                                      ? juce::jlimit (-1, 2, (int) o->getProperty ("mount")) : -1;
+                        s.spacingM    = o->hasProperty ("spacingM")
+                                      ? juce::jmax (0.0f, (float) (double) o->getProperty ("spacingM")) : 0.0f;
+                        s.symmetric   = o->hasProperty ("symmetric") && (bool) o->getProperty ("symmetric");
                         // Older projects predate the per-unit hide, and every
                         // aiming line was drawn then, so absent means shown.
                         s.showAimLine = (! o->hasProperty ("showAimLine"))

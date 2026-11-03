@@ -163,16 +163,8 @@ struct VenueElement
         return out;
     }
 
-    juce::Colour colour() const
-    {
-        switch (type)
-        {
-            case Type::Listening: return juce::Colour (0xffe8a0a4);   // audience, pink
-            case Type::Structure: return juce::Colour (0xffa9c4e8);   // scenery, blue
-            case Type::Object:    return juce::Colour (0xffe8d2a0);   // prop, amber
-        }
-        return juce::Colour (0xffe8a0a4);
-    }
+    // One grey for every type, as the sheet draws them; the Type column says which is which.
+    juce::Colour colour() const { return FigPlot::venueFill(); }
 };
 
 // -----------------------------------------------------------------------------
@@ -273,6 +265,9 @@ public:
 
     /** Someone moved or reshaped an element on the canvas. */
     std::function<void (int index, VenueElement)> onElementChanged;
+    /** Once per drag, before its first onElementChanged - one gesture is one
+        undo step, however many moves it is made of. */
+    std::function<void()>                         onEditStart;
     /** Someone clicked an element, or clicked empty space (-1). */
     std::function<void (int index)>               onSelect;
     /** The camera moved, so the other pane has to redraw too. */
@@ -520,10 +515,12 @@ protected:
         cam_->touched = true;
         const auto f = fieldArea();
         const double perM = pxPerMetre (f);
-        // Dragging the drawing right moves the camera LEFT, which with x
-        // running right means a smaller centre.
+        // Direct pan: the DRAWING follows the hand, as though you had taken
+        // hold of the sheet - drag left and the drawing comes left with you.
+        // The camera therefore moves against the drag. Screen y runs down and
+        // world y up, hence the signs.
         cam_->xCentre -= (double) deltaPx.x / perM;
-        cam_->yCentre -= (double) deltaPx.y / perM;
+        cam_->yCentre += (double) deltaPx.y / perM;
         if (onCameraMoved) onCameraMoved();
         repaint();
     }
@@ -560,6 +557,7 @@ public:
 
         grab_ = Grab::None;
         grabIdx_ = -1;
+        dragEdited_ = false;
         const auto f = fieldArea();
         dragFromX_ = screenToX (e.position.x, f);
         dragFromY_ = screenToY (e.position.y, f);
@@ -664,6 +662,11 @@ public:
         }
         else return;
 
+        if (! dragEdited_)
+        {
+            dragEdited_ = true;
+            if (onEditStart) onEditStart();
+        }
         onElementChanged (grab_ == Grab::Body ? grabIdx_ : sel_, out);
     }
 
@@ -763,6 +766,7 @@ private:
 
     Grab                 grab_ = Grab::None;
     int                  grabIdx_ = -1;
+    bool                 dragEdited_ = false;
     VenueElement         start_;
     double               dragFromX_ = 0.0, dragFromY_ = 0.0;
     juce::Point<float>   lastPx_;
@@ -837,7 +841,7 @@ private:
 
         g.setColour (e.colour().withAlpha (0.75f));
         g.fillPath (p);
-        g.setColour (markCol().withAlpha (sel ? 1.0f : 0.45f));
+        g.setColour (sel ? markCol() : FigPlot::venueEdge());
         g.strokePath (p, juce::PathStrokeType (1.2f));
 
         if (! sel) return;
@@ -872,6 +876,9 @@ public:
     void mouseDown (const juce::MouseEvent& e) override { lastPx_ = e.position; }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        // Heights follow the hand too, so the profile drags the same way the
+        // plan above it does - zBase is the height at the frame's bottom, so
+        // it moves WITH the drag to carry the drawing along.
         if (cam_ != nullptr)
             cam_->zBase += (double) (e.position.y - lastPx_.y) / pxPerMetre (fieldArea());
         panBy ({ e.position.x - lastPx_.x, 0.0f });
@@ -982,7 +989,7 @@ public:
                     blk.closeSubPath();
                     g.setColour (e.colour().withAlpha (0.75f));
                     g.fillPath (blk);
-                    g.setColour (markCol().withAlpha (i == sel_ ? 1.0f : 0.45f));
+                    g.setColour (i == sel_ ? markCol() : FigPlot::venueEdge());
                     g.strokePath (blk, juce::PathStrokeType (1.2f));
                     continue;
                 }
@@ -1050,6 +1057,7 @@ public:
         top_.onSelect = [this] (int i) { if (onSelect) onSelect (i); };
         top_.onElementChanged = [this] (int i, VenueElement el)
         { if (onElementChanged) onElementChanged (i, el); };
+        top_.onEditStart = [this] { if (onEditStart) onEditStart(); };
         top_.onAction = [this] (int i, int a) { if (onAction) onAction (i, a); };
         elevHead_.onFold = [this] (bool) { resized(); };
     }
@@ -1070,6 +1078,7 @@ public:
 
     std::function<void (int)>                    onSelect;
     std::function<void (int, VenueElement)>      onElementChanged;
+    std::function<void()>                        onEditStart;
     std::function<void (int, int)>               onAction;
     using Action = VenueTopPlot::Action;
 

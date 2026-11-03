@@ -9,8 +9,10 @@
 //
 // Figma "Source screen - 1.3.1" (node 207:1269):
 //
-//   field     #E4E4E4 sheet, 1 px black frame
+//   field     white sheet, 1 px black frame (inverted per "MAPPING V1.1",
+//             node 280:2019: white grid, grey boxes)
 //   grid      #D9D9D9 on a 2 m step (5 ft in Imperial), no finer rule
+//   venue     boxes #E4E4E4 on screen, #A0A0A0 hairline; red only when selected
 //   scale     48 px per 2 m in the 1920-wide frame
 //   labels    Montserrat SemiBold 12, black, outside the field: along the top
 //             and down the left, zero named for its axis ("0(x)", "0(y)")
@@ -21,7 +23,10 @@
 // =============================================================================
 namespace FigPlot
 {
-    inline juce::Colour field()     { return juce::Colour (0xffe4e4e4); }
+    inline juce::Colour field()     { return juce::Colour (0xffffffff); }
+    /** Venue element body; drawn at 75%, so it lands on #E4E4E4 over the field. */
+    inline juce::Colour venueFill() { return juce::Colour (0xffdbdbdb); }
+    inline juce::Colour venueEdge() { return juce::Colour (0xffa0a0a0); }
     inline juce::Colour grid()      { return juce::Colour (0xffd9d9d9); }
     inline juce::Colour frame()     { return juce::Colour (0xff000000); }
     inline juce::Colour tick()      { return juce::Colour (0xff000000); }

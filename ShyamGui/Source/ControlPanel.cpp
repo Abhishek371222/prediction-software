@@ -164,15 +164,7 @@ ControlPanel::ControlPanel()
         // picking the sub lists the sub's bands and picking the mid lists the
         // mid's. This is presentation only -- the scene keeps the frequency it
         // is being solved at, and nothing is recomputed.
-        if (selected_ >= 0 && selected_ < (int) speakers_.size())
-        {
-            const int m = speakers_[(size_t) selected_].model;
-            if (m != currentMeasSource_)
-            {
-                setMeasurementSource (m);
-                if (onMeasurementSourceChanged) onMeasurementSourceChanged (m);
-            }
-        }
+        followSelectedModel();
 
         refreshEditors();
         if (onSelectionChanged) onSelectionChanged (selected_);
@@ -1131,6 +1123,300 @@ void ControlPanel::setSpeakerHeight (int index, float metres)
     notifyChanged();
 }
 
+void ControlPanel::setArrayTilt (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    tiltArrayTo (index, deg);
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setArrayRotation (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const float delta = deg - speakers_[(size_t) index].rotationDeg;
+    const auto members = arrayMembers (speakers_, index);
+    // A row turns as one piece about its centre - its boxes swing round with
+    // the heading instead of each spinning where it stands.
+    if (members.size() > 1 && ! arrayHangs (speakers_, members))
+    {
+        const auto ref = sourceRef (speakers_, index);
+        const float r = delta * juce::MathConstants<float>::pi / 180.0f;
+        const float c = std::cos (r), s = std::sin (r);
+        for (int m : members)
+        {
+            auto& sp = speakers_[(size_t) m];
+            const float dx = sp.x - ref.cx, dy = sp.y - ref.cy;
+            setSpeakerPosition (m, ref.cx + dx * c - dy * s, ref.cy + dx * s + dy * c);
+        }
+    }
+    for (int m : members)
+        setSpeakerRotation (m, m == index ? deg : speakers_[(size_t) m].rotationDeg + delta);
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::tiltArrayTo (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const float delta = deg - speakers_[(size_t) index].tiltDeg;
+    // The boxes on the far side of this one from the array's anchor follow
+    // it: below it when flown (hung from the top), above it when stacked
+    // (built on the bottom). Their own splays hold either way.
+    auto members = arrayMembers (speakers_, index);
+    if (sourceMount (speakers_, index) == Mount::Stacked)
+        std::reverse (members.begin(), members.end());
+    bool below = false;
+    for (int m : members)
+    {
+        if (m == index) below = true;
+        else if (below) speakers_[(size_t) m].tiltDeg += delta;
+    }
+    speakers_[(size_t) index].tiltDeg = deg;
+    ::rehangArray (speakers_, index);
+    if (selected_ >= 0 && selected_ < (int) speakers_.size())
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        tiltSlider_.setValue   (speakers_[(size_t) selected_].tiltDeg,     juce::dontSendNotification);
+        heightSlider_.setValue (speakers_[(size_t) selected_].baseHeightM, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+}
+
+void ControlPanel::setArrayHeight (int index, float metres)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const auto members = arrayMembers (speakers_, index);
+    if (! arrayHangs (speakers_, members)) { setSpeakerHeight (index, metres); return; }
+    const float delta = metres - speakers_[(size_t) index].baseHeightM;
+    for (int m : members) speakers_[(size_t) m].baseHeightM += delta;
+    ::rehangArray (speakers_, index);
+    if (selected_ >= 0 && selected_ < (int) speakers_.size())
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        heightSlider_.setValue (speakers_[(size_t) selected_].baseHeightM, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::rehangArray (int index)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    ::rehangArray (speakers_, index);
+}
+
+void ControlPanel::moveArrayTo (int index, float x, float z)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const auto members = arrayMembers (speakers_, index);
+    const bool hangs = arrayHangs (speakers_, members);
+    const float dx = x - speakers_[(size_t) index].x;
+    const float dz = z - speakers_[(size_t) index].baseHeightM;
+    for (int m : members)
+    {
+        auto& s = speakers_[(size_t) m];
+        setSpeakerPosition (m, s.x + dx, s.y);
+        if (hangs) s.baseHeightM += dz;
+    }
+    if (hangs)
+    {
+        ::rehangArray (speakers_, index);
+        // The bottom box stops on the deck rather than going through it.
+        float lowest = 0.0f;
+        for (int m : members) lowest = juce::jmin (lowest, speakers_[(size_t) m].baseHeightM);
+        for (int m : members) speakers_[(size_t) m].baseHeightM -= lowest;
+    }
+    else
+    {
+        // A row on the deck rises and falls as one.
+        for (int m : members) speakers_[(size_t) m].baseHeightM = juce::jmax (0.0f, z);
+    }
+    if (selected_ >= 0 && selected_ < (int) speakers_.size())
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        heightSlider_.setValue (speakers_[(size_t) selected_].baseHeightM, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+}
+
+// --- whole-source edits ------------------------------------------------------
+void ControlPanel::setSourceModel (int index, int model)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const auto members = arrayMembers (speakers_, index);
+    bool any = false;
+    for (int m : members) any = any || speakers_[(size_t) m].model != model;
+    if (! any) return;
+    willEdit();
+    const auto ref = sourceRef (speakers_, index);
+    for (int m : members) speakers_[(size_t) m].model = model;
+    // A new box is a new height and depth: the hang, the stack and the
+    // row are re-laid round the same reference.
+    if (members.size() > 1) ::arrangeSource (speakers_, index, ref);
+    rebuildSpeakerBox();
+    followSelectedModel();
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setSourceEnabled (int index, bool on)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    willEdit();
+    for (int m : arrayMembers (speakers_, index)) speakers_[(size_t) m].enabled = on;
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::moveSourceTo (int index, float cx, float cy)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const auto ref = sourceRef (speakers_, index);
+    const float dx = cx - ref.cx, dy = cy - ref.cy;
+    if (std::abs (dx) < 1.0e-6f && std::abs (dy) < 1.0e-6f) return;
+    willEdit();
+    for (int m : arrayMembers (speakers_, index))
+        setSpeakerPosition (m, speakers_[(size_t) m].x + dx, speakers_[(size_t) m].y + dy);
+    notifyChanged();
+}
+
+void ControlPanel::setSourceZ (int index, float metres)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    auto ref = sourceRef (speakers_, index);
+    metres = juce::jmax (0.0f, metres);
+    willEdit();
+    const auto members = arrayMembers (speakers_, index);
+    if (members.size() > 1 && sourceMount (speakers_, index) != Mount::Ground)
+    {
+        // A hang or a stack moves up or down as one piece.
+        const float dz = metres - ref.z;
+        for (int m : members) speakers_[(size_t) m].baseHeightM += dz;
+        float lowest = 0.0f;
+        for (int m : members) lowest = juce::jmin (lowest, speakers_[(size_t) m].baseHeightM);
+        for (int m : members) speakers_[(size_t) m].baseHeightM -= lowest;
+    }
+    else
+    {
+        for (int m : members) speakers_[(size_t) m].baseHeightM = metres;
+    }
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setSourceMount (int index, int mount, float flownHeightM)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    mount = juce::jlimit (Mount::Ground, Mount::Flown, mount);
+    auto ref = sourceRef (speakers_, index);
+    const int was = sourceMount (speakers_, index);
+    willEdit();
+    const auto members = arrayMembers (speakers_, index);
+    for (int m : members) speakers_[(size_t) m].mount = mount;
+    // Ground and a stack stand on the deck; a flown array goes up to the
+    // height it last hung at, or the caller's working height.
+    if (mount == Mount::Flown)
+        ref.z = was == Mount::Flown && ref.z > 0.01f ? ref.z : juce::jmax (0.02f, flownHeightM);
+    else
+        ref.z = 0.0f;
+    ::arrangeSource (speakers_, index, ref);
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setSourceSpacing (int index, float metres)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    metres = juce::jlimit (0.01f, 100.0f, metres);
+    const auto ref = sourceRef (speakers_, index);
+    willEdit();
+    for (int m : arrayMembers (speakers_, index)) speakers_[(size_t) m].spacingM = metres;
+    if (sourceMount (speakers_, index) == Mount::Ground)
+        ::arrangeSource (speakers_, index, ref);
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setSourceSymmetric (int index, bool on)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    willEdit();
+    for (int m : arrayMembers (speakers_, index)) speakers_[(size_t) m].symmetric = on;
+    notifyChanged();
+}
+
+void ControlPanel::arrangeSourceFrom (int index, SourceRef ref)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    ::arrangeSource (speakers_, index, ref);
+}
+
+int ControlPanel::symmetricPartner (int index) const
+{
+    if (index < 0 || index >= (int) speakers_.size()) return -1;
+    if (! speakers_[(size_t) index].symmetric) return -1;
+    const auto members = arrayMembers (speakers_, index);
+    const int n = (int) members.size();
+    for (int k = 0; k < n; ++k)
+        if (members[(size_t) k] == index)
+        {
+            const int p = members[(size_t) (n - 1 - k)];
+            return p == index ? -1 : p;
+        }
+    return -1;
+}
+
+void ControlPanel::setCabinetSplay (int index, float splayDeg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const auto members = arrayMembers (speakers_, index);
+    const int n = (int) members.size();
+    const bool stacked = sourceMount (speakers_, index) == Mount::Stacked;
+
+    // The splay sits on a GAP between two boxes. Flown, box k's angle is from
+    // the box above (gap k-1); stacked, from the box below (gap k). Mirrored,
+    // gap g pairs with gap n-2-g - the same splay, the same sign, which is
+    // what keeps a curve symmetrical about its middle.
+    auto apply = [&] (int k)
+    {
+        const int refK = stacked ? k + 1 : k - 1;
+        if (refK < 0 || refK >= n) return;
+        const int m = members[(size_t) k];
+        tiltArrayTo (m, speakers_[(size_t) members[(size_t) refK]].tiltDeg + splayDeg);
+    };
+
+    int k = -1;
+    for (int i = 0; i < n; ++i) if (members[(size_t) i] == index) k = i;
+    if (k < 0) return;
+    willEdit();
+    apply (k);
+    if (speakers_[(size_t) index].symmetric && n > 2)
+    {
+        const int gap  = stacked ? k : k - 1;
+        const int mGap = n - 2 - gap;
+        const int mk   = stacked ? mGap : mGap + 1;
+        if (mGap != gap && mk >= 0 && mk < n) apply (mk);
+    }
+    ::rehangArray (speakers_, index);
+    refreshEditors();
+    notifyChanged();
+}
+
+void ControlPanel::setCabinetRotation (int index, float deg)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    const int partner = symmetricPartner (index);
+    const float heading = sourceHeadingDeg (speakers_, index);
+    willEdit();
+    setSpeakerRotation (index, deg);
+    // Mirrored about the source's heading: +5 off it on one side is -5 off
+    // it on the other.
+    if (partner >= 0) setSpeakerRotation (partner, 2.0f * heading - deg);
+    notifyChanged();
+}
+
 void ControlPanel::setSpeakerArray (int index, int arrayId)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;
@@ -1148,6 +1434,7 @@ void ControlPanel::setSpeakerModel (int index, int model)
     speakers_[(size_t) index].model = model;
     willEdit();
     rebuildSpeakerBox();     // the unit's name carries its model
+    if (index == selected_) followSelectedModel();
     refreshEditors();
     notifyChanged();
 }
@@ -1180,6 +1467,68 @@ void ControlPanel::setSpeakerPolarity (int index, bool inverted)
     notifyChanged();
 }
 
+void ControlPanel::setSpeakerGain (int index, float dB)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    dB = juce::jlimit ((float) gainSlider_.getMinimum(), (float) gainSlider_.getMaximum(), dB);
+    speakers_[(size_t) index].gainDB = dB;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        gainSlider_.setValue (dB, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerDelay (int index, float ms)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    ms = juce::jmax (0.0f, ms);
+    speakers_[(size_t) index].delayMs = ms;
+    if (index == selected_)
+    {
+        const bool was = updatingUI_; updatingUI_ = true;
+        delaySlider_.setValue (ms, juce::dontSendNotification);
+        updatingUI_ = was;
+    }
+    willEdit();
+    notifyChanged();
+}
+
+void ControlPanel::setSpeakerFilter (int index, const SpeakerFilter& flt)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    speakers_[(size_t) index].filter = flt;
+    if (index == selected_)
+    {
+        refreshEditors();
+        syncFilterEnabled();
+    }
+    willEdit();
+    notifyChanged();
+}
+
+juce::StringArray ControlPanel::getFrequencyItems() const
+{
+    juce::StringArray items;
+    for (int i = 0; i < freqBox_.getNumItems(); ++i)
+        items.add (freqBox_.getItemText (i));
+    return items;
+}
+
+int ControlPanel::getFrequencyIndex() const
+{
+    return freqBox_.getSelectedItemIndex();
+}
+
+void ControlPanel::setFrequencyIndex (int index)
+{
+    if (index < 0 || index >= freqBox_.getNumItems()) return;
+    freqBox_.setSelectedItemIndex (index, juce::sendNotificationSync);
+}
+
 void ControlPanel::setSpeakerPosition (int index, float x, float y)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;
@@ -1204,7 +1553,17 @@ void ControlPanel::selectSpeaker (int index)
     updatingUI_ = true;
     if (index >= 0) speakerBox_.setSelectedId (index + 1, juce::dontSendNotification);
     updatingUI_ = false;
+    followSelectedModel();
     refreshEditors();
+}
+
+void ControlPanel::followSelectedModel()
+{
+    if (selected_ < 0 || selected_ >= (int) speakers_.size()) return;
+    const int m = speakers_[(size_t) selected_].model;
+    if (m == currentMeasSource_) return;
+    setMeasurementSource (m);
+    if (onMeasurementSourceChanged) onMeasurementSourceChanged (m);
 }
 
 void ControlPanel::setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex)
@@ -1228,6 +1587,7 @@ void ControlPanel::setSelectedSpeakers (const std::vector<int>& indices, int pri
     if (selected_ >= 0)
         speakerBox_.setSelectedId (selected_ + 1, juce::dontSendNotification);
     updatingUI_ = false;
+    followSelectedModel();
     refreshEditors();
 }
 
@@ -1341,7 +1701,9 @@ void ControlPanel::applyProject (const ProjectData& p)
     freqBox_.setSelectedId (freqId, juce::dontSendNotification);
     resSlider_.setValue   ((double) p.resolution, juce::dontSendNotification);
     floorSlider_.setValue (p.dBfloor,             juce::dontSendNotification);
-    bandsToggle_.setToggleState       (p.bandedSPL,           juce::dontSendNotification);
+    // Not p.bandedSPL: the Figma UI has no switch for contour bands, so a
+    // project saved with them on would stay banded with no way back.
+    bandsToggle_.setToggleState       (false,                 juce::dontSendNotification);
     updatingUI_ = false;
 
     rebuildSpeakerBox();

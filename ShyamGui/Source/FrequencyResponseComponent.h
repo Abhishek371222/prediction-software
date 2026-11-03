@@ -196,7 +196,13 @@ public:
         // Say what the numbers are, so nobody has to guess.
         g.setColour (Brand::muted());
         g.setFont (axisFont);
-        g.drawText (absolute_ ? "dB SPL at the mic" : "dB (relative - device not calibrated)",
+        // Not "dB SPL at the mic" any more. The curve is referenced to one
+        // metre from the rig rather than to the mic's own distance, so the
+        // number beside it is a relative level, not a sound pressure anyone
+        // could stand in front of and meter. Saying so is the difference
+        // between a relative plot and a wrong absolute one.
+        g.drawText (absolute_ ? "Rel. dB (distance-compensated)"
+                              : "Rel. dB (distance-compensated - device not calibrated)",
                     plot.getX(), plot.getY() - capH_, plot.getWidth(), capH_,
                     juce::Justification::centredLeft, false);
 

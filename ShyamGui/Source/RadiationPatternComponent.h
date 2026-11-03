@@ -88,8 +88,44 @@ public:
     bool lockRays() const noexcept { return lockRays_; }
     /** The SPL heatmap itself. Off leaves the grid, the speakers and their
         rays on a bare canvas - the solve is untouched, only the paint. */
+    /** Where the view is looking, in WORLD terms: the point at the centre of
+        the pane and how many pixels a metre is drawn at.
+
+        Everything else about the view - origin_, baseScale_, zoom_ - is
+        expressed against the solved region, which moves when the solve does.
+        Switching tabs re-solves and re-sizes the pane, so those numbers mean
+        something different afterwards even when the user has not touched
+        anything. A world point and a scale survive all of it. */
+    struct ViewState
+    {
+        bool  valid = false;
+        float centreX = 0.0f, centreY = 0.0f;   // metres
+        float pxPerM  = 0.0f;
+    };
+    ViewState captureView() const;
+    void      restoreView (const ViewState&);
+
+    /** Has the user panned or zoomed this view? A view they never touched is
+        the app's to re-fit; one they set is theirs to keep. */
+    bool viewIsUserSet() const noexcept { return viewInit_ && viewUserAdjusted_; }
+
     void setShowField (bool b) { showField_ = b; repaint(); }
     bool showField() const noexcept { return showField_; }
+
+    /** Map on the planes only (the default), or across the whole area.
+
+        Marking out an audience normally confines the map to it - the level
+        where people are, not in the air above them. Reversed, the planes stay
+        drawn but stop masking, and the map covers the sheet the way it does
+        before any plane exists. Both answer real questions: "what does the
+        audience get" and "where is this rig actually throwing". */
+    void setMapWholeArea (bool b)
+    {
+        if (mapWholeArea_ == b) return;
+        mapWholeArea_ = b;
+        repaint();
+    }
+    bool mapWholeArea() const noexcept { return mapWholeArea_; }
     /** True when the solved field is calibrated dB SPL, not relative. */
     bool resultHasAbsoluteSpl() const noexcept { return result_.hasAbsoluteSpl; }
     /** Shows or hides ORTHO's gap labels. It is not an overlay of its own:
@@ -115,6 +151,18 @@ public:
     /** Frame the selected units, or all of them when nothing is selected.
         Finding one cabinet in a 100 m field otherwise means hunting for it. */
     void zoomToSelection();
+    /** Frame where the work is - every cabinet, mic and venue shape -
+        whatever is selected. Falls back to the default fit on an empty scene. */
+    void frameAction();
+    /** Drop the framed elevation's vertical pan and vertical zoom. */
+    void resetElevationPan() { elevOffset_ = {}; elevZoomY_ = 1.0f; repaint(); }
+    /** Framed elevation: snap dragged boxes to the deck, other boxes' faces,
+        planes and the grid, with the snap point marked at the cursor. */
+    void setElevationSnap (bool on) { elevSnap_ = on; elevSnapValid_ = false; repaint(); }
+    bool elevationSnap() const noexcept { return elevSnap_; }
+    /** Framed elevation: stretch the vertical scale alone, about pivotY (px;
+        the pane centre when negative). The view only; nothing moves. */
+    void zoomElevationVertical (float factor, float pivotY = -1.0f);
     void refreshView() { repaint(); }
 
     // Plot toolbar tools (Shape is a family; construction chosen separately).
@@ -363,6 +411,10 @@ public:
         Owned by MainComponent, which already renders the plot for PNG
         export and owns the status line that reports the result. */
     std::function<void()>                  onCopyImage;
+    /** Reverse mapping was toggled from the plane's right-click menu, so the
+        project can remember it and any other view of the same scene can
+        follow. */
+    std::function<void(bool)>              onMapWholeAreaChanged;
     std::function<void()>                  onMicsChanged;
     std::function<void()>                  onAddMicArmedChanged;
     std::function<void()>                  onAddSpeakerArmedChanged;
@@ -373,6 +425,12 @@ public:
         same "back to cursor" action as Esc. Normal Select-mode right-click
         (context menu) is untouched. */
     std::function<void()>                  onRequestCancelCurrentTool;
+    /** The framed elevation's wheel, handed to whoever owns the zoom. */
+    std::function<void (const juce::MouseEvent&, const juce::MouseWheelDetails&)> onElevationWheel;
+    /** A box dragged on the framed elevation: its index, plan x and height. */
+    std::function<void (int index, float x, float baseHeightM)> onElevationMoved;
+    /** A box's aim line swung on the framed elevation: index, new tilt. */
+    std::function<void (int index, float tiltDeg)> onElevationTilted;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -422,6 +480,8 @@ private:
     void clampViewToField();
     float minZoomForFit() const;        // zoom floor: whole field on screen
     void zoomAboutCentre (float factor);
+    /** Contain-fit a world-metre box, padded so its surroundings show. */
+    void fitWorldBox (juce::Rectangle<float> box);
     /** Seed worldW/H from params (or 100 m) so an empty/pre-RUN scene can show a grid. */
     void ensureWorldExtents() noexcept;
     /** Keep a point on the field, which runs worldX0..worldX0+worldW (and the
@@ -539,6 +599,48 @@ private:
     void drawFramedGrid (juce::Graphics&, juce::Rectangle<int> pb);
     void drawFramedLabels (juce::Graphics&, juce::Rectangle<int> pb);
     void drawFramedElevation (juce::Graphics&);
+    /** The Sources elevation pane: a read-out you can only zoom and pan. */
+    bool framedElevation() const noexcept
+    {
+        return figmaFrame_ && params_.viewMode == ViewMode::ElevationSide;
+    }
+    /** Its vertical pan over the plan-scaled framing, in px. */
+    juce::Point<float> elevOffset_, elevPanLast_;
+    // The boxes as last drawn on the framed elevation, for picking them up.
+    std::vector<std::pair<int, juce::Path>> elevHits_;
+    float elevScale_ = 0.0f;                 // vertical px per metre, as last drawn
+    float elevScaleH_ = 0.0f;                // horizontal px per metre, as last drawn
+    float elevX0_ = 0.0f, elevYBase_ = 0.0f; // px of x = 0 and of the deck, as last drawn
+    float elevZoomY_ = 1.0f;                 // vertical stretch over the plan's scale
+    float elevAutoBase (juce::Rectangle<int> f, float scV) const;
+    bool  elevSnap_ = false;
+    bool  elevSnapValid_ = false;            // a snap point to mark
+    juce::Point<float> elevSnapM_;           // it, in plan x and height
+    bool  elevSnapOnX_ = false, elevSnapOnZ_ = false; // caught a target, not just the grid
+    /** The point nearest (xM, zM) worth landing on, ignoring the source of
+        ignoreIdx; heights tries both of a box's faces when boxH > 0. */
+    juce::Point<float> elevSnapPoint (float xM, float zM, int ignoreIdx, float boxH,
+                                      bool& onX, bool& onZ) const;
+    int   elevDragIdx_ = -1;
+    bool  elevDragMoved_ = false;
+    juce::Point<float> elevDragFrom_;        // the box's plan x and height
+    struct ElevRay { int index; juce::Point<float> pivot; juce::Line<float> line; };
+    std::vector<ElevRay> elevRays_;          // aim lines as last drawn
+    int   elevRayIdx_ = -1;                  // the one being swung
+    juce::Point<float> elevRayPivot_;
+    const ElevRay* elevRayAt (juce::Point<float> p) const
+    {
+        if (lockRays_) return nullptr;
+        const ElevRay* best = nullptr;
+        float bestD = 5.0f;
+        for (const auto& r : elevRays_)
+        {
+            juce::Point<float> on;
+            const float d = r.line.getDistanceFromPoint (p, on);
+            if (d < bestD) { bestD = d; best = &r; }
+        }
+        return best;
+    }
     /** Figma plan marks: a sub's short dashed stub; a mid's two solid
         coverage lines and its dashed aim line. */
     void drawFramedRays (juce::Graphics&);
@@ -669,6 +771,8 @@ private:
     bool isMicSelected (int index) const;
     bool isSpeakerSelected (int index) const;
     void syncPrimarySelectionFromSets();
+    /** Grow the speaker selection to every cabinet of each selected source. */
+    void selectWholeSources();
     void moveSelectedAnnotationBy (juce::Point<float> deltaAnnot);
     void drawSelectionOverlay (juce::Graphics& g, const Annotation& a);
     static std::vector<juce::Point<float>> resizeHandlesFor (const Annotation& a);
@@ -731,6 +835,10 @@ private:
     /** The plane whose tag is under @p p, or failing that whose body is.
         -1 when the point is over neither. */
     int          planeAtScreen (juce::Point<float> p) const;
+    /** Point-in-polygon, for planes whose outline is the only thing a border
+        hit test can see. */
+    static bool  pointInsidePolygon (juce::Point<float> pt,
+                                     const std::vector<juce::Point<float>>& poly) noexcept;
     void drawArcAnnotation (juce::Graphics& g, const Annotation& a, float alphaMul = 1.0f);
     void drawTextBoxAnnotation (juce::Graphics& g, const Annotation& a,
                                 float alphaMul = 1.0f, bool showBorder = false);
@@ -794,6 +902,8 @@ private:
     // Off by default: the map is now something you switch on from the
     // Mapping tab, not the thing the canvas always shows.
     bool                showField_ = false;
+    // Reversed mapping: the planes stay drawn but no longer mask the field.
+    bool                mapWholeArea_ = false;
     bool                showInterdistance_ = true;
     bool                showSplValues_     = false;
 
@@ -864,7 +974,15 @@ private:
     bool               ortho_ = false;
     OrthoAlign         orthoAlign_ = OrthoAlign::Horizontal;
     float              orthoSpacingM_ = 3.0f;
-    bool               drawGridSnap_ = false;
+    // Snap is ON out of the box. Placing and nudging cabinets onto round
+    // numbers is what you want almost every time, and having to find the
+    // toggle first was a step nobody asked for.
+    bool               drawGridSnap_ = true;
+    // ...but for SPEAKERS only, for now. Shapes, planes and rulers are drawn
+    // freehand over a venue outline, where quantising every point to a grid
+    // fights the drawing rather than helping it. One flag, so turning it on
+    // for annotations later is a single word.
+    bool               snapAnnotations_ = false;
     int                draggedSpeaker_ = -1;
     int                rotatingSpeaker_ = -1;
 

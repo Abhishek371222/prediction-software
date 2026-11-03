@@ -976,9 +976,11 @@ public:
         };
         btnOrtho_.setTooltip ("Align selected speakers horizontally or vertically "
                               "with linked centre-to-centre spacing. Off = normal.");
-        btnSnap_.setTooltip ("Lock to " + juce::String (Units::snapStepLabel())
-                                 + " steps and to nearby edges/corners "
-                                   "(other shapes, mics, speakers). Turn on before drawing or moving.");
+        btnSnap_.setTooltip ("Lock cabinets to " + juce::String (Units::snapStepLabel())
+                                 + " steps. On by default; shapes and planes "
+                                   "are drawn free.");
+        // On out of the box, to match the plot - see drawGridSnap_.
+        btnSnap_.setToggleState (true, juce::dontSendNotification);
         addAndMakeVisible (btnOrtho_);
         addAndMakeVisible (btnSnap_);
         styleMod (btnSplProbe_,
@@ -1260,7 +1262,7 @@ public:
 
     void showMicMenu (std::function<void (int itemId)> onPick, bool hasMics,
                       bool showDegrees, bool hasRings = true,
-                      bool showCoords = true)
+                      bool showCoords = true, juce::Component* target = nullptr)
     {
         juce::PopupMenu root;
         root.addItem (1, "Add Mic");
@@ -1268,8 +1270,13 @@ public:
         root.addItem (2, "Place on ring", hasMics && hasRings);
         root.addItem (5, "Show Coordinates", true, showCoords);
         root.addItem (3, "Show Degrees", true, showDegrees);
-        root.addItem (4, "Show Frequency Response", hasMics);
-        root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&btnMic_),
+        // "Show Frequency Response" is gone from this menu: the response has
+        // ONE view now, the pane under the plan on the Mapping tab, and it is
+        // always there. An item that opened a second, floating copy of the
+        // same plot only raised the question of which one to believe.
+        // Item 4 and its handler are left intact, simply never offered.
+        juce::ignoreUnused (hasMics);
+        root.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target != nullptr ? target : &btnMic_),
             [onPick] (int result)
             {
                 if (result > 0 && onPick != nullptr)
@@ -1529,10 +1536,9 @@ public:
             [] (const juce::String& t) { return Units::displayToMetres (t.getDoubleValue()); };
         orthoGapSlider_.setTextValueSuffix (" " + juce::String (Units::lengthUnit()));
         orthoGapSlider_.updateText();
-        btnSnap_.setTooltip (
-            "Lock to " + juce::String (Units::snapStepLabel())
-                + " steps and to nearby edges/corners "
-                  "(other shapes, mics, speakers). Turn on before drawing or moving.");
+        btnSnap_.setTooltip ("Lock cabinets to " + juce::String (Units::snapStepLabel())
+                                 + " steps. On by default; shapes and planes "
+                                   "are drawn free.");
     }
 
     std::function<void()> onOrthoOptionsChanged;

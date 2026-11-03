@@ -37,6 +37,14 @@ public:
         wire (btnExport_,   Export);
         wire (btnSettings_, Settings);
         btnSettings_.setTooltip ("Settings");
+        btnHome_.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        btnHome_.setTooltip ("Back to the action - frame the rig, mics and venue");
+        btnHome_.onClick = [this] { if (onHome) onHome(); };
+        // Hidden, not removed. The crosshair sits in the view strip now,
+        // beside Show Rays, where the controls that act on the canvas live.
+        // It keeps its bounds so the tab cells are measured from the same
+        // edge as before; only its visibility changed.
+        addChildComponent (btnHome_);
         btnSources_.setActive (true);
 
         projectLabel_.setJustificationType (juce::Justification::centred);
@@ -57,6 +65,8 @@ public:
 
     /** Called with the menu that was clicked and the button it hangs under. */
     std::function<void (MenuId, juce::Component*)> onMenu;
+    /** The locate button: bring the views back to where the work is. */
+    std::function<void()> onHome;
 
     void setLogo (juce::Drawable* d)                 { logo_ = d; repaint(); }
     void setSidebarWidth (int w)                     { sideW_ = juce::jmax (80, w); resized(); repaint(); }
@@ -99,16 +109,6 @@ public:
         const int h = getHeight();
         using UiConfig::Scale::fig;
 
-        // Figma: five 120 px cells from the sidebar's edge (x 399), each word
-        // centred in its cell, full strip height.
-        const int cellW = fig (120.0f);
-        int x = sideW_ - 1;
-        for (auto* t : tabs())
-        {
-            t->setBounds (x, 1, cellW, h - 2);
-            x += cellW;
-        }
-
         // Figma: the project name's cell is the last 222 px; the 26 px gear
         // sits 8 px before it, 16 px down. The gear's button is the full
         // strip height and centred on the glyph, so it is an easy target.
@@ -117,6 +117,18 @@ public:
         const int gearCx = projectBox_.getX() - fig (8.0f) - fig (13.0f);
         const int hitW   = fig (42.0f);
         btnSettings_.setBounds (gearCx - hitW / 2, 1, hitW, h - 2);
+        btnHome_.setBounds (btnSettings_.getX() - hitW, 1, hitW, h - 2);
+
+        // Figma: five 120 px cells from the sidebar's edge (x 399), each word
+        // centred in its cell, full strip height - narrowed only when a small
+        // window would otherwise run the last word into the buttons.
+        int x = sideW_ - 1;
+        const int cellW = juce::jmax (1, juce::jmin (fig (120.0f), (btnHome_.getX() - x) / 5));
+        for (auto* t : tabs())
+        {
+            t->setBounds (x, 1, cellW, h - 2);
+            x += cellW;
+        }
 
         projectLabel_.setFont (Brand::figMed (16.0f));
         projectLabel_.setBorderSize ({});
@@ -189,6 +201,50 @@ private:
         juce::Image img_;
     };
 
+    // ---- The locate button: a crosshair the gear's size, drawn in ink.
+public:
+    /** The crosshair that frames the rig, the mics and the venue.
+
+        Public because it no longer lives only here: the view strip carries
+        one beside Show Rays, which is where it belongs - next to the other
+        things that act on what the canvas is showing, rather than up among
+        the tabs. This strip keeps its own, hidden, so the icon has one
+        drawing rather than two that can drift apart. */
+    class Locate : public juce::Button
+    {
+    public:
+        Locate() : juce::Button ("Back to the action") {}
+
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            using UiConfig::Scale::figf;
+            const float s = figf (26.0f);
+            const auto box = juce::Rectangle<float> (s, s).withCentre (getLocalBounds().toFloat().getCentre());
+            if (over || down)
+            {
+                g.setColour (kHover.withAlpha (down ? 0.9f : 0.6f));
+                g.fillEllipse (box.expanded (figf (5.0f)));
+            }
+
+            const auto c  = box.getCentre();
+            const float r = s * 0.30f;
+            const float th = juce::jmax (1.2f, figf (2.0f));
+            g.setColour (kInk);
+            g.drawEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c), th);
+            const float in = r - s * 0.08f, out = s * 0.5f;
+            juce::Path ticks;
+            ticks.startNewSubPath (c.x, c.y - out); ticks.lineTo (c.x, c.y - in);
+            ticks.startNewSubPath (c.x, c.y + in);  ticks.lineTo (c.x, c.y + out);
+            ticks.startNewSubPath (c.x - out, c.y); ticks.lineTo (c.x - in, c.y);
+            ticks.startNewSubPath (c.x + in, c.y);  ticks.lineTo (c.x + out, c.y);
+            g.strokePath (ticks, juce::PathStrokeType (th, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+            const float d = s * 0.16f;
+            g.fillEllipse (juce::Rectangle<float> (d, d).withCentre (c));
+        }
+    };
+
+private:
     inline static const juce::Colour kWhite  { 0xffffffff };
     inline static const juce::Colour kInk    { 0xff000000 };
     inline static const juce::Colour kAccent { 0xffed2227 };
@@ -198,6 +254,7 @@ public:
     Tab  btnFile_     { "File", true }, btnVenue_ { "Venue", false }, btnSources_ { "Sources", false },
          btnMapping_  { "Mapping", false }, btnExport_ { "Export", false };
     Gear btnSettings_;
+    Locate btnHome_;
 
 private:
     std::array<Tab*, 5> tabs() { return { &btnFile_, &btnVenue_, &btnSources_, &btnMapping_, &btnExport_ }; }

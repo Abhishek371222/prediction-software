@@ -40,6 +40,140 @@ this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack,
 
 ---
 
+## [Unreleased]
+
+Work since v1.5.0, not yet cut as a release: the Sources and Mapping screens
+rebuilt to the Figma frames, venue audiences heard at ear height, arrays hung
+the ArrayCalc way, and type that stays readable at every window size.
+
+### Added
+
+- **Audience heights in the solver.** Inside a listening surface (a Venue
+  audience, or a closed plane drawn on the plan) the distance to each cabinet
+  is measured in 3-D to the ear line, so seated / standing height, raked floors
+  and flown rigs change level and phase. Directivity stays horizontal; off
+  every surface the solve is unchanged. Fed to the map, mic sweeps, Listen and
+  the report.
+- **The venue on every pane.** The Sources plan draws venue elements as the
+  Venue tab does (stages and objects included); both elevations draw audience
+  runs on their rake with the ear line above. The Venue tab shows the rig
+  (footprints, aim tick, S / M tags) on its plan and to height in its
+  elevation.
+- **Mapping tab** as its own screen, after the Figma MAPPING frames: the plan
+  over a foldable Frequency Response pane (white grid, 20 Hz - 20 kHz, one
+  curve per mic in the Figma colours), and a **Filters** section in place of
+  Rigging Points.
+  - Filters are two blocks, **Low Pass** and **High Pass**, each a Crossover
+    Frequency list (starting at Off) and a Slope list (BW / LR, 2nd / 4th
+    order). A block's Slope is greyed while it is Off; both on gives a band
+    pass. Old projects load into the matching block.
+- **Hinged arrays with relative angles**, as ArrayCalc does. The top box (or
+  Ver. Aim) sets the array angle; each box below is angled from the box above,
+  hung from its front-bottom corner. New arrays and added cabinets hang edge to
+  edge. Pos. Z on any flown box moves the whole array.
+- **Rigging Angles per the Figma TOP / SUB screens:** Cab No., Gain, Delay,
+  Pol., Mute, then **Angles** (relative, row 1 greyed) for tops or **Hor.
+  Rot.** for subs. Gain and Delay are editable per box.
+- **The Rigging Angles box can be dragged down the panel** by its top edge; its
+  header stops on the bottom of the visible panel (above the Mapping footer)
+  and never leaves the window.
+- **Elevation editing:** click a box to select it everywhere, drag it to move
+  the array (5 cm steps, floor-limited), drag its dashed aim line to tilt it.
+  Each drag is one undo step.
+- **Plan and elevation in sync:** one zoom for both (scroll either pane), the
+  elevation keeps true proportions and pans vertically; double-click resets.
+  Each top box's aim line ends at a landing dot where its beam meets the floor,
+  at the same distance in both views.
+- **Cabinet-edge snapping** with the snap sound: a dragged cabinet locks to
+  another cabinet's edges and centre lines, then falls back to the 0.1 m / 1 ft
+  grid. Snap is on by default for speakers.
+- **Backspace / Delete** removes the selected plane, cabinet, mic, drawing or
+  venue element, undoably. Ctrl+Z / Ctrl+Y now cover every edit in the new
+  Sources and Venue tabs; a drag undoes as one step.
+- Q212P coverage rays at a constant 50.36 deg spread; the elevation shows each
+  top's grey dashed aim line, following its tilt and Show Rays.
+- Four-quadrant placement: speakers, mics and drawings drag across the whole
+  field; Pos X / Y follow a drag. Cabinets carry an `arrayId` (saved) so a
+  source can own several cabinets.
+- A sample project, `Minimal live show - LR arrays + subs.atmk` (stage, pit,
+  main floor, FOH riser, L/R Q212P arrays and Q21S subs).
+- **One source, many cabinets.** System, No. of Cabinets (1-48), Mounting,
+  Pos. X / Y / Z, Hor. Aim, Mute and Delete act on every cabinet of the
+  selected source and nothing else; the count changes about a fixed source
+  centre and keeps the source id. Per-box rigging angles stay separate from
+  the source aim.
+- **Mounting per source** (Ground / Stacked / Flown), saved. A Q212P ground
+  stack builds itself bottom box on the floor, boxes in contact; sub rows lie
+  on the floor. Old projects take their mount from their geometry.
+- **Interdistance** (centre to centre) moves the cabinets of a ground row and
+  is saved per source; **Array Symmetry** mirrors box pairs' angles.
+- **Add Array** gives a new source id and selects it.
+- **Elevation Snap and vertical zoom:** a Snap pill (on / off) in the
+  elevation header with a cursor marker showing the snap point, free 1 mm
+  placement when off; V- / V+ pills and Shift / Ctrl + wheel zoom height only,
+  without moving any source. Double-click resets.
+- **File > Apply Layout...** replaces the sources with those of a saved
+  project (positions, angles, mounts, gains, delays), with no duplicates;
+  undoable.
+
+### Changed
+
+- **Sources and Mapping left panels match the Figma frames pixel for pixel**
+  ("Source screen_FOR TOP / FOR SUB - 1.3", "MAPPING_RIGGING FOR TOP V1.1"):
+  Montserrat Medium 12 px labels and values, 10 px captions, 9 px table cells;
+  32 px headers, 28 px controls, each row at its Figma pitch; every box at its
+  Figma x and width; #E8E8E8 table cells, outlined Pol. / Mute; Figma-size
+  drop-down arrows and header glyphs. Measured within 1-2 px of the frames.
+- **Responsive type.** Text follows the window but is held between 85 % and
+  130 % of the Figma size (`figmaMinFactor`, `figTextMaxFactor` in
+  `UiTextConfig.h`); the layout shares the 85 % floor so boxes never shrink
+  under their text. The menu tabs narrow rather than run into the gear in a
+  minimum-size window.
+- **Plots per the Figma:** white field with light grey grid, every venue box
+  one grey (#E4E4E4, #A0A0A0 edge), selection still red. The SPL map is a
+  translucent wash over the sheet; the colour bar sits outside the grid with
+  the Figma gradient (#B21619 - #ED2227 - #3281B9 - #0A4D74 - #231F20), and
+  the map uses the same ramp. Projects always open without contour bands.
+- **Top bar rebuilt** from the Figma: 120 px tabs from the sidebar edge, red
+  active underline, gear icon, project box. Selection colour #D4E3FE
+  everywhere; load bar black until over full load, then red.
+- **"Frequency to mapping" follows the selected speaker's model** - on
+  selecting a box, and when its System is changed.
+- Sidebar labels in one style: Title Case (System, Mounting, Hor. Aim, Front
+  Pick ...), one size and weight. "INTER-DISTANCE" reads **Interdistance** and
+  is greyed for tops; No. of Cabinets shows the real count.
+- Sources are named **Q212P-1**, with the count as **(Arrays_3)**.
+- Venue panes: the left-drag pan is reversed (the view follows the drag) on
+  both axes, in the plan and the elevation.
+- **Angle convention:** Hor. Aim 0 forward, +90 right, -90 left, 180 rear;
+  Ver. Aim + up, - down. Subs show no Ver. Aim.
+- The mouse wheel over the source panel scrolls it unless a field is being
+  edited.
+- The elevation opens larger (height axis from 6 m) and zooms around the
+  pointer; its coverage lines are dropped, the aim line kept.
+- Plane rows show only their name, with Delete on the right-click menu.
+- Distance Vs. dbSPL pane hidden; plan and elevation fill the column. The -6 dB
+  coverage edges on the plan can be switched off with one flag.
+
+### Fixed
+
+- Closed polylines clip the map to their inside (venue audiences were clipping
+  a whole half-plane).
+- Interdistance stayed stale when the gap changed elsewhere; typed values are
+  held to the 0.5-20 m range.
+- Typed Pos. X / Y, Hor. Aim and per-box angles applied late and were not
+  undoable.
+- The frequency list kept the previous model's frequencies after a System
+  change.
+- Slope text stayed grey after its block was switched on; long slope names were
+  cut off in the closed box.
+- Edge distance labels clamped inside the frame corners; crowded axis labels at
+  the plot edges dropped.
+- Deleting a multi-cabinet source from the plan now asks first, as from the
+  list; pasted and added sources get fresh ids; Single Pick angle sign.
+
+---
+
 ## [1.5.0] - 2026-10-28
 
 **Atomik Integral v1.5.0** - the venue becomes a screen of its own. Where the

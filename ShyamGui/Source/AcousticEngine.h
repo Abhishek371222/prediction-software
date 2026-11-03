@@ -2,6 +2,7 @@
 #include <vector>
 #include <complex>
 #include <algorithm>
+#include <cmath>
 
 // ---------------------------------------------------------------------------
 // SpeakerFilter - a crossover section on one cabinet.
@@ -177,7 +178,27 @@ struct Speaker
         been grouped - it stands as a source of its own, which is what every
         project saved before this field existed contains. */
     int   arrayId            = -1;
+
+    // Source-level settings. They describe the whole SOURCE, so every
+    // cabinet of an array carries the same value and the first cabinet's is
+    // the one read (see sourceMount / rowSpacingM).
+    /** How the source is deployed: Mount::Ground, Stacked or Flown. -1 is a
+        project saved before this was recorded - read from its heights. */
+    int   mount              = -1;
+    /** Ground row: centre-to-centre distance between neighbouring cabinets,
+        metres. 0 = not set (taken from the layout, else the model default). */
+    float spacingM           = 0.0f;
+    /** Array symmetry: an edit to one cabinet is mirrored onto its partner
+        counted from the other end (1 <-> N, 2 <-> N-1, ...). */
+    bool  symmetric          = false;
 };
+
+namespace Mount
+{
+    constexpr int Ground = 0;   // on the deck; several cabinets stand in a row
+    constexpr int Stacked = 1;  // built upwards from the deck, box on box
+    constexpr int Flown = 2;    // hung from the frame, box under box
+}
 
 /** The next free array id for a scene - one past the highest in use. */
 inline int nextArrayId (const std::vector<Speaker>& sp) noexcept
@@ -348,6 +369,243 @@ inline double acousticCentreZ (const Speaker& s) noexcept
     return (double) s.baseHeightM + 0.5 * (double) cabinetFor (s.model).heightM;
 }
 
+/** Does this array hang as one flown piece? A flown head with every box at
+    its plan position. A sub row spreads along the deck and does not. */
+inline bool arrayHangs (const std::vector<Speaker>& sp, const std::vector<int>& members)
+{
+    if (members.size() < 2) return false;
+    const auto& top = sp[(size_t) members.front()];
+    if (top.baseHeightM <= 0.01f) return false;
+    for (int m : members)
+        if (std::abs (sp[(size_t) m].x - top.x) > 0.05f
+            || std::abs (sp[(size_t) m].y - top.y) > 0.05f) return false;
+    return true;
+}
+
+/** Where each box of a hanging array sits, seen from the side: forward along
+    the firing axis from the top box, and the height of its centre.
+
+    Each box hangs from the FRONT-bottom corner of the box above, the hinge a
+    line-array frame pins, and turns about it to its own tilt. So tilts are
+    absolute and the splay between two boxes is their difference: tilting the
+    top box and every box under it by the same amount swings the whole hang
+    and leaves the splays alone. Tilt is positive down. */
+struct HangPose { float forwardM = 0.0f, centreZ = 0.0f; };
+
+inline std::vector<HangPose> arrayHang (const std::vector<Speaker>& sp, const std::vector<int>& members)
+{
+    std::vector<HangPose> out;
+    if (members.empty()) return out;
+    // A side-view offset (along, up) turned down by t degrees.
+    auto turn = [] (float t, float u, float z, float& ou, float& oz)
+    {
+        const float r = t * 3.14159265f / 180.0f;
+        ou =  u * std::cos (r) + z * std::sin (r);
+        oz = -u * std::sin (r) + z * std::cos (r);
+    };
+    const auto& top = sp[(size_t) members.front()];
+    float cu = 0.0f, cz = top.baseHeightM + 0.5f * cabinetFor (top.model).heightM;
+    out.push_back ({ cu, cz });
+    for (size_t k = 1; k < members.size(); ++k)
+    {
+        const auto& a = sp[(size_t) members[k - 1]];
+        const auto& b = sp[(size_t) members[k]];
+        const auto ca = cabinetFor (a.model), cb = cabinetFor (b.model);
+        float pu, pz, qu, qz;
+        turn (a.tiltDeg, 0.5f * ca.depthM, -0.5f * ca.heightM, pu, pz);   // a's front-bottom
+        turn (b.tiltDeg, 0.5f * cb.depthM,  0.5f * cb.heightM, qu, qz);   // b's front-top
+        cu += pu - qu;
+        cz += pz - qz;
+        out.push_back ({ cu, cz });
+    }
+    return out;
+}
+
+/** How far out along its heading speaker @p index's aim meets the deck,
+    metres from its plan position: out of the front face, down at its tilt,
+    from where its hang puts it. -1 when the aim never comes down. */
+inline float aimLandingM (const std::vector<Speaker>& sp, int index)
+{
+    if (index < 0 || index >= (int) sp.size()) return -1.0f;
+    const auto& s = sp[(size_t) index];
+    float fwd = 0.0f;
+    const auto members = arrayMembers (sp, index);
+    if (arrayHangs (sp, members))
+    {
+        const auto pose = arrayHang (sp, members);
+        for (size_t k = 0; k < members.size(); ++k)
+            if (members[k] == index) fwd = pose[k].forwardM;
+    }
+    const auto cab = cabinetFor (s.model);
+    const float r  = s.tiltDeg * 3.14159265f / 180.0f;
+    const float h  = 0.5f * cab.depthM;
+    const float fu = fwd + h * std::cos (r);
+    const float fz = s.baseHeightM + 0.5f * cab.heightM - h * std::sin (r);
+    if (fz <= 0.0f) return std::max (0.0f, fu);
+    if (std::sin (r) <= 1.0e-4f) return -1.0f;
+    return fu + fz / std::tan (r);
+}
+
+/** How the source owning @p index is deployed. A recorded mount wins; an
+    older project's is read from its geometry, the way the panel always has. */
+inline int sourceMount (const std::vector<Speaker>& sp, int index)
+{
+    const auto members = arrayMembers (sp, index);
+    if (members.empty()) return Mount::Ground;
+    const auto& head = sp[(size_t) members.front()];
+    if (head.mount >= Mount::Ground && head.mount <= Mount::Flown) return head.mount;
+    // One column: stood on the deck it is a stack, clear of it a hang.
+    if (arrayHangs (sp, members))
+        return sp[(size_t) members.back()].baseHeightM <= 0.01f ? Mount::Stacked : Mount::Flown;
+    // A spread row stands on the deck (or a riser), whatever its height.
+    if (members.size() > 1) return Mount::Ground;
+    if (head.baseHeightM > 0.01f && ! isSubwooferModel (head.model)) return Mount::Flown;
+    return Mount::Ground;
+}
+
+/** Re-hang the array that owns @p index: every box takes the height its
+    hinge puts it at. A flown array hangs from its top box; a stack keeps its
+    bottom box where it stands and builds up from it. Arrays that do not hang
+    are left alone. */
+inline void rehangArray (std::vector<Speaker>& sp, int index)
+{
+    const auto members = arrayMembers (sp, index);
+    if (! arrayHangs (sp, members)) return;
+    const bool  stacked = sourceMount (sp, index) == Mount::Stacked;
+    const float anchor  = sp[(size_t) members.back()].baseHeightM;
+    const auto pose = arrayHang (sp, members);
+    for (size_t k = 1; k < members.size(); ++k)
+    {
+        auto& s = sp[(size_t) members[k]];
+        s.baseHeightM = pose[k].centreZ - 0.5f * cabinetFor (s.model).heightM;
+    }
+    if (stacked)
+    {
+        const float shift = anchor - sp[(size_t) members.back()].baseHeightM;
+        for (int m : members) sp[(size_t) m].baseHeightM += shift;
+    }
+}
+
+/** A source's heading: the circular mean of its cabinets' rotations, so a
+    row whose boxes are splayed symmetrically still faces its centre line. */
+inline float sourceHeadingDeg (const std::vector<Speaker>& sp, int index)
+{
+    double c = 0.0, s = 0.0;
+    for (int m : arrayMembers (sp, index))
+    {
+        const double r = (double) sp[(size_t) m].rotationDeg * 3.14159265358979 / 180.0;
+        c += std::cos (r); s += std::sin (r);
+    }
+    if (std::abs (c) < 1.0e-9 && std::abs (s) < 1.0e-9) return 0.0f;
+    return (float) (std::atan2 (s, c) * 180.0 / 3.14159265358979);
+}
+
+/** Where a source stands: its plan centre and its reference height.
+    The height is the top box's underside when flown (the frame), the bottom
+    box's underside when stacked, and the deck height of the row on ground. */
+struct SourceRef { float cx = 0.0f, cy = 0.0f, z = 0.0f; };
+
+inline SourceRef sourceRef (const std::vector<Speaker>& sp, int index)
+{
+    SourceRef r;
+    const auto members = arrayMembers (sp, index);
+    if (members.empty()) return r;
+    for (int m : members) { r.cx += sp[(size_t) m].x; r.cy += sp[(size_t) m].y; }
+    r.cx /= (float) members.size();
+    r.cy /= (float) members.size();
+    const int mount = sourceMount (sp, index);
+    r.z = mount == Mount::Stacked ? sp[(size_t) members.back()].baseHeightM
+                                  : sp[(size_t) members.front()].baseHeightM;
+    return r;
+}
+
+/** A model's own row spacing, used until a source has one set: subs a
+    working 1.2 m apart, tops side by side. */
+inline float defaultRowSpacingM (int model) noexcept
+{
+    return isSubwooferModel (model) ? 1.2f : cabinetFor (model).widthM;
+}
+
+/** Centre-to-centre spacing of a ground row: the recorded value, else what
+    the first two boxes already stand apart, else the model default. */
+inline float rowSpacingM (const std::vector<Speaker>& sp, int index)
+{
+    const auto members = arrayMembers (sp, index);
+    if (members.empty()) return 0.0f;
+    const auto& head = sp[(size_t) members.front()];
+    if (head.spacingM > 0.0f) return head.spacingM;
+    if (members.size() >= 2)
+    {
+        const auto& b = sp[(size_t) members[1]];
+        const float d = std::hypot (b.x - head.x, b.y - head.y);
+        if (d > 0.01f) return d;
+    }
+    return defaultRowSpacingM (head.model);
+}
+
+/** Lay out every cabinet of the source owning @p index from the source's
+    reference, its mount and its spacing - nothing else moves.
+
+    Ground   a straight row across the heading, centred on the reference,
+             neighbours rowSpacingM apart centre to centre, all at height z.
+    Stacked  one plan position; the bottom box stands at z and each box sits
+             on the one below, hinged at the front for its splay.
+    Flown    one plan position; the top box hangs at z and each box hangs
+             from the one above. */
+inline void arrangeSource (std::vector<Speaker>& sp, int index, SourceRef ref)
+{
+    const auto members = arrayMembers (sp, index);
+    if (members.empty()) return;
+    const int mount = sourceMount (sp, index);
+    const int n = (int) members.size();
+
+    if (mount == Mount::Ground)
+    {
+        const float s = rowSpacingM (sp, index);
+        const double h = (double) sourceHeadingDeg (sp, index) * 3.14159265358979 / 180.0;
+        const float ax = (float) -std::sin (h), ay = (float) std::cos (h);
+        for (int k = 0; k < n; ++k)
+        {
+            auto& c = sp[(size_t) members[(size_t) k]];
+            const float off = ((float) k - 0.5f * (float) (n - 1)) * s;
+            c.x = ref.cx + off * ax;
+            c.y = ref.cy + off * ay;
+            c.baseHeightM = std::max (0.0f, ref.z);
+        }
+        return;
+    }
+
+    for (int m : members) { sp[(size_t) m].x = ref.cx; sp[(size_t) m].y = ref.cy; }
+    if (n < 2)
+    {
+        sp[(size_t) members.front()].baseHeightM = std::max (0.0f, ref.z);
+        return;
+    }
+
+    if (mount == Mount::Stacked)
+    {
+        // Rough heights first, so the column reads as off the deck and
+        // re-hangs; rehangArray then pins the bottom box back on z.
+        float z = std::max (0.0f, ref.z);
+        for (int k = n - 1; k >= 0; --k)
+        {
+            auto& c = sp[(size_t) members[(size_t) k]];
+            c.baseHeightM = z;
+            z += cabinetFor (c.model).heightM;
+        }
+    }
+    else
+    {
+        sp[(size_t) members.front()].baseHeightM = std::max (0.02f, ref.z);
+    }
+    rehangArray (sp, index);
+
+    // Nothing goes through the deck.
+    float lowest = 0.0f;
+    for (int m : members) lowest = std::min (lowest, sp[(size_t) m].baseHeightM);
+    for (int m : members) sp[(size_t) m].baseHeightM -= lowest;
+}
+
 // ---------------------------------------------------------------------------
 // ListeningSurface - an audience area from the Venue tab (or a closed
 // listening plane drawn on the plan): its outline, the floor under it and the
@@ -478,6 +736,18 @@ inline void frequencyCatalogue (int source, const double*& freqs, int& count) no
 // active pointer, so the two devices' frequencies cannot collide at runtime).
 extern const double* kSupportedFrequencies;
 extern int           kNumSupportedFrequencies;
+
+/** The 0 dB datum of the mic frequency-response plot, in dB SPL at one metre.
+
+    The plot is distance-compensated and read as RELATIVE dB, so it needs some
+    fixed level to count from. This is a round display datum and nothing more:
+    it is deliberately not any device's sensitivity, because a plot whose zero
+    was the real figure would publish that figure to anyone who read the axis.
+
+    Fixed, never derived from the current solve - a datum that moved with the
+    scene would normalise away the very thing the plot is for, which is seeing
+    what a gain, a filter or a delay just did. */
+inline constexpr float kResponseDatumDbSpl = 100.0f;
 
 inline void setActiveFrequencyCatalogue (int source) noexcept
 {

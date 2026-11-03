@@ -5,6 +5,7 @@
 #include "MicRingSnap.h"
 #include "SpeakerPropertiesDialog.h"
 #include "FigmaPlotStyle.h"
+#include "RiggingPoints.h"
 #include <cmath>
 #include <algorithm>
 #include <limits>
@@ -290,7 +291,7 @@ float RadiationPatternComponent::getActiveFillAlpha() const noexcept
 }
 
 bool RadiationPatternComponent::hasPlaneTarget() const noexcept
-{
+ {
     // Unlike the text controls this does NOT arm the next shape: a plane is a
     // decision you make about something you have drawn and can see, not a mode
     // you enter beforehand.
@@ -719,6 +720,21 @@ bool RadiationPatternComponent::isSpeakerSelected (int index) const
         != selectedSpeakers_.end();
 }
 
+void RadiationPatternComponent::selectWholeSources()
+{
+    // A cabinet is picked as part of its SOURCE: the rest of its array comes
+    // with it, so a drag moves the source as one and a delete takes it whole.
+    // The picked box stays last, so it stays the primary.
+    std::vector<int> out;
+    for (int i : selectedSpeakers_)
+        for (int m : arrayMembers (speakers_, i))
+            if (m != i && std::find (out.begin(), out.end(), m) == out.end()
+                && std::find (selectedSpeakers_.begin(), selectedSpeakers_.end(), m) == selectedSpeakers_.end())
+                out.push_back (m);
+    for (int i : selectedSpeakers_) out.push_back (i);
+    selectedSpeakers_ = std::move (out);
+}
+
 void RadiationPatternComponent::syncPrimarySelectionFromSets()
 {
     selectedAnnot_ = selectedAnnots_.empty() ? -1 : selectedAnnots_.back();
@@ -1064,7 +1080,10 @@ void RadiationPatternComponent::updateDrawPrompt()
         if (construction_ == Construction::LineOrtho
             || juce::ModifierKeys::getCurrentModifiers().isShiftDown())
             p += "  [SHIFT ORTHO]";
-        if (drawGridSnap_)
+        // This prompt belongs to SHAPE drawing, so it reports the snap that
+        // shapes actually get. Snap being on for cabinets says nothing about
+        // the line you are drawing now.
+        if (drawGridSnap_ && snapAnnotations_)
             p += "  [SNAP]";
         if (numericBuffer_.isNotEmpty())
             p += "  <" + numericBuffer_ + ">";
@@ -1473,7 +1492,11 @@ juce::Point<float> RadiationPatternComponent::snapAnnotPointFull (juce::Point<fl
     if (objectHit != nullptr)
         *objectHit = false;
 
-    if (! drawGridSnap_) return p;
+    // Every caller of this is annotation work - drawing a shape, dragging a
+    // ruler end, resizing a plane - so it answers to the annotation flag as
+    // well as to the master toggle. Moving a SELECTION of cabinets snaps on
+    // its own path, which is grid-only and does not come through here.
+    if (! drawGridSnap_ || ! snapAnnotations_) return p;
 
     if (currentAnnotSpace() == AnnotSpace::PolarPlot)
     {
@@ -2172,7 +2195,7 @@ void RadiationPatternComponent::applyAnnotationResize (Annotation& a, int handle
 {
     if (handleIndex < 0) return;
     auto pt = annotPt;
-    if (drawGridSnap_)
+    if (drawGridSnap_ && snapAnnotations_)
     {
         bool objHit = false;
         pt = snapAnnotPointFull (annotPt, true, &objHit);
@@ -2416,6 +2439,7 @@ void RadiationPatternComponent::applyMarqueeSelection (bool addToExisting)
                 && ! isSpeakerSelected (i))
                 selectedSpeakers_.push_back (i);
         }
+        selectWholeSources();
     }
 
     syncPrimarySelectionFromSets();
@@ -3707,6 +3731,25 @@ juce::Rectangle<int> RadiationPatternComponent::planeTagBounds (const Annotation
     return { juce::jmax ((int) box.getX(), plot.getX() + 2), pillY, w, pillH };
 }
 
+/** Is @p pt inside the closed polygon @p poly? Standard crossing count: a ray
+    cast to the right crosses an odd number of edges only from inside. */
+bool RadiationPatternComponent::pointInsidePolygon (juce::Point<float> pt,
+                                                    const std::vector<juce::Point<float>>& poly) noexcept
+{
+    if (poly.size() < 3) return false;
+
+    bool in = false;
+    for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+    {
+        const auto& a = poly[i];
+        const auto& b = poly[j];
+        if ((a.y > pt.y) == (b.y > pt.y)) continue;
+        const float t = (pt.y - a.y) / (b.y - a.y);
+        if (pt.x < a.x + t * (b.x - a.x)) in = ! in;
+    }
+    return in;
+}
+
 int RadiationPatternComponent::planeAtScreen (juce::Point<float> p) const
 {
     // Tags first and topmost-first: the label is what you are pointing at when
@@ -3726,6 +3769,20 @@ int RadiationPatternComponent::planeAtScreen (juce::Point<float> p) const
         : (10.0f / juce::jmax (1.0f, worldScale()));
     for (int idx : annotationsUnder (annot, radius))
         if (annotations_[(size_t) idx].isPlane) return idx;
+
+    // A closed polyline only hit-tests its OUTLINE, which is right for a
+    // drawn line and wrong for an audience: the thing you point at is the
+    // filled area, not the hairline around it. Rectangular planes already
+    // answer to a click inside them, so an audience dragged out of square -
+    // which is exactly when a plane becomes a polyline - should too.
+    const auto space = currentAnnotSpace();
+    for (int i = (int) annotations_.size(); --i >= 0;)
+    {
+        const auto& a = annotations_[(size_t) i];
+        if (! a.isPlane || a.space != space) continue;
+        if (a.kind != Annotation::Kind::Polyline || ! a.closed) continue;
+        if (pointInsidePolygon (annot, a.pts)) return i;
+    }
 
     return -1;
 }
@@ -3921,6 +3978,14 @@ void RadiationPatternComponent::updateMouseCursorForTool()
 // ---------------------------------------------------------------------------
 void RadiationPatternComponent::updateData (const SimResult& result, const SimParams& params)
 {
+    // origin_ is measured from the SOLVED region's corner, not from world
+    // zero - so a solve whose world window has moved leaves the same origin_
+    // meaning a different place, and the view slides out from under the work.
+    // Switching tabs re-solves (mapping goes on and off with it), which is
+    // why the plan came back somewhere else. Hold the world point the user is
+    // looking at across the swap and put it back afterwards.
+    const auto keep = viewIsUserSet() ? captureView() : ViewState{};
+
     result_ = result;
     params_ = params;
     // Heatmap only when a RUN produced a field with active units.
@@ -3933,6 +3998,8 @@ void RadiationPatternComponent::updateData (const SimResult& result, const SimPa
     // next solve, and every edit triggers a solve.
     if (mayAutoFitView())
         fitView();
+    else
+        restoreView (keep);
     buildImage();
     refreshMicLevels();
     if (onMicsChanged) onMicsChanged();
@@ -4003,7 +4070,10 @@ void RadiationPatternComponent::selectOnlySpeaker (int index)
     selected_ = index;
     selectedSpeakers_.clear();
     if (index >= 0 && index < (int) speakers_.size())
+    {
         selectedSpeakers_.push_back (index);
+        selectWholeSources();
+    }
     repaint();
 }
 
@@ -4165,6 +4235,11 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     {
         m.addItem (7, annotations_[(size_t) planeIdx].showTag
                         ? "Hide plane label" : "Show plane label");
+        // Ticked, the map covers the whole sheet instead of only the planes.
+        // It belongs on the plane's menu because the plane is the thing doing
+        // the masking - this is where you are already looking when you want
+        // it to stop.
+        m.addItem (11, "Reverse mapping", true, mapWholeArea_);
         m.addSeparator();
     }
 
@@ -4223,6 +4298,13 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
                                  if (safe->onEditCommitted) safe->onEditCommitted();
                                  safe->repaint();
                              }
+                             return;
+                         }
+                         if (result == 11)
+                         {
+                             safe->setMapWholeArea (! safe->mapWholeArea_);
+                             if (safe->onMapWholeAreaChanged)
+                                 safe->onMapWholeAreaChanged (safe->mapWholeArea_);
                              return;
                          }
                          if (result == 9)
@@ -4379,12 +4461,12 @@ namespace
         return Brand::figSemi (12.0f).getStringWidth ("-88 db") + 2;
     }
 
-    // The strip the framed colour bar needs: the bar, its figures, a margin
-    // either side - and no more, so the map keeps the rest of the frame.
+    // The strip the colour bar needs outside the grid: Figma's 26 px gap, the
+    // 18 px bar, its figures and a margin - and no more, so the map keeps the rest.
     double framedBarNeedPx()
     {
         using UiConfig::Scale::fig;
-        return (double) (fig (6.0f) * 2 + fig (16.0f) + 4 + framedBarLabelW());
+        return (double) (fig (26.0f) + fig (18.0f) + 4 + framedBarLabelW() + fig (6.0f));
     }
 }
 
@@ -4483,6 +4565,46 @@ juce::Point<float> RadiationPatternComponent::screenToWorld (float sx, float sy)
                  - (sy - (float) pb.getY() - origin_.y) / syScale };
 }
 
+RadiationPatternComponent::ViewState RadiationPatternComponent::captureView() const
+{
+    ViewState v;
+    const auto pb = plotArea();
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0 || worldScaleX() <= 1.0e-6f)
+        return v;
+
+    const auto c = screenToWorld ((float) pb.getCentreX(), (float) pb.getCentreY());
+    v.centreX = c.x;
+    v.centreY = c.y;
+    v.pxPerM  = worldScaleX();
+    v.valid   = true;
+    return v;
+}
+
+void RadiationPatternComponent::restoreView (const ViewState& v)
+{
+    if (! v.valid || v.pxPerM <= 1.0e-6f) return;
+
+    const auto pb = plotArea();
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0) return;
+    if (baseScaleX_ <= 1.0e-6f || baseScaleY_ <= 1.0e-6f) return;
+
+    // The pane may be a different size than it was, so the base scale is a
+    // different number - take the magnification back by way of zoom_.
+    zoom_ = v.pxPerM / baseScaleX_;
+
+    // Then put the remembered world point back under the pane's centre.
+    origin_.x = (float) pb.getCentreX() - (float) pb.getX()
+                    - (v.centreX - (float) result_.worldX0) * worldScaleX();
+    origin_.y = (float) pb.getCentreY() - (float) pb.getY()
+                    - ((float) (result_.worldY0 + result_.worldH) - v.centreY) * worldScaleY();
+
+    // viewInit_/viewUserAdjusted_ are left exactly as they were: this is only
+    // ever called to put back a view the user had already set, and a view
+    // they never touched should go on auto-fitting as it always did.
+    clampViewToField();
+    repaint();
+}
+
 void RadiationPatternComponent::fitView()
 {
     const auto pb = plotArea();
@@ -4569,6 +4691,47 @@ void RadiationPatternComponent::zoomToSelection()
         any = true;
     }
     if (! any) return;
+    fitWorldBox (box);
+}
+
+void RadiationPatternComponent::frameAction()
+{
+    const auto pb = plotArea();
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0) return;
+    if (params_.viewMode == ViewMode::Directivity) return;
+
+    juce::Rectangle<float> box;
+    bool any = false;
+    const auto grow = [&] (juce::Rectangle<float> r)
+    {
+        box = any ? box.getUnion (r) : r;
+        any = true;
+    };
+    for (const auto& s : speakers_)
+        grow (speakerFootprintWorld (s));
+    for (const auto& m : mics_)
+        grow ({ m.x, m.y, 0.0f, 0.0f });
+    for (const auto& v : venueShapes_)
+        for (const auto& p : v.pts)
+            grow ({ p.x, p.y, 0.0f, 0.0f });
+
+    if (! any)
+    {
+        resetView();
+        return;
+    }
+    // A rig stacked at one point would otherwise frame at a magnification
+    // that hides the floor and the throw - the action is around it too.
+    const float minSpan = 10.0f;
+    box = box.withSizeKeepingCentre (juce::jmax (minSpan, box.getWidth()),
+                                     juce::jmax (minSpan, box.getHeight()));
+    fitWorldBox (box);
+}
+
+void RadiationPatternComponent::fitWorldBox (juce::Rectangle<float> box)
+{
+    const auto pb = plotArea();
+    if (pb.getWidth() <= 0 || pb.getHeight() <= 0) return;
 
     // A single cabinet is barely a metre across; framed tight it would fill
     // the screen at useless magnification and show none of its surroundings.
@@ -4674,11 +4837,29 @@ void RadiationPatternComponent::resized()
     const float cx = (float) pb.getCentreX();
     const float cy = (float) pb.getCentreY();
     const auto worldUnder = screenToWorld (cx, cy);
+
+    // The magnification the user is actually looking at, read BEFORE the
+    // pane's new size redefines the base it is built from.
+    const float prevScale = worldScaleX();
+
     const float sx = (float) (pb.getWidth()  / ww);
     const float sy = (float) (pb.getHeight() / wh);
     const float s  = juce::jmax (sx, sy);
     baseScaleX_ = s;
     baseScaleY_ = s;
+
+    // baseScale is derived from the pane's size, so anything that changes
+    // that size rescaled a view the user had set - and switching tabs does
+    // exactly that, because the Sources stack and the Mapping stack give the
+    // plan different heights. The work did not move; the magnification did,
+    // which is the same thing to look at.
+    //
+    // Absorbing the change into zoom_ keeps worldScale() where it was, so a
+    // resize changes only the WINDOW onto the world, never how big the world
+    // is drawn. Centring on the same world point then puts the view back
+    // exactly where it was left.
+    if (prevScale > 1.0e-6f && s > 1.0e-6f)
+        zoom_ = prevScale / s;
     origin_.x = cx - (float) pb.getX() - worldUnder.x * worldScaleX();
     origin_.y = cy - (float) pb.getY() - ((float) result_.worldH - worldUnder.y) * worldScaleY();
     clampViewToField();
@@ -4847,8 +5028,10 @@ void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
     const auto pb = plotArea();
     if (pb.getWidth() < 40 || pb.getHeight() < 30) return;
 
+    // The sheet and its frame are the grid only; the colour bar stands
+    // outside, on the panel, in the strip plotArea() leaves to the right.
     g.setColour (FigPlot::field());
-    g.fillRect (frameBox);
+    g.fillRect (pb);
 
     {
         juce::Graphics::ScopedSaveState ss (g);
@@ -4870,20 +5053,18 @@ void RadiationPatternComponent::paintFramedPlan (juce::Graphics& g)
     }
 
     g.setColour (FigPlot::frame());
-    g.drawRect (frameBox, 1);
+    g.drawRect (pb, 1);
     drawFramedLabels (g, pb);
 
     if (hasData_ && showField_)
     {
         using UiConfig::Scale::fig;
-        // Figma: a 16 px bar 8 px under the top, leaving room below it for
-        // the "Rel. SPL" caption; bar and figures centred in the strip.
-        const int stripW = frameBox.getRight() - pb.getRight();
-        const int groupW = fig (16.0f) + 4 + framedBarLabelW();
-        const juce::Rectangle<int> bar (pb.getRight() + juce::jmax (fig (6.0f), (stripW - groupW) / 2),
-                                        frameBox.getY() + fig (8.0f),
-                                        fig (16.0f),
-                                        juce::jmax (20, frameBox.getHeight() - fig (40.0f)));
+        // Figma: an 18 px bar 26 px clear of the grid, level with its top,
+        // leaving room below it for the "Rel. SPL" caption.
+        const juce::Rectangle<int> bar (pb.getRight() + fig (26.0f),
+                                        pb.getY(),
+                                        fig (18.0f),
+                                        juce::jmax (20, pb.getHeight() - fig (22.0f)));
         drawColourbar (g, frameBox.withLeft (pb.getRight()), bar);
     }
 
@@ -4923,8 +5104,8 @@ void RadiationPatternComponent::drawVenueOutline (juce::Graphics& g,
                                                   juce::Colour colour, bool selected)
 {
     // The Venue tab's look, so an element is the same thing on both tabs: its
-    // type colour at 75%, a red hairline at 45%, full red with corner and
-    // edge marks when selected. Over a painted map the fill drops to a tint,
+    // grey at 75%, a grey hairline, full red with corner and edge marks when
+    // selected. Over a painted map the fill drops to a tint,
     // or the level it is there to show would be covered.
     if (worldPts.size() < 3) return;
     juce::Path p;
@@ -4937,7 +5118,7 @@ void RadiationPatternComponent::drawVenueOutline (juce::Graphics& g,
 
     g.setColour (colour.withAlpha (fieldIsPainted() ? 0.18f : 0.75f));
     g.fillPath (p);
-    g.setColour (FigPlot::mark().withAlpha (selected ? 1.0f : 0.45f));
+    g.setColour (selected ? FigPlot::mark() : FigPlot::venueEdge());
     g.strokePath (p, juce::PathStrokeType (1.2f));
 
     if (! selected) return;
@@ -5027,12 +5208,175 @@ void RadiationPatternComponent::drawFramedLabels (juce::Graphics& g, juce::Recta
 // horizontal is the plan's own mapping, so a cabinet sits directly under its
 // plan marker; its vertical is exaggerated, 0..16 m filling the pane.
 // ---------------------------------------------------------------------------
+// =============================================================================
+// The bridle over a flown array.
+//
+// One motor, two ropes: the front pick and the rear pick, both on the bumper,
+// meeting at the hang point above it. The difference in their lengths is what
+// holds the box at its tilt - which is the same thing the lever's hole does,
+// so the pick that matches the tilt is named beside them (see RiggingPoints.h,
+// built from the supplied Rigging point.xlsx).
+//
+// Nothing here is a load calculation: these are the geometry of the two lines
+// and the angle each makes with plumb, which is what the drawing can honestly
+// say without cabinet weights.
+// =============================================================================
+namespace
+{
+    struct Bridle
+    {
+        float spanM  = 0.0f;   // front pick to rear pick along the aim axis
+        float frontZ = 0.0f, rearZ = 0.0f, hangZ = 0.0f;
+        float frontDeg = 0.0f, rearDeg = 0.0f;
+        Rigging::Pick pick;
+    };
+
+    Bridle bridleFor (float tiltDeg, float spanM, float bumperZ)
+    {
+        Bridle b;
+        b.spanM = juce::jmax (0.05f, spanM);
+        b.pick  = Rigging::pickForTilt (tiltDeg);
+
+        // Tilt is positive down, so the front pick drops and the rear rises
+        // about the bumper's centre - half the rise each way.
+        const float half = 0.5f * Rigging::riseBetweenPicks (tiltDeg, b.spanM);
+        b.frontZ = bumperZ - half;
+        b.rearZ  = bumperZ + half;
+
+        // A motor far enough above the bumper for the ropes to read as two
+        // lines rather than a cross.
+        const float drop = juce::jmax (1.2f, b.spanM * 1.5f);
+        b.hangZ    = juce::jmax (b.frontZ, b.rearZ) + drop;
+        b.frontDeg = Rigging::lineAngleFromVertical (0.5f * b.spanM, b.hangZ - b.frontZ);
+        b.rearDeg  = Rigging::lineAngleFromVertical (0.5f * b.spanM, b.hangZ - b.rearZ);
+        return b;
+    }
+
+    juce::Colour ropeInk() { return juce::Colour (0xff6b7280); }
+
+    /** The degree sign as a String. A bare CharPointer_UTF8 on the right of
+        operator+ is ambiguous. */
+    juce::String degreeSign() { return juce::String::fromUTF8 ("\xc2\xb0"); }
+
+    /** One rope, drawn from its pick up to the hang point with its angle on
+        it. @p side is -1 for the rope that leans left, +1 for the right. */
+    void drawRope (juce::Graphics& g, juce::Point<float> pick,
+                   juce::Point<float> hang, float deg, int side)
+    {
+        g.setColour (ropeInk());
+        g.drawLine (pick.x, pick.y, hang.x, hang.y, 1.0f);
+        // A shackle dot at the pick, so the line clearly ends ON the bumper.
+        g.fillEllipse (pick.x - 1.6f, pick.y - 1.6f, 3.2f, 3.2f);
+
+        g.setFont (Brand::figSemi (8.0f));
+        const juce::String lab = juce::String (deg, 1) + degreeSign();
+        const float tw = (float) g.getCurrentFont().getStringWidth (lab) + 3.0f;
+        const float mx = (pick.x + hang.x) * 0.5f, my = (pick.y + hang.y) * 0.5f;
+        g.drawText (lab, juce::Rectangle<float> (side < 0 ? mx - tw - 2.0f : mx + 2.0f,
+                                                 my - 5.0f, tw, 10.0f),
+                    side < 0 ? juce::Justification::centredRight
+                             : juce::Justification::centredLeft, false);
+    }
+}
+
+float RadiationPatternComponent::elevAutoBase (juce::Rectangle<int> f, float scV) const
+{
+    float topM = 0.0f, rigLo = 0.0f, rigHi = 0.0f;
+    bool anyRig = false;
+    for (const auto& s : speakers_)
+    {
+        const float top = s.baseHeightM + cabinetFor (s.model).heightM;
+        topM  = juce::jmax (topM, top);
+        rigLo = anyRig ? juce::jmin (rigLo, s.baseHeightM) : s.baseHeightM;
+        rigHi = anyRig ? juce::jmax (rigHi, top) : top;
+        anyRig = true;
+    }
+    float yBase = (float) f.getBottom();
+    if (anyRig && topM * 1.1f * scV > (float) f.getHeight())
+        yBase = juce::jmax (yBase, (float) f.getCentreY() + 0.5f * (rigLo + rigHi) * scV);
+    return yBase;
+}
+
+void RadiationPatternComponent::zoomElevationVertical (float factor, float pivotY)
+{
+    const float zoom = juce::jlimit (0.25f, 8.0f, elevZoomY_ * factor);
+    if (std::abs (zoom - elevZoomY_) < 1.0e-6f) return;
+    const auto f = FigPlot::inset (getLocalBounds(), FigPlot::kPane);
+    // Hold the height under the pivot where it is.
+    if (elevScale_ > 1.0e-6f && elevScaleH_ > 1.0e-6f)
+    {
+        const float py = pivotY >= 0.0f ? pivotY : (float) f.getCentreY();
+        const float m  = (elevYBase_ - py) / elevScale_;
+        const float scV = elevScaleH_ * zoom;
+        elevOffset_.y = py + m * scV - elevAutoBase (f, scV);
+    }
+    elevZoomY_ = zoom;
+    repaint();
+}
+
+juce::Point<float> RadiationPatternComponent::elevSnapPoint (float xM, float zM, int ignoreIdx,
+                                                             float boxH, bool& onX, bool& onZ) const
+{
+    onX = onZ = false;
+    if (elevScale_ <= 1.0e-6f || elevScaleH_ <= 1.0e-6f) return { xM, zM };
+    const float tolX = 10.0f / elevScaleH_, tolZ = 10.0f / elevScale_;
+    const int ignoreArray = (ignoreIdx >= 0 && ignoreIdx < (int) speakers_.size())
+                          ? speakers_[(size_t) ignoreIdx].arrayId : -1;
+    auto skip = [&] (int i)
+    {
+        return i == ignoreIdx || (ignoreArray >= 0 && speakers_[(size_t) i].arrayId == ignoreArray);
+    };
+
+    std::vector<float> xs { 0.0f }, zs { 0.0f };
+    for (int i = 0; i < (int) speakers_.size(); ++i)
+    {
+        if (skip (i)) continue;
+        const auto& s = speakers_[(size_t) i];
+        xs.push_back (s.x);
+        zs.push_back (s.baseHeightM);
+        zs.push_back (s.baseHeightM + cabinetFor (s.model).heightM);
+    }
+    for (const auto& p : elevPlanes_)
+    {
+        xs.push_back (p.x0); xs.push_back (p.x1);
+        zs.push_back (p.z0); zs.push_back (p.z1);
+        if (p.earM > 0.0f) { zs.push_back (p.z0 + p.earM); zs.push_back (p.z1 + p.earM); }
+    }
+
+    float bestX = tolX, outX = xM;
+    for (float t : xs)
+        if (std::abs (t - xM) < bestX) { bestX = std::abs (t - xM); outX = t; onX = true; }
+
+    // A box lands on a target with either its base or its top.
+    float bestZ = tolZ, outZ = zM;
+    for (float t : zs)
+    {
+        if (std::abs (t - zM) < bestZ) { bestZ = std::abs (t - zM); outZ = t; onZ = true; }
+        if (boxH > 0.0f && std::abs (t - (zM + boxH)) < bestZ)
+        {
+            bestZ = std::abs (t - (zM + boxH));
+            outZ = t - boxH;
+            onZ = true;
+        }
+    }
+
+    const float step = (float) Units::snapStepMetres();
+    if (step > 1.0e-6f)
+    {
+        if (! onX) outX = std::round (xM / step) * step;
+        if (! onZ) outZ = std::round (zM / step) * step;
+    }
+    return { outX, juce::jmax (0.0f, outZ) };
+}
+
 void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
 {
     using UiConfig::Scale::fig;
     using UiConfig::Scale::figf;
 
     g.fillAll (Brand::panel());
+    elevHits_.clear();
+    elevRays_.clear();
     const auto f = FigPlot::inset (getLocalBounds(), FigPlot::kPane);
     if (f.getWidth() < 40 || f.getHeight() < 30) return;
 
@@ -5044,28 +5388,34 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         ppm = FigPlot::snappedPxPerM (f.getWidth());
         x0  = (float) f.getX() - (float) FigPlot::openingLeftM() * ppm;
     }
+    // Vertical: the plan's own scale, so a metre is as tall here as it is wide
+    // above and zooming the plan grows these boxes with its own. The deck
+    // sits on the bottom edge while the rig fits over it; once it does not,
+    // the rig is centred instead. A drag moves it up or down from there.
+    // The vertical zoom stretches this scale alone.
+    const float scV = ppm * elevZoomY_;
+    const float kV  = elevZoomY_;
+    elevScale_ = scV;
+    elevScaleH_ = ppm;
+    const float yBase = elevAutoBase (f, scV) + elevOffset_.y;
+    elevX0_ = x0;
+    elevYBase_ = yBase;
     auto hx = [&] (float m) { return x0 + m * ppm; };
-
-    // Vertical: 16 m, or more when the rig is flown higher than that.
-    float topM = 0.0f;
-    for (const auto& s : speakers_)
-        topM = juce::jmax (topM, s.baseHeightM + cabinetFor (s.model).heightM);
-    for (const auto& p : elevPlanes_)
-        topM = juce::jmax (topM, juce::jmax (p.z0, p.z1) + p.earM);
-    const double step = FigPlot::baseStepM();
-    const double zTop = juce::jmax (16.0, std::ceil ((topM * 1.15) / step) * step);
-    const float  scV  = (float) (f.getHeight() / zTop);
-    auto vy = [&] (float m) { return (float) f.getBottom() - m * scV; };
+    auto vy = [&] (float m) { return yBase - m * scV; };
+    // Nothing is drawn below the deck, so neither are rules or heights.
+    const double zLo = juce::jmax (0.0, (double) ((yBase - (float) f.getBottom()) / scV));
+    const double zHi = (yBase - (float) f.getY()) / scV;
 
     g.setColour (FigPlot::field());
     g.fillRect (f);
 
     const double gridX  = FigPlot::gridStepM (ppm, figf (30.0f));
     const double labelX = FigPlot::labelStepM (gridX, ppm, figf (40.0f));
-    const double labelZ = FigPlot::labelStepM (step, scV, figf (14.0f));
+    const double gridZ  = FigPlot::gridStepM (scV, figf (14.0f));
+    const double labelZ = FigPlot::labelStepM (gridZ, scV, figf (22.0f));
 
     g.setColour (FigPlot::grid());
-    FigPlot::forSteps (0.0, zTop, step, [&] (double m)
+    FigPlot::forSteps (zLo, zHi, gridZ, [&] (double m)
     {
         const int y = juce::roundToInt (vy ((float) m));
         if (y > f.getY() && y < f.getBottom())
@@ -5079,7 +5429,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     FigPlot::drawXLabels (g, f, x0, ppm, labelX, 20.0f, getWidth());
     g.setFont (Brand::figSemi (12.0f));
     g.setColour (FigPlot::tick());
-    FigPlot::forSteps (0.0, zTop, labelZ, [&] (double m)
+    FigPlot::forSteps (zLo, zHi, labelZ, [&] (double m)
     {
         FigPlot::drawYLabel (g, f, getHeight(), juce::roundToInt (vy ((float) m)),
                              FigPlot::tick (m, labelZ, "y"), 24.0f, true, (float) labelZ * scV);
@@ -5109,7 +5459,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         blk.closeSubPath();
         g.setColour (p.colour.withAlpha (0.75f));
         g.fillPath (blk);
-        g.setColour (FigPlot::mark().withAlpha (0.45f));
+        g.setColour (FigPlot::venueEdge());
         g.strokePath (blk, juce::PathStrokeType (1.2f));
     }
 
@@ -5135,6 +5485,52 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         }
     }
 
+    // A hanging array's boxes sit where their hinges put them, which moves
+    // each one along the firing axis as the splays curve the hang.
+    std::vector<float> fwd (speakers_.size(), 0.0f);
+    for (int head : arrayHeads (speakers_))
+    {
+        const auto members = arrayMembers (speakers_, head);
+        if (! arrayHangs (speakers_, members)) continue;
+        const auto pose = arrayHang (speakers_, members);
+        for (size_t k = 0; k < members.size(); ++k)
+            fwd[(size_t) members[k]] = pose[k].forwardM;
+    }
+
+    // The plan's aim line, seen from the side: out of each top's front face
+    // along its tilt, under Show Rays like the plan's. Drawn before the boxes
+    // so a hang's lines run behind the boxes below.
+    if (showRays_)
+    {
+        const float reach = 2.0f * (float) juce::jmax (f.getWidth(), f.getHeight());
+        const float aimDash[] = { 4.0f, 3.0f };
+        for (int i = 0; i < (int) speakers_.size(); ++i)
+        {
+            const auto& s = speakers_[(size_t) i];
+            if (! s.enabled || isSubwooferModel (s.model)) continue;
+            const auto cab = cabinetFor (s.model);
+            const juce::Point<float> c { hx (s.x + fwd[(size_t) i]), vy (s.baseHeightM + 0.5f * cab.heightM) };
+            const float th = juce::degreesToRadians (s.tiltDeg);
+            const juce::Point<float> axis { std::cos (th), std::sin (th) * kV };
+            const auto dir = axis / juce::jmax (1.0e-6f, axis.getDistanceFromOrigin());
+            const auto front = c + axis * (0.5f * cab.depthM * ppm);
+            const bool live = ! lockRays_ && i == selected_;
+            g.setColour (live ? Brand::accent().withAlpha (0.95f)
+                              : FigPlot::tick().withAlpha (lockRays_ ? 0.30f : 0.45f));
+            // Down to the deck, where the plan's line ends too.
+            const float land = aimLandingM (speakers_, i);
+            juce::Point<float> end = front + dir * reach;
+            if (land >= 0.0f) end = { hx (s.x + land), vy (0.0f) };
+            g.drawDashedLine ({ front, end }, aimDash, 2, live ? 1.6f : 1.0f);
+            if (land >= 0.0f)
+            {
+                const float d = (float) fig (9.0f);
+                g.fillEllipse (end.x - 0.5f * d, end.y - 0.5f * d, d, d);
+            }
+            elevRays_.push_back ({ i, c, { front, end } });
+        }
+    }
+
     // Cabinets to scale on the vertical, so each keeps its shape; tilted
     // about its own centre. Figma: pale blue body, hairline black edge.
     std::vector<juce::Rectangle<float>> tags;
@@ -5143,20 +5539,29 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
     {
         const auto& s = speakers_[(size_t) i];
         const auto cab = cabinetFor (s.model);
-        const float w = cab.depthM * scV, h = cab.heightM * scV;
+        // Drawn square on the plan's scale, tilted, then stretched by the
+        // vertical zoom about its centre.
+        const float w = cab.depthM * ppm, h = cab.heightM * ppm;
         const float cy = vy (s.baseHeightM + 0.5f * cab.heightM);
-        const juce::Rectangle<float> box (hx (s.x) - 0.5f * w, cy - 0.5f * h, w, h);
-        const bool sel = std::find (selectedSpeakers_.begin(), selectedSpeakers_.end(), i)
-                         != selectedSpeakers_.end();
+        const juce::Rectangle<float> box (hx (s.x + fwd[(size_t) i]) - 0.5f * w, cy - 0.5f * h, w, h);
+        const bool sel = i == selected_;
+        const auto xf = juce::AffineTransform::rotation (juce::degreesToRadians (s.tiltDeg),
+                                                         box.getCentreX(), box.getCentreY())
+                            .followedBy (juce::AffineTransform::scale (1.0f, kV, box.getCentreX(), box.getCentreY()));
         {
-            juce::Graphics::ScopedSaveState ss (g);
-            if (std::abs (s.tiltDeg) > 0.01f)
-                g.addTransform (juce::AffineTransform::rotation (
-                    juce::degreesToRadians (s.tiltDeg), box.getCentreX(), box.getCentreY()));
+            juce::Path hit;
+            hit.addRectangle (box.expanded (2.0f));
+            hit.applyTransform (xf);
+            elevHits_.push_back ({ i, std::move (hit) });
+        }
+        {
+            juce::Path body;
+            body.addRoundedRectangle (box, 2.0f);
+            body.applyTransform (xf);
             g.setColour (s.enabled ? FigPlot::cabinet() : FigPlot::cabinet().withMultipliedAlpha (0.5f));
-            g.fillRoundedRectangle (box, 2.0f);
+            g.fillPath (body);
             g.setColour (sel ? Brand::accent() : FigPlot::frame().withAlpha (s.enabled ? 0.85f : 0.35f));
-            g.drawRoundedRectangle (box, 2.0f, sel ? 1.6f : 0.6f);
+            g.strokePath (body, juce::PathStrokeType (sel ? 1.6f : 0.6f));
         }
 
         // Its name beside it, unless that would land on one already drawn -
@@ -5174,7 +5579,56 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         g.drawText (tag, tr, juce::Justification::centredLeft, false);
     }
 
+    // Every FLOWN array hangs on ONE straight line drawn up from the box.
+    //
+    // This used to be a bridle - a bumper, two ropes and the angle each made
+    // with plumb, with the lever hole named at the motor. It was read as the
+    // cabinet's COVERAGE, which it never was, and two sets of degrees on one
+    // sheet meaning two different things is worse than one set meaning one.
+    // Coverage is the Top View's business and belongs only there; here the
+    // line says the box is flown and where it hangs from, and says nothing
+    // else. bridleFor() is left in place for whatever wants it next.
+    for (int head : arrayHeads (speakers_))
+    {
+        const auto& s = speakers_[(size_t) head];
+        if (s.baseHeightM <= 0.01f || sourceMount (speakers_, head) != Mount::Flown) continue;
+
+        float topZ = 0.0f;
+        for (int m : arrayMembers (speakers_, head))
+            topZ = juce::jmax (topZ, speakers_[(size_t) m].baseHeightM
+                                         + cabinetFor (speakers_[(size_t) m].model).heightM);
+
+        const float x  = hx (s.x);
+        const float y0 = vy (topZ);
+        const float y1 = (float) f.getY();           // up to the top of the pane
+
+        g.setColour (ropeInk().withAlpha (0.85f));
+        g.drawLine (x, y0, x, y1, 1.0f);
+        g.fillEllipse (x - 2.0f, y0 - 2.0f, 4.0f, 4.0f);
+    }
+
     FigPlot::drawMark (g, hx (0.0f), vy (0.0f), (float) fig (8.0f));
+
+    // The active snap point: guides along whatever it caught, a ring on it.
+    if (elevSnap_ && elevSnapValid_)
+    {
+        const float sx = hx (elevSnapM_.x), sy = vy (elevSnapM_.y);
+        const float guide[] = { 4.0f, 3.0f };
+        g.setColour (Brand::accent().withAlpha (0.55f));
+        if (elevSnapOnZ_)
+            g.drawDashedLine ({ (float) f.getX(), sy, (float) f.getRight(), sy }, guide, 2, 1.0f);
+        if (elevSnapOnX_)
+            g.drawDashedLine ({ sx, (float) f.getY(), sx, (float) f.getBottom() }, guide, 2, 1.0f);
+        const float r = (float) fig (6.0f);
+        g.setColour (Brand::accent());
+        g.drawEllipse (sx - r, sy - r, 2.0f * r, 2.0f * r, 1.6f);
+        g.drawLine (sx - 1.6f * r, sy, sx + 1.6f * r, sy, 1.0f);
+        g.drawLine (sx, sy - 1.6f * r, sx, sy + 1.6f * r, 1.0f);
+        g.setFont (Brand::figSemi (10.0f));
+        const juce::String lbl = Units::metres (elevSnapM_.x, 2) + ", " + Units::metres (elevSnapM_.y, 2);
+        g.drawText (lbl, juce::Rectangle<float> (sx + r + 4.0f, sy - r - 14.0f, 140.0f, 14.0f),
+                    juce::Justification::centredLeft, false);
+    }
 
     if (speakers_.empty())
     {
@@ -5542,6 +5996,12 @@ std::vector<ListeningSurface> RadiationPatternComponent::handDrawnSurfaces() con
 
 bool RadiationPatternComponent::listeningClipPath (juce::Path& out) const
 {
+    // Reversed: the planes are still there and still drawn, they simply stop
+    // masking the map. Saying "no audience" here rather than widening the
+    // path means every caller - the field, the SPL readout - follows along
+    // without each needing to know about the switch.
+    if (mapWholeArea_) return false;
+
     const auto pb = plotArea();
     // Long enough to run clear of the plot from anywhere inside it.
     const float big = 2.0f * (float) juce::jmax (pb.getWidth(), pb.getHeight());
@@ -6289,32 +6749,55 @@ void RadiationPatternComponent::drawFramedRays (juce::Graphics& g)
                        && ((drag_ == Drag::SpeakerRotate && rotatingSpeaker_ == i)
                            || (i == selected_) || isSpeakerSelected (i));
 
+        // The -6 dB coverage edges, solid, out to the frame - at whatever
+        // angle this model covers AT THE SOLVE FREQUENCY. MainComponent feeds
+        // that in per band; nothing here assumes one angle per cabinet.
+        auto coverageEdges = [&]
+        {
+            const float half = juce::degreesToRadians (0.5f * coverageFor (spk.model));
+            g.setColour (FigPlot::tick().withAlpha (0.85f));
+            for (const float a : { th - half, th + half })
+            {
+                const juce::Point<float> d { std::cos (a), -std::sin (a) };
+                g.drawLine ({ front, front + d * reach }, 1.0f);
+            }
+        };
+
         if (isSubwooferModel (spk.model))
         {
-            // A sub has no axis worth a line across the field: a short stub
-            // off its front face says which way it faces, nothing more.
+            // A sub still gets no AIM line - there is no axis to point, which
+            // is the whole reason it carries a stub and a knob instead.
             const float len = juce::jmax ((float) UiConfig::Scale::fig (24.0f), 2.8f * halfDepth);
             g.setColour ((live ? Brand::accent() : FigPlot::tick()).withAlpha (0.85f));
             g.drawDashedLine ({ front, front + dir * len }, subDash, 2, 1.0f);
+
+            // No coverage edges either. They were drawn here for a while from
+            // the Q21S beamwidth table; that is not wanted - the sub shows no
+            // angle lines at all. The table is kept but unused, and the call
+            // below is what would bring them back.
+            //
+            //   if (showRays_) coverageEdges();
             continue;
         }
 
         if (! rayVisibleFor (i)) continue;
 
-        // The -6 dB coverage edges, solid, out to the frame.
-        const float half = juce::degreesToRadians (0.5f * coverageFor (spk.model));
-        g.setColour (FigPlot::tick().withAlpha (0.85f));
-        for (const float a : { th - half, th + half })
-        {
-            const juce::Point<float> d { std::cos (a), -std::sin (a) };
-            g.drawLine ({ front, front + d * reach }, 1.0f);
-        }
+        constexpr bool kShowCoverageEdges = true;
+        if (kShowCoverageEdges) coverageEdges();
 
-        // The aim, dashed, stopping where it lands on a plane.
-        const auto end = clipRayAtPlanes (c, c + dir * reach);
+        // The aim, dashed, stopping where it lands on a plane - or on the
+        // deck, where its tilt brings it down, as the elevation draws it.
+        const float land = aimLandingM (speakers_, i);
+        const auto end = clipRayAtPlanes (c, c + dir * (land >= 0.0f ? juce::jmax (halfDepth, land * ppm)
+                                                                     : reach));
         g.setColour (live ? Brand::accent().withAlpha (0.95f)
                           : FigPlot::tick().withAlpha (lockRays_ ? 0.30f : 0.45f));
         g.drawDashedLine ({ front, end }, aimDash, 2, live ? 1.6f : 1.0f);
+        if (land >= 0.0f)
+        {
+            const float d = (float) UiConfig::Scale::fig (9.0f);
+            g.fillEllipse (end.x - 0.5f * d, end.y - 0.5f * d, d, d);
+        }
     }
 }
 
@@ -6591,6 +7074,12 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                     drawSpeakerDimensions (g, box, spk, alpha);
             }
 
+            // No rigging marks here. The plan used to carry the bumper, its
+            // two picks and the angle each rope made with plumb; next to the
+            // coverage edges those degrees read as the cabinet's pattern,
+            // which they were not. The only angles on this sheet are the
+            // coverage ones now - see drawFramedRays().
+
             const auto tag  = framedTag (i);
             const auto font = Brand::figSemi (8.0f);
             g.setFont (font);
@@ -6838,13 +7327,8 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
     g.setFont (placed ? Brand::figSemi (12.0f)
                       : Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
 
-    // On the framed sheet the map is a wash over the grey, so the key is too.
-    const auto keyColour = [placed] (juce::Colour c, float db, float floor)
-    {
-        if (! placed) return c;
-        return FigPlot::field().overlaidWith (
-            c.withAlpha (ColourMaps::sheetWashAlpha (ColourMaps::relDbToColourT (db, floor))));
-    };
+    // Solid, as the Figma draws the key: it shows the hue, the map its wash.
+    const auto keyColour = [] (juce::Colour c, float, float) { return c; };
 
     const int tickH = UiConfig::Scale::px (14);
     auto drawTick = [&] (int db, int ty)
@@ -7589,6 +8073,36 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 
 void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 {
+    if (framedElevation())
+    {
+        elevPanLast_ = e.position;
+        elevDragIdx_ = -1;
+        elevRayIdx_ = -1;
+        elevDragMoved_ = false;
+        // Topmost first, as drawn.
+        for (auto it = elevHits_.rbegin(); it != elevHits_.rend(); ++it)
+            if (it->second.contains (e.position)) { elevDragIdx_ = it->first; break; }
+        if (elevDragIdx_ >= 0 && elevDragIdx_ < (int) speakers_.size())
+        {
+            const auto& s = speakers_[(size_t) elevDragIdx_];
+            elevDragFrom_ = { s.x, s.baseHeightM };
+            selected_ = elevDragIdx_;
+            repaint();
+            if (onSpeakerSelected) onSpeakerSelected (elevDragIdx_);
+            return;
+        }
+        // Off the boxes, an aim line picks up that box's tilt.
+        if (const auto* r = elevRayAt (e.position))
+        {
+            elevRayIdx_   = r->index;
+            elevRayPivot_ = r->pivot;
+            selected_ = elevRayIdx_;
+            repaint();
+            if (onSpeakerSelected) onSpeakerSelected (elevRayIdx_);
+        }
+        return;
+    }
+
     // Keep shortcuts (undo/redo) working after using pencil/line/etc.
     if (! hasKeyboardFocus (true))
         grabKeyboardFocus();
@@ -8041,11 +8555,17 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                 if (additive)
                 {
                     if (isSpeakerSelected (sHit))
-                        selectedSpeakers_.erase (std::remove (selectedSpeakers_.begin(),
-                                                              selectedSpeakers_.end(), sHit),
-                                                 selectedSpeakers_.end());
+                    {
+                        for (int m : arrayMembers (speakers_, sHit))
+                            selectedSpeakers_.erase (std::remove (selectedSpeakers_.begin(),
+                                                                  selectedSpeakers_.end(), m),
+                                                     selectedSpeakers_.end());
+                    }
                     else
+                    {
                         selectedSpeakers_.push_back (sHit);
+                        selectWholeSources();
+                    }
                     syncPrimarySelectionFromSets();
                     if (onSpeakerSelected) onSpeakerSelected (selected_ >= 0 ? selected_ : sHit);
                     repaint();
@@ -8057,6 +8577,7 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
                     selectedMics_.clear();
                     selectedSpeakers_.clear();
                     selectedSpeakers_.push_back (sHit);
+                    selectWholeSources();
                     syncPrimarySelectionFromSets();
                     if (onAnnotSelectionChanged) onAnnotSelectionChanged();
                     if (onMicsChanged) onMicsChanged();
@@ -8186,6 +8707,66 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
+    if (framedElevation())
+    {
+        // A box picked up moves its array, across along the plan's x and up
+        // and down in height: onto snap targets with Snap on, freely without.
+        if (elevDragIdx_ >= 0)
+        {
+            if (elevScale_ <= 1.0e-6f || elevScaleH_ <= 1.0e-6f) return;
+            if (! elevDragMoved_)
+            {
+                if (e.getDistanceFromDragStart() < 3) return;
+                elevDragMoved_ = true;
+                if (onWillEdit) onWillEdit();
+            }
+            const auto off = e.getOffsetFromDragStart().toFloat();
+            float nx = elevDragFrom_.x + off.x / elevScaleH_;
+            float nz = juce::jmax (0.0f, elevDragFrom_.y - off.y / elevScale_);
+            if (elevSnap_ && elevDragIdx_ < (int) speakers_.size())
+            {
+                const float boxH = cabinetFor (speakers_[(size_t) elevDragIdx_].model).heightM;
+                const auto p = elevSnapPoint (nx, nz, elevDragIdx_, boxH, elevSnapOnX_, elevSnapOnZ_);
+                nx = p.x;
+                nz = p.y;
+                elevSnapM_ = p;
+                elevSnapValid_ = true;
+            }
+            else
+            {
+                auto mm = [] (float m) { return std::round (m * 1000.0f) / 1000.0f; };
+                nx = mm (nx);
+                nz = mm (nz);
+            }
+            if (onElevationMoved) onElevationMoved (elevDragIdx_, nx, nz);
+            return;
+        }
+        // An aim line swings about its box to wherever it is pulled, on a
+        // whole degree. Positive is down, as everywhere else.
+        if (elevRayIdx_ >= 0)
+        {
+            if (! elevDragMoved_)
+            {
+                if (e.getDistanceFromDragStart() < 3) return;
+                elevDragMoved_ = true;
+                if (onWillEdit) onWillEdit();
+            }
+            const auto v = e.position - elevRayPivot_;
+            if (v.x < 4.0f) return;
+            // Undo the vertical zoom so the angle is the physical one.
+            const float k = juce::jmax (1.0e-6f, elevZoomY_);
+            const float deg = juce::jlimit (-89.0f, 89.0f,
+                std::round (juce::radiansToDegrees (std::atan2 (v.y / k, v.x))));
+            if (onElevationTilted) onElevationTilted (elevRayIdx_, deg);
+            return;
+        }
+        // Up and down only: across is the plan's, and stays lined up with it.
+        elevOffset_.y += e.position.y - elevPanLast_.y;
+        elevPanLast_ = e.position;
+        repaint();
+        return;
+    }
+
     if (drag_ == Drag::Pencil && ! annotations_.empty())
     {
         auto annot = snapAnnotPoint (screenToAnnot (e.position.x, e.position.y));
@@ -8286,7 +8867,62 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         juce::Point<float> dAnnot { 0, 0 };
         juce::Point<float> dWorld { 0, 0 };
 
-        if (drawGridSnap_ && selMoveRefValid_)
+        // A selection of cabinets and nothing else snaps to the grid, even
+        // though annotations do not. This is the path a dragged speaker takes,
+        // so it does its own grid arithmetic rather than going through
+        // snapAnnotPointFull, which is annotation-only.
+        const bool speakersOnly = ! selectedSpeakers_.empty()
+                               && selectedAnnots_.empty() && selectedMics_.empty();
+        if (drawGridSnap_ && ! snapAnnotations_ && speakersOnly && selMoveRefValid_)
+        {
+            const auto mouseDelta = curAnnot - selMoveStartMouse_;
+            const auto desired = selMoveStartRef_ + mouseDelta;
+            auto snapped = desired;
+            if (const float step = (float) Units::snapStepMetres(); step > 1.0e-9f)
+            {
+                snapped.x = std::round (desired.x / step) * step;
+                snapped.y = std::round (desired.y / step) * step;
+            }
+
+            // Edges first: within 10 px of another cabinet's edge or centre
+            // line, either side of the selection locks onto it, per axis; the
+            // grid only decides an axis that met nothing.
+            if (selMoveHasBounds_)
+            {
+                const auto db = selMoveStartBounds_ + mouseDelta;
+                std::vector<float> xs, ys;
+                for (int i = 0; i < (int) speakers_.size(); ++i)
+                {
+                    if (isSpeakerSelected (i)) continue;
+                    const auto o = speakerFootprintWorld (speakers_[(size_t) i]);
+                    if (o.isEmpty()) continue;
+                    xs.insert (xs.end(), { o.getX(), o.getRight(), o.getCentreX() });
+                    ys.insert (ys.end(), { o.getY(), o.getBottom(), o.getCentreY() });
+                }
+                auto lock = [] (float lo, float hi, const std::vector<float>& c, float tol, float& d)
+                {
+                    bool hLo = false, hHi = false;
+                    const float dLo = snapScalar (lo, c, tol, hLo) - lo;
+                    const float dHi = snapScalar (hi, c, tol, hHi) - hi;
+                    if (! hLo && ! hHi) return false;
+                    d = (hLo && (! hHi || std::abs (dLo) <= std::abs (dHi))) ? dLo : dHi;
+                    return true;
+                };
+                float dx = 0.0f, dy = 0.0f;
+                if (lock (db.getX(), db.getRight(), xs, 10.0f / juce::jmax (1.0f, worldScaleX()), dx))
+                    snapped.x = desired.x + dx;
+                if (lock (db.getY(), db.getBottom(), ys, 10.0f / juce::jmax (1.0f, worldScaleY()), dy))
+                    snapped.y = desired.y + dy;
+
+                const auto target = db + (snapped - desired);
+                noteSnapSound (selectionMeetsOtherSpeaker (target), desired, snapped);
+            }
+
+            dAnnot = snapped - selectionSnapReference();
+            if (currentAnnotSpace() == AnnotSpace::World)
+                dWorld = dAnnot;
+        }
+        else if (drawGridSnap_ && selMoveRefValid_)
         {
             const auto mouseDelta = curAnnot - selMoveStartMouse_;
 
@@ -8487,6 +9123,16 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 {
+    if (framedElevation())
+    {
+        if ((elevDragIdx_ >= 0 || elevRayIdx_ >= 0) && elevDragMoved_ && onEditCommitted)
+            onEditCommitted();
+        elevDragIdx_ = -1;
+        elevRayIdx_ = -1;
+        elevDragMoved_ = false;
+        return;
+    }
+
     if (drag_ == Drag::Pan)
     {
         drag_ = Drag::None;
@@ -8565,6 +9211,23 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 void RadiationPatternComponent::mouseWheelMove (const juce::MouseEvent& e,
                                                 const juce::MouseWheelDetails& wheel)
 {
+    if (framedElevation())
+    {
+        // Shift or Ctrl + wheel: this pane's vertical zoom alone, about the
+        // cursor. The view only - no box moves.
+        if (e.mods.isShiftDown() || e.mods.isCtrlDown())
+        {
+            const float d = std::abs (wheel.deltaY) > std::abs (wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
+            if (std::abs (d) > 1.0e-6f)
+                zoomElevationVertical (d > 0.0f ? 1.15f : 1.0f / 1.15f, e.position.y);
+            return;
+        }
+        // One zoom for both panes: the plan does the zooming and hands its
+        // new scale back down, so the boxes here grow with the ones above.
+        if (onElevationWheel) onElevationWheel (e, wheel);
+        return;
+    }
+
     // Scroll-wheel zoom in every tool mode (Select / Shape / Pencil / ...).
     // Skip polar-only views that do not use the world zoom transform.
     if (params_.viewMode == ViewMode::Directivity) return;
@@ -8703,6 +9366,25 @@ void RadiationPatternComponent::drawMagnifier (juce::Graphics& g)
 
 void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
 {
+    if (framedElevation())
+    {
+        bool over = false;
+        for (const auto& h : elevHits_) if (h.second.contains (e.position)) { over = true; break; }
+        setMouseCursor (over ? juce::MouseCursor::DraggingHandCursor
+                             : elevRayAt (e.position) != nullptr ? juce::MouseCursor::UpDownResizeCursor
+                                                                 : juce::MouseCursor::NormalCursor);
+        // With Snap on, mark where the cursor would land.
+        if (elevSnap_ && elevScale_ > 1.0e-6f && elevScaleH_ > 1.0e-6f)
+        {
+            const float xM = (e.position.x - elevX0_) / elevScaleH_;
+            const float zM = (elevYBase_ - e.position.y) / elevScale_;
+            elevSnapM_ = elevSnapPoint (xM, zM, -1, 0.0f, elevSnapOnX_, elevSnapOnZ_);
+            elevSnapValid_ = true;
+            repaint();
+        }
+        return;
+    }
+
     if (magnifierOn_)
     {
         magPoint_ = e.position;
@@ -8741,6 +9423,12 @@ void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
 {
+    if (framedElevation())
+    {
+        if (elevSnapValid_ && elevDragIdx_ < 0) { elevSnapValid_ = false; repaint(); }
+        return;
+    }
+
     if (magValid_) { magValid_ = false; magImage_ = juce::Image(); repaint(); }
     hoverValid_ = false;
     const bool hadProbe = splProbeValid_;
@@ -8751,6 +9439,14 @@ void RadiationPatternComponent::mouseExit (const juce::MouseEvent&)
 
 void RadiationPatternComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (framedElevation())
+    {
+        elevOffset_ = {};
+        elevZoomY_ = 1.0f;
+        repaint();
+        return;
+    }
+
     if (tool_ == Tool::Shape && drawShape_ == DrawShape::Polyline && sessionPts_.size() >= 2)
     {
         finishPolyline (construction_ == Construction::PolylineClosed);

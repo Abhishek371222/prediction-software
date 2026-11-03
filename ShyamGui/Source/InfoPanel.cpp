@@ -162,6 +162,7 @@ void InfoPanel::applyColours()
     }
 }
 
+
 void InfoPanel::lookAndFeelChanged()
 {
     applyColours();

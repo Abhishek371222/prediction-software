@@ -48,6 +48,13 @@ static inline int bottomStripH() noexcept
 // still built - it is just not what the viewport shows.
 static constexpr bool kUseFigmaSidebar = true;
 
+// The floating Frequency Response window. The response has ONE home now - the
+// pane under the plan on the Mapping tab, which is always there - so a second
+// window carrying the same curves was a window to close, not a view to use.
+// MicFrequencyResponseWindow and everything that fills it are untouched; they
+// are simply never shown, so bringing it back is this one flag.
+static constexpr bool kShowFloatingResponseWindow = false;
+
 static void styleActionBtn (juce::TextButton& b, const juce::String& txt,
                             juce::Colour bg = Brand::btnIn(), bool active = false)
 {
@@ -347,20 +354,44 @@ MainComponent::MainComponent (ProjectData project)
         controlPanel_.selectSpeaker (i);
         if (controlPanel_.onSelectionChanged) controlPanel_.onSelectionChanged (i);
     };
-    sourcePanel_.onPosition = [this] (int i, float x, float y) { controlPanel_.setSpeakerPosition (i, x, y); };
-    sourcePanel_.onRotation = [this] (int i, float d)          { controlPanel_.setSpeakerRotation (i, d); };
-    sourcePanel_.onTilt     = [this] (int i, float d)          { controlPanel_.setSpeakerTilt (i, d); };
-    sourcePanel_.onHeight   = [this] (int i, float m)          { controlPanel_.setSpeakerHeight (i, m); };
-    sourcePanel_.onModel    = [this] (int i, int m)            { controlPanel_.setSpeakerModel (i, m); };
+    // setSpeakerPosition / setSpeakerRotation are the plan's drag setters and
+    // leave the undo step and the change notice to the drag; a typed value
+    // has no drag around it, so both are taken here.
+    // Source Positioning edits the SOURCE: every cabinet of the selected
+    // source moves, turns or changes together, and no other source does.
+    sourcePanel_.onPosition = [this] (int i, float x, float y) { controlPanel_.moveSourceTo (i, x, y); };
+    sourcePanel_.onRotation = [this] (int i, float d)          { controlPanel_.setCabinetRotation (i, d); };
+    sourcePanel_.onTilt     = [this] (int i, float d)          { controlPanel_.setArrayTilt (i, d); };
+    sourcePanel_.onSplay    = [this] (int i, float d)          { controlPanel_.setCabinetSplay (i, d); };
+    sourcePanel_.onHeight   = [this] (int i, float m)          { controlPanel_.setSourceZ (i, m); };
+    sourcePanel_.onModel    = [this] (int i, int m)            { controlPanel_.setSourceModel (i, m); };
     sourcePanel_.onCabinetCount = [this] (int i, int n)        { setSourceCabinetCount (i, n); };
-    sourcePanel_.onEnabled  = [this] (int i, bool on)          { controlPanel_.setSpeakerEnabled (i, on); };
-    sourcePanel_.onPolarity = [this] (int i, bool inv)         { controlPanel_.setSpeakerPolarity (i, inv); };
-    sourcePanel_.onAddSource = [this] { showAddShapeMenu (&viewBar_.btnAddSource_); };
-    sourcePanel_.onDeleteSource = [this] (int i)
+    sourcePanel_.onMount    = [this] (int i, int mount)
     {
-        willEdit();
-        controlPanel_.removeSpeakers ({ i });
+        controlPanel_.setSourceMount (i, mount, kArrayFrameHeightM);
     };
+    sourcePanel_.onInterdistance = [this] (int i, float m)     { controlPanel_.setSourceSpacing (i, m); };
+    sourcePanel_.onSymmetric = [this] (int i, bool on)         { controlPanel_.setSourceSymmetric (i, on); };
+    sourcePanel_.onSourceEnabled = [this] (int i, bool on)     { controlPanel_.setSourceEnabled (i, on); };
+    // A Rigging Angles row edits one cabinet; under Array Symmetry its
+    // partner from the other end of the array takes the same change.
+    auto mirrored = [this] (int i, const std::function<void (int)>& f)
+    {
+        f (i);
+        const int p = controlPanel_.symmetricPartner (i);
+        if (p >= 0) f (p);
+    };
+    sourcePanel_.onEnabled  = [this, mirrored] (int i, bool on)
+    { mirrored (i, [this, on] (int k) { controlPanel_.setSpeakerEnabled (k, on); }); };
+    sourcePanel_.onPolarity = [this, mirrored] (int i, bool inv)
+    { mirrored (i, [this, inv] (int k) { controlPanel_.setSpeakerPolarity (k, inv); }); };
+    sourcePanel_.onGain     = [this, mirrored] (int i, float dB)
+    { mirrored (i, [this, dB] (int k) { controlPanel_.setSpeakerGain (k, dB); }); };
+    sourcePanel_.onDelay    = [this, mirrored] (int i, float ms)
+    { mirrored (i, [this, ms] (int k) { controlPanel_.setSpeakerDelay (k, ms); }); };
+    sourcePanel_.onArrayRotation = [this] (int i, float d)     { controlPanel_.setArrayRotation (i, d); };
+    sourcePanel_.onAddSource = [this] { showAddShapeMenu (&viewBar_.btnAddSource_); };
+    sourcePanel_.onDeleteSource = [this] (int i) { deleteSources ({ i }); };
     sourcePanel_.onSelectPlane = [this] (int i) { selectedPlane_ = i; refreshSourcePanel(); };
     sourcePanel_.onDeletePlane = [this] (int i) { deletePlane (i); };
     viewBar_.btnAddSource_.onClick = [this]
@@ -369,12 +400,23 @@ MainComponent::MainComponent (ProjectData project)
         if (venueMode_) { if (venuePanel_.onAddElement) venuePanel_.onAddElement(); }
         else            showAddShapeMenu (&viewBar_.btnAddSource_);
     };
-    // The strip's chevron folds the Elements list on the Venue tab.
+    // The strip's chevron folds the list under it - Elements on the Venue
+    // tab, Sources on the others. The strip IS that list's header (same word,
+    // same plus, same chevron), so this is the only control that can fold it.
     viewBar_.btnSourcesFold_.onClick = [this]
     {
-        if (! venueMode_) return;
-        venuePanel_.setListFolded (! venuePanel_.isListFolded());
-        viewBar_.btnSourcesFold_.setFolded (venuePanel_.isListFolded());
+        if (venueMode_)
+        {
+            venuePanel_.setListFolded (! venuePanel_.isListFolded());
+            viewBar_.btnSourcesFold_.setFolded (venuePanel_.isListFolded());
+        }
+        else
+        {
+            sourcePanel_.setListFolded (! sourcePanel_.isListFolded());
+            viewBar_.btnSourcesFold_.setFolded (sourcePanel_.isListFolded());
+            refreshSourcePanel();
+            resized();
+        }
     };
     // Fill it once at startup; after this the scene's own change hooks drive it.
     refreshSourcePanel();
@@ -393,10 +435,71 @@ MainComponent::MainComponent (ProjectData project)
     {
         patternComp_.setFigmaFrame (true);
         elevationComp_.setFigmaFrame (true);
+        // Framed, it takes the mouse only to zoom (wheel), pan (drag) and
+        // reset (double-click).
+        elevationComp_.setInterceptsMouseClicks (true, false);
+        // Its wheel zooms the plan, at the same distance across, mid-height;
+        // the plan's new scale comes back down through syncStackedPanes.
+        elevationComp_.onElevationWheel = [this] (const juce::MouseEvent& e,
+                                                  const juce::MouseWheelDetails& w)
+        {
+            const auto pe = e.getEventRelativeTo (&patternComp_);
+            patternComp_.mouseWheelMove (pe.withNewPosition (juce::Point<float> (
+                                             pe.position.x, patternComp_.getHeight() * 0.5f)), w);
+        };
         patternComp_.onPlanViewChanged = [this] { syncStackedPanes(); };
+        // A box clicked or dragged there is selected and moved everywhere,
+        // as on the plan.
+        elevationComp_.onSpeakerSelected = [this] (int i)
+        {
+            if (sourcePanel_.onSelect) sourcePanel_.onSelect (i);
+        };
+        elevationComp_.onWillEdit      = [this] { willEdit(); };
+        elevationComp_.onEditCommitted = [this] { commitEdit(); };
+        elevationComp_.onElevationMoved = [this] (int i, float x, float z)
+        {
+            controlPanel_.moveArrayTo (i, x, z);
+            refreshSourcePanel();
+            syncRenderer();
+            elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+            scheduleRecompute();
+        };
+        elevationComp_.onElevationTilted = [this] (int i, float deg)
+        {
+            controlPanel_.tiltArrayTo (i, deg);
+            refreshSourcePanel();
+            syncRenderer();
+            elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+            scheduleRecompute();
+        };
+        elevSnapBtn_.setTooltip ("Snap boxes dragged here to the deck, other boxes' faces, planes and the grid");
+        elevZoomOutBtn_.setTooltip ("Vertical zoom out (Shift + wheel over the pane; double-click resets)");
+        elevZoomInBtn_.setTooltip ("Vertical zoom in (Shift + wheel over the pane; double-click resets)");
+        elevSnapBtn_.onClick    = [this] { elevationComp_.setElevationSnap (elevSnapBtn_.getToggleState()); };
+        elevZoomOutBtn_.onClick = [this] { elevationComp_.zoomElevationVertical (1.0f / 1.25f); };
+        elevZoomInBtn_.onClick  = [this] { elevationComp_.zoomElevationVertical (1.25f); };
+        elevHeader_.setTools ({ &elevSnapBtn_, &elevZoomOutBtn_, &elevZoomInBtn_ });
     }
     elevHeader_.onFold = [this] (bool) { resized(); };
     splHeader_.onFold  = [this] (bool) { resized(); };
+
+    // --- the Mapping tab -----------------------------------------------
+    addChildComponent (frHeader_);
+    addChildComponent (frPlot_);
+    addChildComponent (mapFooter_);
+    frHeader_.onFold = [this] (bool) { resized(); };
+    sourcePanel_.onFilter = [this] (int i, const SpeakerFilter& f) { controlPanel_.setSpeakerFilter (i, f); };
+    mapFooter_.onFrequency = [this] (int idx) { controlPanel_.setFrequencyIndex (idx); };
+    mapFooter_.onCalculate = [this]
+    {
+        forceRun_ = true;
+        runSimulation();
+    };
+    mapFooter_.onAutoCalculate = [this] (bool on)
+    {
+        autoCalc_ = on;
+        if (on && calcPending_) scheduleRecompute();
+    };
 
     // --- the Venue tab -------------------------------------------------
     addChildComponent (venueView_);
@@ -410,16 +513,17 @@ MainComponent::MainComponent (ProjectData project)
     venuePanel_.onLayoutChanged = [this] { resized(); };
     venueView_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venueView_.onElementChanged = [this] (int i, VenueElement e) { setVenueElement (i, e); };
+    venueView_.onEditStart = [this] { willEdit(); };
     venueView_.onAction = [this] (int i, int a) { venueAction (i, a); };
     venuePanel_.onType   = [this] (int i, VenueElement::Type t)
     { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].type = t;
-        refreshVenuePanel(); syncVenueToPlanes(); markProjectDirty(); } };
+        refreshVenuePanel(); syncVenueToPlanes(); willEdit(); commitEdit(); } };
     venuePanel_.onName   = [this] (int i, const juce::String& n)
     { if (i >= 0 && i < (int) venue_.size() && n.isNotEmpty())
-      { venue_[(size_t) i].name = n; refreshVenuePanel(); markProjectDirty(); } };
+      { venue_[(size_t) i].name = n; refreshVenuePanel(); willEdit(); commitEdit(); } };
     venuePanel_.onAudHeight = [this] (int i, VenueElement::AudHeight h)
     { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].height = h;
-        refreshVenuePanel(); syncVenueToPlanes(); markProjectDirty(); } };
+        refreshVenuePanel(); syncVenueToPlanes(); willEdit(); commitEdit(); } };
     venuePanel_.onPoint = [this] (int i, int c, int a, float m)
     {
         if (i < 0 || i >= (int) venue_.size() || c < 0 || c > 3) return;
@@ -427,7 +531,8 @@ MainComponent::MainComponent (ProjectData project)
         if (a == 0) p.x = m; else if (a == 1) p.y = m; else p.z = m;
         refreshVenuePanel();
         syncVenueToPlanes();
-        markProjectDirty();
+        willEdit();
+        commitEdit();
     };
 
     addAndMakeVisible (topMenu_);
@@ -446,6 +551,19 @@ MainComponent::MainComponent (ProjectData project)
     {
         showTopMenu ((int) id, under);
     };
+    // The crosshair moved to the view strip; the top bar's copy is hidden but
+    // still wired, so both run the same handler.
+    viewBar_.btnLocate_.onClick = [this] { if (topMenu_.onHome) topMenu_.onHome(); };
+    topMenu_.onHome = [this]
+    {
+        if (venueMode_)
+        {
+            venueView_.resetView();
+            return;
+        }
+        patternComp_.frameAction();
+        elevationComp_.resetElevationPan();
+    };
 
     plotHeader_.onFileNew    = [this] { launchNewProjectInstance(); };
     plotHeader_.onFileOpen   = [this] { openProjectInCurrentWindow(); };
@@ -460,6 +578,7 @@ MainComponent::MainComponent (ProjectData project)
             return;
         plotHeader_.showShapeMenu (chooseShape);
     };
+    viewBar_.btnMic_.onClick = [this] { plotHeader_.btnMic_.onClick(); };
     plotHeader_.btnMic_.onClick = [this]
     {
         const bool hasMics = ! patternComp_.getMics().empty();
@@ -491,7 +610,8 @@ MainComponent::MainComponent (ProjectData project)
             }
         }, hasMics, patternComp_.showMicDegrees(),
            ! patternComp_.rangeRings().empty(),
-           patternComp_.showMicCoords());
+           patternComp_.showMicCoords(),
+           viewBar_.btnMic_.isShowing() ? (juce::Component*) &viewBar_.btnMic_ : nullptr);
     };
     patternComp_.onAddMicArmedChanged = [this]
     {
@@ -661,8 +781,10 @@ MainComponent::MainComponent (ProjectData project)
     {
         // Pure overlay - nothing is re-solved, so this never disturbs the map.
         patternComp_.setShowRays (on);
+        elevationComp_.setShowRays (on);
     };
     patternComp_.setShowRays (menuRays_);
+    elevationComp_.setShowRays (menuRays_);
     plotHeader_.onTextLineHeight = [this] (float mult)
     {
         willEdit();
@@ -671,6 +793,15 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onListenAtMic = [this] (int idx) { showMicListener (idx); };
     patternComp_.onCopyImage   = [this] { copyPlotToClipboard(); };
+    patternComp_.onMapWholeAreaChanged = [this] (bool whole)
+    {
+        // Purely how the map is drawn - the solve is the same either way - so
+        // there is nothing to recompute, only a project to mark and a line to
+        // say which of the two you are now looking at.
+        markProjectDirty();
+        reportStatus (whole ? "Mapping the whole area."
+                            : "Mapping on the listening planes only.", true);
+    };
     controlPanel_.onMicPositionEdited = [this] (float x, float y)
     {
         patternComp_.setSelectedMicPosition (x, y);
@@ -905,11 +1036,26 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onPasteSpeakers = [this] (std::vector<Speaker> added)
     {
+        // A pasted source is a NEW source: each copied array takes a fresh
+        // id, or the copy would join the original and the two would move,
+        // count and delete as one.
+        std::map<int, int> fresh;
+        int next = nextArrayId (controlPanel_.getSpeakers());
+        for (auto& s : added)
+        {
+            if (s.arrayId < 0) continue;
+            auto it = fresh.find (s.arrayId);
+            if (it == fresh.end()) it = fresh.emplace (s.arrayId, next++).first;
+            s.arrayId = it->second;
+        }
         return controlPanel_.appendSpeakers (added);
     };
+    // Deleting works on whole sources: a box of an array takes the array.
     patternComp_.onDeleteSpeakers = [this] (std::vector<int> idxs)
     {
-        controlPanel_.removeSpeakers (idxs);
+        // More than one cabinet goes only once confirmed, as from the list.
+        if (wholeSources (idxs).size() > 1) { deleteSources (std::move (idxs)); return; }
+        controlPanel_.removeSpeakers (wholeSources (idxs));
     };
     patternComp_.onSpeakerMoved = [this] (int idx, float x, float y)
     {
@@ -993,6 +1139,8 @@ MainComponent::MainComponent (ProjectData project)
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);
+    patternComp_.setMapWholeArea (project_.mapWholeArea.isBool()
+                                  && (bool) project_.mapWholeArea);
 
     AppSettings::get().addChangeListener (this);
     applyGridPref();
@@ -1130,6 +1278,7 @@ ProjectData MainComponent::currentProject() const
     p.venue    = VenueElement::listToVar (venue_);
     p.rangeRings = rangeRingsToVar (patternComp_.rangeRings());
     p.rangesVisible = patternComp_.rangesVisible();
+    p.mapWholeArea  = patternComp_.mapWholeArea();
     return p;
 }
 
@@ -1181,6 +1330,9 @@ void MainComponent::applyEditSnapshot (const EditSnapshot& s)
     patternComp_.setMics (s.mics);
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
+    venue_ = VenueElement::listFromVar (s.scene.venue);
+    refreshVenuePanel();
+    syncVenueToPlanes();
     restoringEdit_ = false;
     editBaseline_ = s;
     markProjectDirty();
@@ -1336,6 +1488,34 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
 
         cancelCurrentCommand();
         return true;
+    }
+
+    // Backspace / Delete remove whatever is selected: the venue element on the
+    // Venue tab; a plane row, else the plan's selection, everywhere else. The
+    // plan handles this itself while it has focus - this covers a selection
+    // made in the side lists, which leaves focus here.
+    if ((key.isKeyCode (juce::KeyPress::backspaceKey) || key.isKeyCode (juce::KeyPress::deleteKey))
+        && ! key.getModifiers().isAnyModifierKeyDown())
+    {
+        if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+            if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
+                return false;
+        // The plan already had its say and passed (mid-drawing, say).
+        if (patternComp_.hasKeyboardFocus (true))
+            return false;
+
+        if (venueMode_)
+        {
+            if (venueSel_ < 0 || venueSel_ >= (int) venue_.size()) return false;
+            deleteVenueElement (venueSel_);
+            return true;
+        }
+        if (selectedPlane_ >= 0)
+        {
+            deletePlane (selectedPlane_);
+            return true;
+        }
+        return patternComp_.hasCopyableSelection() && patternComp_.deleteSelection();
     }
 
     // Prefer live modifiers - Caps Lock / drawing-tool focus can leave KeyPress mods stale.
@@ -2319,6 +2499,7 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
         case TopMenuBar::File:
             m.addItem (101, "New project");
             m.addItem (102, "Open project...");
+            m.addItem (105, "Apply Layout...");
             m.addSeparator();
             m.addItem (103, "Save");
             m.addItem (104, "Save as...");
@@ -2327,21 +2508,24 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
         case TopMenuBar::Venue:
             // Venue is a TAB. Clicking it switches the workspace rather than
             // dropping a menu, which is why this returns before showing one.
+            setMappingMode (false);
             setVenueMode (true);
             return;
 
         case TopMenuBar::Sources:
+            // Sources is a TAB, like Venue: it switches the workspace and
+            // drops no menu. The one item it used to hold was the aiming-ray
+            // toggle, which now sits where it belongs - on the ray glyph
+            // beside "Top View", one strip below. The same switch in two
+            // places only makes you check which one is telling the truth.
+            setMappingMode (false);
             setVenueMode (false);
-            m.addItem (301, "Show aiming rays", true, menuRays_);
-            break;
+            return;
 
         case TopMenuBar::Mapping:
-            m.addItem (401, "SPL mapping", true, menuMapping_ == 1);
-            m.addItem (402, "Mapping off", true, menuMapping_ == 0);
-            m.addSeparator();
-            m.addItem (410, "Show interdistance", true, menuInterdist_);
-            m.addItem (411, "Show values", menuMapping_ == 1, menuSplValues_);
-            break;
+            // A tab as well, and like the other tabs it drops no menu.
+            setMappingMode (true);
+            return;
 
         case TopMenuBar::Export:
             m.addItem (501, "Export...");
@@ -2363,16 +2547,12 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             case 102: fire (plotHeader_.onFileOpen);   break;
             case 103: fire (plotHeader_.onFileSave);   break;
             case 104: fire (plotHeader_.onFileSaveAs); break;
+            case 105: applyLayout();                   break;
             case 501: fire (plotHeader_.onFileExport); break;
 
             case 201: patternComp_.setTool (RadiationPatternComponent::Tool::Select); break;
             case 202: patternComp_.setTool (RadiationPatternComponent::Tool::Pan);    break;
             case 203: patternComp_.resetView();                                       break;
-
-            case 301: menuRays_ = ! menuRays_;
-                      viewBar_.btnRays_.setToggleState (menuRays_, juce::dontSendNotification);
-                      if (plotHeader_.onShowRays) plotHeader_.onShowRays (menuRays_);
-                      break;
 
             case 401:
             case 402: menuMapping_ = (r == 401 ? 1 : 0);
@@ -2525,6 +2705,7 @@ void MainComponent::resized()
     {
         controlViewport_.setVisible (false);
         controlViewport_.setBounds (0, 0, 0, 0);
+        mapFooter_.setVisible (false);
         // Hamburger at top of the collapsed rail (expand).
         btnSidebarToggle_.setBounds (sideX + (railW - burger) / 2,
                                      bodyTop2 + burgerPad,
@@ -2537,7 +2718,17 @@ void MainComponent::resized()
         // Content starts at the very top of the panel so section 1 sits level
         // with the hamburger, which overlays the top-right corner - the old
         // reserved strip just left a band of empty grey above "1. FREQUENCY".
-        const int panelH = juce::jmax (40, sidebarH);
+        // The Mapping tab pins its Calculate footer under the panel.
+        const bool footer = mappingMode_ && ! venueMode_ && kUseFigmaSidebar;
+        const int footH = footer ? UiConfig::Scale::fig (MappingFooter::kFigHeight) : 0;
+        mapFooter_.setVisible (footer);
+        if (footer)
+        {
+            const int sh = MappingFooter::shadowHeight();
+            mapFooter_.setBounds (sideX, bodyTop2 + sidebarH - footH - sh, sideW, footH + sh);
+            mapFooter_.toFront (false);
+        }
+        const int panelH = juce::jmax (40, sidebarH - footH);
         controlViewport_.setBounds (sideX, bodyTop2, sideW, panelH);
         // The panel runs to the sidebar's own edge. Reserving the scroll
         // bar's width unconditionally left a dead strip down the right of the
@@ -2607,7 +2798,29 @@ void MainComponent::resized()
     // The centre is a stack: the plan, then the elevation under its own
     // header, then the SPL-vs-distance header. Folding a pane gives its
     // height back to the plan rather than leaving a hole.
-    if (kUseTopMenuBar && ! venueMode_)
+    const bool mappingStack = kUseTopMenuBar && ! venueMode_ && mappingMode_;
+    frHeader_.setVisible (mappingStack);
+    frPlot_.setVisible (mappingStack && ! frHeader_.isFolded());
+    if (mappingStack)
+    {
+        // MAPPING V1.1: the plan (602) over a 27 px Frequency Response
+        // header and its pane (363). Folding the pane gives it to the plan.
+        const int hdrH  = juce::jmax (16, UiConfig::Scale::fig (27.0f));
+        const int avail = juce::jmax (0, bodyH - hdrH);
+        const int frH   = frHeader_.isFolded() ? 0
+                        : juce::jmax (120, (int) (avail * (363.0f / 965.0f)));
+        const int planH = juce::jmax (120, avail - frH);
+
+        int yy = bodyTop2;
+        patternComp_.setBounds (plotX, yy, centreW, planH); yy += planH;
+        frHeader_.setBounds    (plotX, yy, centreW, hdrH);  yy += hdrH;
+        frPlot_.setBounds      (plotX, yy, centreW, frH);
+        elevHeader_.setVisible (false);
+        splHeader_.setVisible (false);
+        elevationComp_.setVisible (false);
+        splPlot_.setVisible (false);
+    }
+    else if (kUseTopMenuBar && ! venueMode_)
     {
         // Figma V1.1 (Source screen 1.3.1): 30 px pane headers; under them
         // the plan (560), the elevation (360) and the dB pane (360) share
@@ -2684,12 +2897,32 @@ void MainComponent::resized()
         // keeps rescaling with the window. Semibold keeps the brand red legible
         // over the dark heatmap (Figma's mock canvas is empty/light).
         caption.setFont (Brand::techSemi (Brand::UI::scaledFont (Brand::Type::panelTitle)));
-        // Hard against the canvas's left edge. It used to be inset to the
-        // field's own left edge, which mattered while the view letterboxed a
-        // square world and left pale margins; now the solved region fills the
-        // canvas, that inset only pushed the caption toward the middle.
-        caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
-                           juce::jmax (0, centreW - capPadX * 2), capH);
+        if (kUseTopMenuBar)
+        {
+            // In the strip, at its right-hand end. On the canvas it sat on top
+            // of the grid's first metres and moved with every reframe; the
+            // strip is the one place in this column that is always empty, and
+            // it already carries what the pane is - so what the pane is OF
+            // belongs beside it.
+            //
+            // The right edge is measured from the fold chevron, not from the
+            // window, so the gap between the two is the same at every size.
+            const int gap   = UiConfig::Scale::fig (24.0f);
+            const int right = viewBar_.optionsLeft() - gap;
+            const int left  = viewBar_.toolsRight() + gap;
+            caption.setJustificationType (juce::Justification::centredRight);
+            caption.setBounds (left, titleH, juce::jmax (0, right - left), viewHdrH);
+        }
+        else
+        {
+            // Hard against the canvas's left edge. It used to be inset to the
+            // field's own left edge, which mattered while the view letterboxed
+            // a square world and left pale margins; now the solved region
+            // fills the canvas, that inset only pushed it toward the middle.
+            caption.setJustificationType (juce::Justification::centredLeft);
+            caption.setBounds (plotX + capPadX, bodyTop2 + capPadY,
+                               juce::jmax (0, centreW - capPadX * 2), capH);
+        }
         caption.toFront (false);
         // PlotHeaderBar::lookAndFeelChanged() re-stamps the label red, so put
         // the contrast-aware colour back on every layout pass.
@@ -2757,12 +2990,19 @@ void MainComponent::scheduleRecompute()
 void MainComponent::timerCallback()
 {
     stopTimer();
+    if (mappingMode_ && ! autoCalc_ && ! forceRun_)
+    {
+        calcPending_ = true;
+        return;
+    }
     runSimulation();
 }
 
 void MainComponent::runSimulation()
 {
     if (isThreadRunning()) { startTimer (60); return; }   // retry shortly
+    forceRun_ = false;
+    calcPending_ = false;
     rebuildSurfaces();
     reportStatus ("Computing...", false);
     startThread();
@@ -2811,6 +3051,7 @@ void MainComponent::applyResult (const SimResult& r)
     syncRenderer();
     updateSettingsBar();
     refreshFrequencyResponse();
+    if (mappingMode_) syncMappingFooter();
     // A new solve means what you would hear at the mic has changed - a filter
     // put on a cabinet, a gain, a delay, a speaker moved. Following is about
     // keeping the sound in step with the prediction, not only with the mic, so
@@ -3090,43 +3331,95 @@ void MainComponent::setSourceCabinetCount (int sourceIndex, int count)
     auto members = arrayMembers (sp, sourceIndex);
     if (members.empty()) return;
 
-    count = juce::jlimit (1, 24, count);
+    count = juce::jlimit (1, SourcePanel::kMaxCabinets, count);
     if (count == (int) members.size()) return;
+
+    // The source's reference - plan centre and height - is read BEFORE the
+    // boxes change, and the arrangement is rebuilt round it, so the source
+    // stays where it is whatever its count.
+    const auto ref   = sourceRef (sp, sourceIndex);
+    const auto head  = sp[(size_t) members.front()];
+    const auto last  = sp[(size_t) members.back()];
+    const int  first = members.front();
 
     willEdit();
 
     if (count < (int) members.size())
     {
-        // Off the bottom, last first, so the indices above stay valid.
+        // Off the end, last first, so the indices above stay valid.
         std::vector<int> drop (members.begin() + count, members.end());
         std::sort (drop.begin(), drop.end(), std::greater<int>());
-        for (int i : drop) controlPanel_.removeSpeakers ({ i });
+        controlPanel_.removeSpeakers (drop);
     }
     else
     {
-        const auto& head = sp[(size_t) members.front()];
-        const auto& last = sp[(size_t) members.back()];
-        const int   id   = head.arrayId >= 0 ? head.arrayId
-                                             : nextArrayId (sp);
+        const int id = head.arrayId >= 0 ? head.arrayId : nextArrayId (sp);
         // A head that was standing alone becomes the first box of a real array.
-        if (head.arrayId < 0) controlPanel_.setSpeakerArray (members.front(), id);
+        if (head.arrayId < 0) controlPanel_.setSpeakerArray (first, id);
 
-        float z = last.baseHeightM;
-        for (int n = (int) members.size(); n < count; ++n)
+        // Each new box is a copy of the last one - same model, aim, levels
+        // and source settings - so the splay to it starts at 0.
+        std::vector<Speaker> add;
+        const int room = ControlPanel::kMaxSpeakers - (int) sp.size();
+        for (int n = (int) members.size(); n < count && (int) add.size() < room; ++n)
         {
-            if (! controlPanel_.addSpeakerAt (head.x, head.y)) break;
-            const int idx = (int) controlPanel_.getSpeakers().size() - 1;
-            z = juce::jmax (0.0f, z - kCabinetPitchM);
-            controlPanel_.setSpeakerArray    (idx, id);
-            controlPanel_.setSpeakerModel    (idx, head.model);
-            controlPanel_.setSpeakerRotation (idx, head.rotationDeg);
-            controlPanel_.setSpeakerTilt     (idx, last.tiltDeg);
-            controlPanel_.setSpeakerHeight   (idx, z);
+            Speaker s = last;
+            s.arrayId   = id;
+            s.mount     = head.mount;
+            s.spacingM  = head.spacingM;
+            s.symmetric = head.symmetric;
+            add.push_back (s);
         }
+        if (! add.empty()) controlPanel_.appendSpeakers (add);
+        if ((int) add.size() < count - (int) members.size())
+            juce::NativeMessageBox::showMessageBoxAsync (
+                juce::MessageBoxIconType::InfoIcon, "Cabinet limit",
+                "Only " + juce::String ((int) members.size() + (int) add.size())
+                    + " cabinets fitted - the scene holds at most "
+                    + juce::String (ControlPanel::kMaxSpeakers) + " cabinets.");
     }
 
+    controlPanel_.arrangeSourceFrom (first, ref);
+    controlPanel_.selectSpeaker (first);
+    if (controlPanel_.onChanged) controlPanel_.onChanged();
+    if (controlPanel_.onSelectionChanged) controlPanel_.onSelectionChanged (first);
     refreshSourcePanel();
     commitEdit();
+}
+
+std::vector<int> MainComponent::wholeSources (const std::vector<int>& cabinets) const
+{
+    const auto& sp = controlPanel_.getSpeakers();
+    std::vector<int> out;
+    for (int i : cabinets)
+        for (int m : arrayMembers (sp, i))
+            if (std::find (out.begin(), out.end(), m) == out.end())
+                out.push_back (m);
+    return out;
+}
+
+// Deleting a source deletes all of it: every cabinet, and with them its
+// rigging and deployment, which live on those cabinets. A source of more than
+// one box asks first - one click should not take out a 24-box hang unseen.
+void MainComponent::deleteSources (std::vector<int> cabinets)
+{
+    const auto all = wholeSources (cabinets);
+    if (all.empty()) return;
+    auto doDelete = [safe = juce::Component::SafePointer<MainComponent> (this), all]
+    {
+        if (safe == nullptr) return;
+        safe->willEdit();
+        safe->controlPanel_.removeSpeakers (all);
+        safe->refreshSourcePanel();
+        safe->commitEdit();
+    };
+    if (all.size() == 1) { doDelete(); return; }
+
+    juce::AlertWindow::showOkCancelBox (
+        juce::MessageBoxIconType::QuestionIcon, "Delete source",
+        "Delete this source and all " + juce::String ((int) all.size()) + " of its cabinets?",
+        "Delete", "Cancel", this,
+        juce::ModalCallbackFunction::create ([doDelete] (int r) { if (r == 1) doDelete(); }));
 }
 
 void MainComponent::addSourceAtOrigin (AddSource kind, int count)
@@ -3178,6 +3471,21 @@ void MainComponent::addSourceAtOrigin (AddSource kind, int count)
         return;
     }
 
+    // The source records how it is deployed, and is laid out for it from its
+    // reference: an array hangs from the frame, a point source and a SUB row
+    // stand on the deck - the row centred on the origin at its spacing.
+    {
+        const int mount = kind == AddSource::Array ? Mount::Flown : Mount::Ground;
+        for (int k = 0; k < added; ++k)
+        {
+            controlPanel_.setSpeakerMountRaw (before + k, mount,
+                                              isSub ? kSubSpacingM : 0.0f);
+        }
+        controlPanel_.arrangeSourceFrom (before, { 0.0f, 0.0f,
+                                                   kind == AddSource::Array ? kArrayFrameHeightM : 0.0f });
+        if (controlPanel_.onChanged) controlPanel_.onChanged();
+    }
+
     // ArrayCalc selects what it has just made, and so do we - the positioning
     // and rigging sections below the list retitle to the new source.
     controlPanel_.selectSpeaker (before);
@@ -3207,8 +3515,53 @@ void MainComponent::promptAddMultipleSources()
             std::unique_ptr<juce::AlertWindow> owned (aw);
             const int n = aw->getTextEditor ("n")->getText().getIntValue();
             if (r == 1 && n > 0)
-                addSourceAtOrigin (AddSource::PointSource, n);
+                addSeparatePointSources (n);
         }), false);
+}
+
+// n point sources, each its OWN source with its own id - not one source of n
+// cabinets on one spot. They stand in a row along y about the origin, far
+// enough apart to be picked out and dragged.
+void MainComponent::addSeparatePointSources (int n)
+{
+    n = juce::jlimit (1, ControlPanel::kMaxSpeakers, n);
+    const auto& sp = controlPanel_.getSpeakers();
+    const int room = ControlPanel::kMaxSpeakers - (int) sp.size();
+    if (room <= 0)
+    {
+        juce::NativeMessageBox::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon, "Sources full",
+            "This scene already holds the maximum number of cabinets, so no source was added.");
+        return;
+    }
+
+    willEdit();
+    std::vector<Speaker> add;
+    int id = nextArrayId (sp);
+    constexpr float kApartM = 2.0f;
+    for (int i = 0; i < juce::jmin (n, room); ++i)
+    {
+        Speaker s;
+        s.model   = controlPanel_.getBrowsedModel();
+        s.x       = 0.0f;
+        s.y       = ((float) i - 0.5f * (float) (juce::jmin (n, room) - 1)) * kApartM;
+        s.arrayId = id++;
+        s.mount   = Mount::Ground;
+        add.push_back (s);
+    }
+    const auto idx = controlPanel_.appendSpeakers (add);
+    if (! idx.empty())
+    {
+        controlPanel_.selectSpeaker (idx.front());
+        if (controlPanel_.onSelectionChanged) controlPanel_.onSelectionChanged (idx.front());
+    }
+    refreshSourcePanel();
+    commitEdit();
+    if ((int) add.size() < n)
+        juce::NativeMessageBox::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon, "Sources added short",
+            "Only " + juce::String ((int) add.size()) + " of " + juce::String (n)
+                + " sources fitted - the scene is at its cabinet limit.");
 }
 
 // Every new plane lands on the origin, as the reference tool does: 0,0 is the
@@ -3302,6 +3655,11 @@ void MainComponent::syncElevation()
                     best = &mf;
             if (best != nullptr) cov[model] = best->beamwidthDeg;
         }
+        // The Q212P's lines sit a constant angle apart at every frequency -
+        // see CoverageTables.h. The Q21S draws none, so nothing here sets a
+        // figure for it.
+        cov[3] = Coverage::kQ212PEdgeDeg;
+        elevationComp_.setCoverageDeg (cov);
         patternComp_.setCoverageDeg (std::move (cov));
     }
     syncStackedPanes();
@@ -3368,6 +3726,20 @@ void MainComponent::deletePlane (int planeIndex)
     if (ai < 0) return;
 
     auto all = patternComp_.getAnnotations();
+
+    // A plane that came from the Venue tab is a PROJECTION of a venue element,
+    // so deleting it here has to delete what produced it. Erasing only the
+    // projection would leave the element alive on the Venue tab and the next
+    // sync would put the plane straight back - the row would refuse to go.
+    const int vi = all[(size_t) ai].venueIndex;
+    if (vi >= 0 && vi < (int) venue_.size())
+    {
+        deleteVenueElement (vi);      // re-projects, which removes the plane
+        selectedPlane_ = juce::jmin (planeIndex, planeNames().size() - 1);
+        refreshSourcePanel();
+        return;
+    }
+
     willEdit();
     all.erase (all.begin() + ai);
     patternComp_.setAnnotations (std::move (all));
@@ -3384,15 +3756,85 @@ void MainComponent::deletePlane (int planeIndex)
 void MainComponent::setVenueMode (bool on)
 {
     if (venueMode_ == on) return;
+
+    // Carry the plan's view across the switch. The tabs give the plan panes
+    // of different heights and re-solve on the way, which moves both the
+    // scale and the region the view is anchored to - so a view the user had
+    // set came back somewhere else entirely. See RadiationPatternComponent's
+    // ViewState: a world point and a scale survive all of that.
+    rememberPlanView();
+
     venueMode_ = on;
     topMenu_.setActiveTab (on ? TopMenuBar::Venue : TopMenuBar::Sources);
     viewBar_.setToolsVisible (! on);
     viewBar_.setSourcesName (on ? "Elements" : "Sources");
     viewBar_.setViewName ("Top View");
-    viewBar_.btnSourcesFold_.setFolded (on && venuePanel_.isListFolded());
+    viewBar_.btnSourcesFold_.setFolded (on ? venuePanel_.isListFolded()
+                                           : sourcePanel_.isListFolded());
     refreshVenuePanel();
     resized();
+    applyPlanView();
     repaint();
+}
+
+void MainComponent::setMappingMode (bool on)
+{
+    if (mappingMode_ == on) return;
+    if (on) setVenueMode (false);
+
+    rememberPlanView();
+
+    mappingMode_ = on;
+    topMenu_.setActiveTab (on ? TopMenuBar::Mapping : TopMenuBar::Sources);
+    sourcePanel_.setMappingLayout (on);
+    viewBar_.setMicVisible (on);
+
+    // The tab is a map: SPL mapping goes on with it, and whatever was set
+    // before comes back on the way out.
+    const int want = on ? 1 : mappingPrevMenu_;
+    if (on) mappingPrevMenu_ = menuMapping_;
+    if (menuMapping_ != want)
+    {
+        menuMapping_ = want;
+        if (plotHeader_.onMappingType) plotHeader_.onMappingType (menuMapping_);
+    }
+
+    // The pane replaces the floating window while the tab is up.
+    if (frWindow_ != nullptr) frWindow_->setVisible (! on);
+    if (! on && calcPending_) scheduleRecompute();
+    syncMappingFooter();
+    refreshFrequencyResponse();
+    resized();
+    applyPlanView();
+    repaint();
+}
+
+// Only a view the user actually set is worth carrying: one they never touched
+// should go on fitting itself to whatever pane it lands in, which is what it
+// has always done and what you want the first time a tab is opened.
+//
+// Both of these check isVisible() first, which is what makes a trip through
+// the Venue tab harmless. The plan is parked, not destroyed, while Venue is
+// up - so reading a view off it, or writing one back into it, would be
+// measuring a pane nobody is looking at. Remembered on the way out, put back
+// on the way in, and left alone in between.
+void MainComponent::rememberPlanView()
+{
+    if (patternComp_.isVisible() && patternComp_.viewIsUserSet())
+        planViewKeep_ = patternComp_.captureView();
+    if (elevationComp_.isVisible() && elevationComp_.viewIsUserSet())
+        elevViewKeep_ = elevationComp_.captureView();
+}
+
+void MainComponent::applyPlanView()
+{
+    if (patternComp_.isVisible())   patternComp_.restoreView (planViewKeep_);
+    if (elevationComp_.isVisible()) elevationComp_.restoreView (elevViewKeep_);
+}
+
+void MainComponent::syncMappingFooter()
+{
+    mapFooter_.setFrequencies (controlPanel_.getFrequencyItems(), controlPanel_.getFrequencyIndex());
 }
 
 // Everything that belongs to the Sources tab but is parented to the window
@@ -3458,7 +3900,8 @@ void MainComponent::venueAction (int index, int action)
 
     refreshVenuePanel();
     syncVenueToPlanes();
-    markProjectDirty();
+    willEdit();
+    commitEdit();
 }
 
 void MainComponent::deleteVenueElement (int index)
@@ -3468,7 +3911,8 @@ void MainComponent::deleteVenueElement (int index)
     venueSel_ = juce::jmin (index, (int) venue_.size() - 1);
     refreshVenuePanel();
     syncVenueToPlanes();
-    markProjectDirty();
+    willEdit();
+    commitEdit();
 }
 
 void MainComponent::rebuildSurfaces()
@@ -3577,6 +4021,11 @@ void MainComponent::syncVenueToPlanes()
 
     patternComp_.setAnnotations (std::move (all));
     patternComp_.repaint();
+    // The Sources list names these planes, so it has to be rebuilt here too -
+    // sync has to run BOTH ways. Projecting without this left an element that
+    // was drawn on the Sources plan but had no row to right-click, so it could
+    // only ever be deleted from the Venue tab.
+    refreshSourcePanel();
     // The map is clipped to these planes, so the solve has to be redone.
     scheduleRecompute();
 }
@@ -3587,7 +4036,8 @@ void MainComponent::setVenueElement (int index, const VenueElement& e)
     venue_[(size_t) index] = e;
     refreshVenuePanel();
     syncVenueToPlanes();
-    markProjectDirty();
+    // A canvas drag: its undo step was taken by onEditStart.
+    commitEdit();
 }
 
 void MainComponent::refreshVenuePanel()
@@ -3637,7 +4087,8 @@ void MainComponent::addVenueElement (VenueElement::Type type)
     venueSel_ = (int) venue_.size() - 1;
     refreshVenuePanel();
     syncVenueToPlanes();
-    markProjectDirty();
+    willEdit();
+    commitEdit();
 }
 
 void MainComponent::refreshSourcePanel()
@@ -3647,9 +4098,13 @@ void MainComponent::refreshSourcePanel()
     const auto pn = planeNames();
     selectedPlane_ = juce::jlimit (-1, pn.size() - 1, selectedPlane_);
     sourcePanel_.setPlanes (pn, selectedPlane_);
-    const int h = sourcePanel_.getContentHeight();
-    if (h > 0 && sourcePanel_.getHeight() < h)
+    // The panel is as tall as what it shows - never shorter than the view it
+    // scrolls in, and no taller either, so removing cabinets gives the room
+    // back instead of leaving a blank tail to scroll through.
+    const int h = juce::jmax (sourcePanel_.getContentHeight(), controlViewport_.getMaximumVisibleHeight());
+    if (h > 0 && sourcePanel_.getHeight() != h)
         sourcePanel_.setSize (sourcePanel_.getWidth(), h);
+    if (mappingMode_) syncMappingFooter();
 }
 
 void MainComponent::refreshTitleLabel()
@@ -3934,6 +4389,9 @@ void MainComponent::showMicPlaceOnRingDialog()
 
 void MainComponent::ensureFrequencyResponseWindow()
 {
+    if (! kShowFloatingResponseWindow)
+        return;
+
     if (frWindow_ != nullptr)
         return;
 
@@ -3956,6 +4414,9 @@ void MainComponent::ensureFrequencyResponseWindow()
 
 void MainComponent::showFrequencyResponseWindow()
 {
+    if (! kShowFloatingResponseWindow)
+        return;
+
     if (patternComp_.getMics().empty())
         return;
 
@@ -3973,10 +4434,12 @@ void MainComponent::refreshFrequencyResponse()
     if (mics.empty())
     {
         frWindow_.reset();
+        frPlot_.setCurves ({}, {});
         return;
     }
 
-    ensureFrequencyResponseWindow();
+    if (! mappingMode_)
+        ensureFrequencyResponseWindow();
 
     if (frRefMic_ < 0 || frRefMic_ >= (int) mics.size())
         frRefMic_ = 0;
@@ -3998,31 +4461,71 @@ void MainComponent::refreshFrequencyResponse()
     // field (and therefore its speakers' rendered pattern) stays untouched.
     const int browsedModel = controlPanel_.getBrowsedModel();
 
+    // The distance each mic is compensated by: to the NEAREST enabled
+    // cabinet, not to the centre of the rig. A centroid is the average of
+    // sources that may be nowhere near each other - with a main hang and a
+    // distant delay tower it sits in empty space, and a single scalar taken
+    // from it cancels neither arrival. The nearest box is the one that
+    // dominates what the mic hears, so referencing it is what actually holds
+    // the curve still when the mic moves.
+    auto compensationDb = [&base] (const MicReceiver& m)
+    {
+        double best = -1.0;
+        for (const auto& s : base.speakers)
+        {
+            if (! s.enabled) continue;
+            const double dx = (double) m.x - s.x, dy = (double) m.y - s.y;
+            const double d  = std::sqrt (dx * dx + dy * dy);
+            if (best < 0.0 || d < best) best = d;
+        }
+        // Never below 1 m: inside that the inverse-square law is not the
+        // model anyway, and the compensation would amplify rather than remove.
+        return 20.0f * std::log10 ((float) juce::jmax (1.0, best < 0.0 ? 1.0 : best));
+    };
+
     std::vector<std::vector<float>> curves ((size_t) mics.size());
     for (size_t mi = 0; mi < mics.size(); ++mi)
     {
+        // ---- distance compensation, as ArrayCalc does it -------------------
+        //
+        // ArrayCalc labels this plot "(distance-compensated)", and that is the
+        // behaviour: the response is referenced to one metre from the rig
+        // rather than to wherever the mic happens to stand. Move a mic and its
+        // SHAPE changes - the sum, the comb, what a filter or a delay did -
+        // but the whole curve no longer slides up or down with the spreading
+        // loss, which told you nothing you could not read off a tape measure.
+        //
+        // It is also what keeps the measured data inside the app. A calibrated
+        // SPL at a known position and angle is enough to solve back for a
+        // cabinet's sensitivity and its directivity, one probe at a time. With
+        // the distance taken out and the axis read as relative dB, the plot
+        // still answers the alignment question without publishing the numbers
+        // behind it.
+        const float comp = compensationDb (mics[mi]);
+
         curves[mi].resize ((size_t) kNumSupportedFrequencies, 0.0f);
         for (int hi = 0; hi < kNumSupportedFrequencies; ++hi)
         {
             SimParams p = base;
             p.frequency = kSupportedFrequencies[hi];
             setModelFrequency (p, browsedModel, p.frequency);
-            // The REAL level at this mic, in calibrated dB SPL. This used to
-            // store intensityDb, which is relative to the map peak at each
-            // frequency - so the plot could not show what a filter, a gain or
-            // a delay actually did to the sound. absDb falls back to the
-            // relative figure when the device carries no calibration.
+            // The level at this mic. absDb is calibrated dB SPL where the
+            // device carries a sensitivity, and falls back to the relative
+            // figure where it does not. It is NOT plotted as it stands - see
+            // the compensation above and the datum below.
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
                                                    intensityDb, absDb))
-                curves[mi][(size_t) hi] = absDb;
+                curves[mi][(size_t) hi] = absDb + comp - kResponseDatumDbSpl;
             else
                 curves[mi][(size_t) hi] = -120.0f;
         }
     }
 
-    frWindow_->content.setCurves (mics, curves, frRefMic_,
-                                  patternComp_.resultHasAbsoluteSpl());
+    frPlot_.setCurves (mics, curves);
+    if (frWindow_ != nullptr)
+        frWindow_->content.setCurves (mics, curves, frRefMic_,
+                                      patternComp_.resultHasAbsoluteSpl());
 }
 
 bool MainComponent::buildMicCurve (int micIndex,
@@ -4368,6 +4871,55 @@ void MainComponent::openProjectInCurrentWindow()
         });
 }
 
+void MainComponent::applyLayout()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser> (
+        "Apply layout from a saved project",
+        project_.file != juce::File() ? project_.file.getParentDirectory()
+            : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.atmk");
+    fileChooser_->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (f != juce::File())
+                applyLayoutFile (f);
+        });
+}
+
+void MainComponent::applyLayoutFile (const juce::File& f)
+{
+    ProjectData loaded;
+    if (! ProjectData::loadFromFile (f, loaded))
+    {
+        reportStatus ("Could not read layout: " + f.getFileName(), false);
+        return;
+    }
+    if (loaded.speakers.empty())
+    {
+        reportStatus ("No sources in: " + f.getFileName(), false);
+        return;
+    }
+    if ((int) loaded.speakers.size() > ControlPanel::kMaxSpeakers)
+        loaded.speakers.resize ((size_t) ControlPanel::kMaxSpeakers);
+
+    // The layout's sources replace this scene's - every one, so nothing is
+    // doubled - with their grouping, mount, spacing, symmetry, positions and
+    // rigging as saved. The venue, mics, drawings and settings stay.
+    willEdit();
+    auto scene = currentProject();
+    scene.speakers = loaded.speakers;
+    controlPanel_.applyProject (scene);
+    patternComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+    elevationComp_.setSpeakers (controlPanel_.getSpeakers(), controlPanel_.getSelectedIndex());
+    refreshSourcePanel();
+    commitEdit();
+    refreshFrequencyResponse();
+    scheduleRecompute();
+    reportStatus ("Applied layout: " + f.getFileName(), true);
+}
+
 void MainComponent::loadProjectFile (const juce::File& f)
 {
     ProjectData loaded;
@@ -4388,6 +4940,8 @@ void MainComponent::loadProjectFile (const juce::File& f)
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);
+    patternComp_.setMapWholeArea (project_.mapWholeArea.isBool()
+                                  && (bool) project_.mapWholeArea);
     patternComp_.clearMics();
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());

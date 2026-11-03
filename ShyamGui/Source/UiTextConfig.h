@@ -77,8 +77,15 @@ namespace UiConfig
         // a 1280-wide logical window, 0.667 here, and JUCE draws that x1.5.
         constexpr float figmaWidth     = 1920.0f;
         constexpr float figmaHeight    = 1009.0f;
-        constexpr float figmaMinFactor = 0.45f;
-        inline float figFactor = 1.0f;
+        // Type is responsive within a band: it follows the window, but never
+        // drops under 85 % of the Figma size (unreadable) or climbs past 130 %
+        // (a big monitor spends its room on the plot, not on huge labels).
+        // The layout shares the 85 % floor, so rows and boxes never shrink
+        // under the text they hold; above 130 % only the layout keeps growing.
+        constexpr float figmaMinFactor   = 0.85f;
+        constexpr float figTextMaxFactor = 1.30f;
+        inline float figFactor     = 1.0f;
+        inline float figTextFactor = 1.0f;
 
         inline void updateFromWindow (int windowW, int windowH)
         {
@@ -88,6 +95,7 @@ namespace UiConfig
             const float fy = windowH / figmaHeight;
             const float f  = fx < fy ? fx : fy;
             figFactor = f < figmaMinFactor ? figmaMinFactor : (f > maxFactor ? maxFactor : f);
+            figTextFactor = figFactor > figTextMaxFactor ? figTextMaxFactor : figFactor;
         }
 
         inline int px (int v)     { return (int) ((float) v * factor + 0.5f); }
@@ -96,6 +104,8 @@ namespace UiConfig
         /** A Figma length (px in the 1920 x 1080 frame) in this window. */
         inline int   fig  (float figmaPx) { return (int) (figmaPx * figFactor + 0.5f); }
         inline float figf (float figmaPx) { return figmaPx * figFactor; }
+        /** A Figma font size in this window - figf() held to the type band. */
+        inline float figText (float figmaPx) { return figmaPx * figTextFactor; }
     }
 
     // -------------------------------------------------------------------------

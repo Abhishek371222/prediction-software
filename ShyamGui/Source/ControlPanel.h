@@ -195,11 +195,71 @@ public:
     // snapshot and triggers the re-solve, exactly like a slider drag.
     void setSpeakerTilt     (int index, float deg);
     void setSpeakerHeight   (int index, float metres);
+    /** Tilt one box of an array and turn every box below it by the same
+        amount, so the splays under it hold; a hanging array re-hangs. On
+        the top box this swings the whole array. */
+    void setArrayTilt       (int index, float deg);
+    /** Turn @p index to @p deg and every box of its array by the same
+        amount, so the array aims as one and each box keeps its offset. */
+    void setArrayRotation   (int index, float deg);
+    /** setArrayTilt without the undo step and change notice, for a drag. */
+    void tiltArrayTo        (int index, float deg);
+    /** Height of one box; a hanging array moves up or down as one piece. */
+    void setArrayHeight     (int index, float metres);
+    /** Hang the boxes of @p index's array from each other's hinges. */
+    void rehangArray        (int index);
+    /** The elevation's drag: @p index's array to plan x and @p index to
+        height z, a hanging array as one piece. Like setSpeakerPosition it
+        leaves the undo step and the change notice to the drag. */
+    void moveArrayTo        (int index, float x, float z);
     void setSpeakerModel    (int index, int model);
     /** Which array this cabinet belongs to; -1 stands alone. */
     void setSpeakerArray    (int index, int arrayId);
+
+    // --- Whole-source edits. @p index is any cabinet of the source; every
+    //     cabinet of THAT source changes and no other source is touched.
+    //     One undo step and one change notice each.
+    void setSourceModel     (int index, int model);
+    void setSourceEnabled   (int index, bool on);
+    /** Move the source so its plan centre lands on (cx, cy); the cabinets
+        keep their places relative to each other. */
+    void moveSourceTo       (int index, float cx, float cy);
+    /** The source's reference height - see sourceRef(). */
+    void setSourceZ         (int index, float metres);
+    /** Ground / Stacked / Flown, re-laying every cabinet for it. */
+    void setSourceMount     (int index, int mount, float flownHeightM);
+    /** Ground row spacing, centre to centre, re-laying the row. */
+    void setSourceSpacing   (int index, float metres);
+    void setSourceSymmetric (int index, bool on);
+    /** Re-lay the source from @p ref without an undo step or notice - the
+        caller owns both (cabinet count, which adds and removes boxes). */
+    void arrangeSourceFrom  (int index, SourceRef ref);
+    /** One box's angle from its neighbour (tilt units, positive down):
+        from the box above when flown, from the box below when stacked. The
+        boxes on the far side follow so their own splays hold; under
+        symmetry the mirrored box takes the same splay. */
+    void setCabinetSplay    (int index, float splayDeg);
+    /** One box's own heading (a sub row's Hor. Rot.); under symmetry its
+        partner mirrors it about the source's heading. */
+    void setCabinetRotation (int index, float deg);
+    /** The box mirrored with @p index when its source is symmetric, or -1. */
+    int  symmetricPartner   (int index) const;
+    /** Stamp a new cabinet's mount and row spacing - no undo, no notice. */
+    void setSpeakerMountRaw (int index, int mount, float spacingM)
+    {
+        if (index < 0 || index >= (int) speakers_.size()) return;
+        speakers_[(size_t) index].mount    = mount;
+        speakers_[(size_t) index].spacingM = spacingM;
+    }
     void setSpeakerEnabled  (int index, bool on);
     void setSpeakerPolarity (int index, bool inverted);
+    void setSpeakerGain     (int index, float dB);
+    void setSpeakerDelay    (int index, float ms);
+    void setSpeakerFilter   (int index, const SpeakerFilter& flt);
+    /** The simulation frequency, as the Frequency dropdown lists it. */
+    juce::StringArray getFrequencyItems() const;
+    int  getFrequencyIndex() const;
+    void setFrequencyIndex (int index);
     void selectSpeaker (int index);
     /** Sync plot multi-select into the panel (primary drives the editor values). */
     void setSelectedSpeakers (const std::vector<int>& indices, int primaryIndex);
@@ -217,7 +277,7 @@ public:
     /** Hard cap on Q21S units. Enforced in addSpeakerAt, which every add path
         funnels through (the + Add button, click-to-place, and the terminal's
         ADDSPEAKER), so there is no way round it. */
-    static constexpr int kMaxSpeakers = 8;
+    static constexpr int kMaxSpeakers = 96;
     bool canAddSpeaker() const noexcept { return (int) speakers_.size() < kMaxSpeakers; }
 
     /** @returns false when the cap is already reached and nothing was added. */
@@ -242,6 +302,8 @@ private:
     void applyColours();
     void rebuildSpeakerBox();
     void refreshEditors();
+    /** Points the Frequency list at the selected unit's own model. */
+    void followSelectedModel();
     void addSpeaker();
     void deleteSpeaker();
     void applyDeviceLayout (int count);   // 1/2/3 devices, same plane, 3 m apart
