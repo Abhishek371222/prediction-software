@@ -5573,14 +5573,18 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             if (! s.enabled || isSubwooferModel (s.model)) continue;
             const auto cab = cabinetFor (s.model);
             const float cx = hc[(size_t) i];
-            const juce::Point<float> c { hx (s.x + fwd[(size_t) i] * cx), vy (s.baseHeightM + 0.5f * cab.heightM) };
+            // Same centre as the rigid box drawn below.
+            const juce::Point<float> c { hx (s.x) + fwd[(size_t) i] * cx * scV,
+                                         vy (s.baseHeightM + 0.5f * cab.heightM) };
             const float th = juce::degreesToRadians (s.tiltDeg);
             const juce::Point<float> axis { std::cos (th) * cx, std::sin (th) * kV };
             const float axisLen = axis.getDistanceFromOrigin();
             // Aimed straight into the screen with no tilt: nothing to draw.
             if (axisLen < 1.0e-3f) continue;
             const auto dir = axis / axisLen;
-            const auto front = c + axis * (0.5f * cab.depthM * ppm);
+            // Out of the middle of the box's front face, as drawn.
+            const auto front = c + juce::Point<float> (std::cos (th) * cx, std::sin (th))
+                                       * (0.5f * cab.depthM * scV);
             const bool live = ! lockRays_ && i == selected_;
             g.setColour (live ? Brand::accent().withAlpha (0.95f)
                               : FigPlot::tick().withAlpha (lockRays_ ? 0.30f : 0.45f));
@@ -5611,18 +5615,23 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         // Turned in the plan, the side shows depth and width mixed by the
         // heading, and the tilt reads shallower (side-on) or mirrored (facing
         // left) - the box is what you would see from the side.
+        //
+        // Drawn RIGID, on one scale both ways (the height scale, so it still
+        // sits exactly on the height rules). It used to be drawn on the plan's
+        // scale and then stretched by the vertical zoom - zooming out, or
+        // V+/V-, squashed and sheared every box into a sliver.
         const float cx = hc[(size_t) i], sx = hs[(size_t) i];
-        const float w = (cab.depthM * std::abs (cx) + cab.widthM * std::abs (sx)) * ppm;
-        const float h = cab.heightM * ppm;
+        const float w = (cab.depthM * std::abs (cx) + cab.widthM * std::abs (sx)) * scV;
+        const float h = cab.heightM * scV;
         const float cy = vy (s.baseHeightM + 0.5f * cab.heightM);
-        const juce::Rectangle<float> box (hx (s.x + fwd[(size_t) i] * cx) - 0.5f * w, cy - 0.5f * h, w, h);
+        const juce::Rectangle<float> box (hx (s.x) + fwd[(size_t) i] * cx * scV - 0.5f * w,
+                                          cy - 0.5f * h, w, h);
         const bool sel = i == selected_;
         const float thR = juce::degreesToRadians (s.tiltDeg);
         float seenTilt = std::atan2 (std::sin (thR), std::cos (thR) * std::abs (cx));
         if (cx < 0.0f) seenTilt = -seenTilt;
         const auto xf = juce::AffineTransform::rotation (seenTilt,
-                                                         box.getCentreX(), box.getCentreY())
-                            .followedBy (juce::AffineTransform::scale (1.0f, kV, box.getCentreX(), box.getCentreY()));
+                                                         box.getCentreX(), box.getCentreY());
         {
             juce::Path hit;
             hit.addRectangle (box.expanded (2.0f));
@@ -5631,7 +5640,9 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         }
         {
             juce::Path body;
-            body.addRoundedRectangle (box, 2.0f);
+            // Corner radius shrinks with the box, so a small box stays a box
+            // instead of turning into a capsule.
+            body.addRoundedRectangle (box, juce::jmin (2.0f, 0.12f * juce::jmin (w, h)));
             body.applyTransform (xf);
             g.setColour (s.enabled ? FigPlot::cabinet() : FigPlot::cabinet().withMultipliedAlpha (0.5f));
             g.fillPath (body);
@@ -7113,7 +7124,18 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
     }
 
     // True Q21S plan footprint (750 mm W x 917 mm D). Selected = thick black boundary.
-    for (int i = 0; i < (int) speakers_.size(); ++i)
+    // Selected units are drawn LAST, so a source picked in the list comes up
+    // on top of any other standing on the same spot (a flown top over a sub
+    // stack, say) instead of hiding underneath it.
+    std::vector<int> drawOrder;
+    drawOrder.reserve (speakers_.size());
+    for (int pass = 0; pass < 2; ++pass)
+        for (int k = 0; k < (int) speakers_.size(); ++k)
+        {
+            const bool sel = (k == selected_) || isSpeakerSelected (k);
+            if (sel == (pass == 1)) drawOrder.push_back (k);
+        }
+    for (int i : drawOrder)
     {
         const auto& spk = speakers_[i];
         const auto c = worldToScreen (spk.x, spk.y);
@@ -8135,14 +8157,19 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
 {
     // True footprint hit, with a small screen pad so zoomed-out cabinets stay selectable.
     constexpr float kPadPx = 6.0f;
-    for (int i = (int) speakers_.size() - 1; i >= 0; --i)
-    {
-        auto box = speakerFootprintScreen (speakers_[(size_t) i]).expanded (kPadPx);
-        // Also accept clicks on the label band above the cabinet.
-        box.setTop (box.getY() - 16.0f);
-        if (box.contains (p))
-            return i;
-    }
+    // Topmost first, as drawn: selected units are painted last (on top), so
+    // they take the click before anything they cover.
+    for (int pass = 0; pass < 2; ++pass)
+        for (int i = (int) speakers_.size() - 1; i >= 0; --i)
+        {
+            const bool sel = (i == selected_) || isSpeakerSelected (i);
+            if (sel != (pass == 0)) continue;
+            auto box = speakerFootprintScreen (speakers_[(size_t) i]).expanded (kPadPx);
+            // Also accept clicks on the label band above the cabinet.
+            box.setTop (box.getY() - 16.0f);
+            if (box.contains (p))
+                return i;
+        }
     return -1;
 }
 

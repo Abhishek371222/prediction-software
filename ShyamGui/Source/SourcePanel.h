@@ -485,7 +485,9 @@ public:
 
             juce::PopupMenu m;
             const double now = getText().getDoubleValue();
-            for (int i = 0; i < (int) allowed_.size(); ++i)
+            // Highest at the top, lowest at the bottom - the same way up as
+            // the spinner beside it (up = more positive).
+            for (int i = (int) allowed_.size() - 1; i >= 0; --i)
                 m.addItem (i + 1, juce::String (allowed_[(size_t) i], allowedDp_)
                                       + (unit_.isEmpty() ? juce::String() : " " + unit_),
                            true, std::abs (allowed_[(size_t) i] - now) < 1.0e-6);
@@ -1708,7 +1710,8 @@ private:
             if (i < 0 || i >= picks.size()) return;
             // The bracket's table is positive up (A leans up, B down); the
             // scene's tilt is positive down.
-            onTilt (selected_, -Rigging::tiltForPick (picks.getReference (i)));
+            // The same box Ver. Aim sets, so the two always agree.
+            onTilt (aimBox(), -Rigging::tiltForPick (picks.getReference (i)));
         };
 
         // The two bumper holes still need cabinet weights before they can say
@@ -1773,6 +1776,10 @@ private:
         posVerAim_->setInlineUnit (true, true);
         posHorAim_->setWheelStep (1.0);
         posVerAim_->setWheelStep (1.0);
+        // Ver. Aim takes only the catalog angles (0, +/-3 ... +/-15), the
+        // same list as the Rigging Angles cells - a top's aim is a lever
+        // hole, not any number.
+        posVerAim_->setAllowedValues (riggingTilts());
         posHorAim_->setTooltip ("Horizontal aim of the whole source: 0 forward, +90 left "
                                 "(counter-clockwise), -90 right, 180 rear.");
         posVerAim_->setTooltip ("Vertical aim of the whole source: 0 level, +90 up, -90 down.");
@@ -1847,6 +1854,24 @@ private:
 
     /** The box that carries the selected source's Ver. Aim: the top box of
         a flown hang, the bottom box of a stack. */
+    /** The box @p i's Rigging Angles cell is measured from, in its own array:
+        the box above when flown, the box below when stacked. -1 for the
+        anchor box (the top of a hang, the bottom of a stack), whose angle is
+        the source's Ver. Aim. */
+    static int splayRef (const std::vector<Speaker>& sp, int i)
+    {
+        if (i < 0 || i >= (int) sp.size()) return -1;
+        const auto members = arrayMembers (sp, i);
+        const bool stacked = sourceMount (sp, i) == Mount::Stacked;
+        for (size_t k = 0; k < members.size(); ++k)
+            if (members[k] == i)
+            {
+                if (stacked && k + 1 < members.size()) return members[k + 1];
+                if (! stacked && k > 0)                return members[k - 1];
+            }
+        return -1;
+    }
+
     int aimBox() const
     {
         const auto members = arrayMembers (scene_, selected_);
@@ -2027,6 +2052,13 @@ private:
                     if (onRotation) onRotation (idx, (float) v);
                     return;
                 }
+                // The anchor box's angle is the source's Ver. Aim: the whole
+                // source tilts, the splays below it hold.
+                if (splayRef (scene_, idx) < 0)
+                {
+                    if (onTilt) onTilt (idx, (float) -v);
+                    return;
+                }
                 if (onSplay) onSplay (idx, (float) -v);
             };
             a->pol  = std::make_unique<SquareMark> (juce::String::charToString ((juce_wchar) 0x00d8));
@@ -2095,25 +2127,19 @@ private:
             // box above when flown, the box below when stacked (a stack is
             // built on its bottom box). Taken across the scene it measured
             // the gap between two unrelated sources.
-            const auto members = arrayMembers (sp, (int) i);
-            const bool stacked = sourceMount (sp, (int) i) == Mount::Stacked;
-            int ref = -1;
-            for (size_t k = 0; k < members.size(); ++k)
-                if (members[k] == (int) i)
-                {
-                    if (stacked && k + 1 < members.size()) ref = members[k + 1];
-                    if (! stacked && k > 0)                ref = members[k - 1];
-                }
+            const int ref = splayRef (sp, (int) i);
 
             prevTilt_[i] = ref < 0 ? 0.0f : sp[(size_t) ref].tiltDeg;
             const bool sub = isSubwooferModel (sp[i].model);
             // A sub's rotation is shown counter-clockwise positive, like
             // Hor. Aim and the plan (turned up the plan = positive). A top's
             // splay is shown positive up; the scene's tilt is positive down.
+            // The anchor box has no neighbour, so its cell IS the source's
+            // Ver. Aim - the same value, from the same catalog of angles.
             angles_[i]->angle->setValue (num (sub ? wrap180 (sp[i].rotationDeg)
-                                            : ref < 0 ? 0.0f : -(sp[i].tiltDeg - prevTilt_[i])));
-            // The anchor box has no neighbour to be angled from.
-            angles_[i]->angle->setEnabled (sub || ref >= 0);
+                                            : ref < 0 ? -sp[i].tiltDeg
+                                                      : -(sp[i].tiltDeg - prevTilt_[i])));
+            angles_[i]->angle->setEnabled (true);
         }
 
         const bool has = selected_ >= 0 && (size_t) selected_ < sp.size();
@@ -2124,7 +2150,8 @@ private:
         singlePick_->setEnabled (flown);
         if (has)
         {
-            const float tilt  = -sp[(size_t) selected_].tiltDeg;   // table: positive up
+            // The aim box's tilt - the one Ver. Aim shows.
+            const float tilt  = -sp[(size_t) aimBox()].tiltDeg;   // table: positive up
             const auto  picks = Rigging::allPicks();
             const auto  want  = Rigging::pickForTilt (tilt);
             for (int i = 0; i < picks.size(); ++i)

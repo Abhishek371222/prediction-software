@@ -122,4 +122,97 @@ namespace AcousticAnalysis
         for (float v : field) if ((double) v >= mx - windowDb) ++inside;
         return 100.0 * (double) inside / (double) field.size();
     }
+
+    // Level statistics read straight off a solved field, for the report.
+    //
+    // The region evaluated is the audience: every cell inside a drawn
+    // listening surface. With none drawn, it is the whole field except the
+    // cells within nearExclM of a cabinet - the loudest point of any map is
+    // the cabinet itself, so "within 6 dB of the peak" measured over the raw
+    // grid is only ever the few cells touching the box, which is why it read
+    // 0.0 %. Levels are absolute dB SPL when every unit is calibrated, else
+    // relative dB.
+    struct FieldStats
+    {
+        bool   valid    = false;
+        bool   absolute = false;   // dB SPL (true) or relative dB (false)
+        bool   audience = false;   // region = listening surfaces
+        double areaM2 = 0.0;
+        double maxDb = 0.0, minDb = 0.0, avgDb = 0.0, stdDb = 0.0;
+        double cov3 = 0.0, cov6 = 0.0;   // % of the region within 3 / 6 dB of its max
+    };
+
+    inline FieldStats fieldStats (const SimResult& r, const SimParams& p, double nearExclM = 2.0)
+    {
+        FieldStats s;
+        const int W = r.width, H = r.height;
+        const size_t n = (size_t) W * (size_t) H;
+        if (W < 2 || H < 2) return s;
+
+        s.absolute = r.hasAbsoluteSpl && r.splAbsDB.size() == n;
+        const auto& f = s.absolute ? r.splAbsDB : r.splRelDB;
+        if (f.size() != n) return s;
+
+        const double dx = r.worldW / (W - 1);
+        const double dy = r.worldH / (H - 1);
+
+        std::vector<juce::Point<double>> src;
+        for (const auto& sp : p.speakers)
+            if (sp.enabled) src.push_back ({ (double) sp.x, (double) sp.y });
+
+        auto collect = [&] (bool audienceOnly, std::vector<float>& vals)
+        {
+            vals.clear();
+            for (int row = 0; row < H; ++row)
+            {
+                const double Y = r.worldY0 + row * dy;
+                for (int col = 0; col < W; ++col)
+                {
+                    const double X = r.worldX0 + col * dx;
+                    if (audienceOnly)
+                    {
+                        double z = 0.0;
+                        if (! listeningEarZ (p.surfaces, X, Y, z)) continue;
+                    }
+                    else
+                    {
+                        bool nearSrc = false;
+                        for (const auto& c : src)
+                            if ((X - c.x) * (X - c.x) + (Y - c.y) * (Y - c.y) < nearExclM * nearExclM)
+                            { nearSrc = true; break; }
+                        if (nearSrc) continue;
+                    }
+                    const float v = f[(size_t) row * W + col];
+                    if (std::isfinite (v)) vals.push_back (v);
+                }
+            }
+        };
+
+        std::vector<float> vals;
+        if (! p.surfaces.empty()) { collect (true, vals); s.audience = ! vals.empty(); }
+        if (vals.empty()) collect (false, vals);
+        if (vals.empty()) return s;
+
+        double mx = -1.0e300, mn = 1.0e300, sum = 0.0;
+        for (float v : vals) { mx = juce::jmax (mx, (double) v); mn = juce::jmin (mn, (double) v); sum += v; }
+        const double avg = sum / (double) vals.size();
+        double var = 0.0;
+        size_t in3 = 0, in6 = 0;
+        for (float v : vals)
+        {
+            var += ((double) v - avg) * ((double) v - avg);
+            if ((double) v >= mx - 3.0) ++in3;
+            if ((double) v >= mx - 6.0) ++in6;
+        }
+
+        s.valid  = true;
+        s.areaM2 = (double) vals.size() * dx * dy;
+        s.maxDb  = mx;
+        s.minDb  = mn;
+        s.avgDb  = avg;
+        s.stdDb  = std::sqrt (var / (double) vals.size());
+        s.cov3   = 100.0 * (double) in3 / (double) vals.size();
+        s.cov6   = 100.0 * (double) in6 / (double) vals.size();
+        return s;
+    }
 }

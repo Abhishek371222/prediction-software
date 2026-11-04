@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "AcousticEngine.h"
+#include "AcousticAnalysis.h"
 #include "ControlPanel.h"
 #include "RadiationPatternComponent.h"
 #include "InfoPanel.h"
@@ -63,8 +64,14 @@ private:
     ProjectData currentProject() const;   // metadata + live scene
     void exportPdfReport();
     void buildAndWriteReport (const juce::File& f);
+    enum class ImageView { Top, Elevation, FullScreen };
+    // Export > Save Image: the plan, the side elevation, or the whole window,
+    // at 2x, saved as PNG or JPEG.
+    void saveViewImage (ImageView which);
+
     juce::Image renderHeatmapImage (double freq, const SimParams& base, double& coverageOut,
-                                    double* peakAbsOut = nullptr, bool* hasAbsOut = nullptr);
+                                    double* peakAbsOut = nullptr, bool* hasAbsOut = nullptr,
+                                    AcousticAnalysis::FieldStats* statsOut = nullptr);
 
     void scheduleRecompute();
     void runSimulation();

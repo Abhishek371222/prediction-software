@@ -466,6 +466,11 @@ MainComponent::MainComponent (ProjectData project)
         };
         elevationComp_.onElevationTilted = [this] (int i, float deg)
         {
+            // A top's aim is a lever hole: only the catalog angles, 0 and
+            // +/-3 ... +/-15, the same list the panel offers.
+            const auto& sp = controlPanel_.getSpeakers();
+            if (i >= 0 && i < (int) sp.size() && ! isSubwooferModel (sp[(size_t) i].model))
+                deg = juce::jlimit (-15.0f, 15.0f, 3.0f * std::round (deg / 3.0f));
             controlPanel_.tiltArrayTo (i, deg);
             refreshSourcePanel();
             syncRenderer();
@@ -2538,7 +2543,12 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             return;
 
         case TopMenuBar::Export:
-            m.addItem (501, "Export...");
+            m.addItem (501, "Export PDF Report...");
+            m.addSeparator();
+            m.addSectionHeader ("Save Image");
+            m.addItem (502, "Top View...");
+            m.addItem (503, "Side Elevation View...");
+            m.addItem (504, "Full Screen...");
             break;
 
         case TopMenuBar::Settings:
@@ -2559,6 +2569,9 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             case 104: fire (plotHeader_.onFileSaveAs); break;
             case 105: applyLayout();                   break;
             case 501: fire (plotHeader_.onFileExport); break;
+            case 502: saveViewImage (ImageView::Top);       break;
+            case 503: saveViewImage (ImageView::Elevation); break;
+            case 504: saveViewImage (ImageView::FullScreen); break;
 
             case 201: patternComp_.setTool (RadiationPatternComponent::Tool::Select); break;
             case 202: patternComp_.setTool (RadiationPatternComponent::Tool::Pan);    break;
@@ -5050,6 +5063,69 @@ void MainComponent::exportPNG()
         });
 }
 
+void MainComponent::saveViewImage (ImageView which)
+{
+    // Take the picture NOW, before the file dialog opens over the window -
+    // a full-screen shot taken afterwards would catch the dialog's shadow.
+    juce::Component* src = nullptr;
+    juce::String what, stem;
+    switch (which)
+    {
+        case ImageView::Top:        src = &patternComp_;   what = "Top view";       stem = "TopView";       break;
+        case ImageView::Elevation:  src = &elevationComp_; what = "Side elevation"; stem = "SideElevation"; break;
+        case ImageView::FullScreen: src = getTopLevelComponent(); what = "Full screen"; stem = "FullScreen"; break;
+    }
+    if (src == nullptr) src = this;
+
+    if (! src->isShowing() || src->getWidth() < 10 || src->getHeight() < 10)
+    {
+        reportStatus (what + " is not on screen - open the Sources tab to show it, then save again.", false);
+        return;
+    }
+
+    // 2x, so it stays sharp in a document or on a projector.
+    auto shot = std::make_shared<juce::Image> (
+        src->createComponentSnapshot (src->getLocalBounds(), true, 2.0f));
+
+    const juce::String proj = project_.meta.projectName.isNotEmpty() ? project_.meta.projectName
+                                                                    : juce::String ("AtomikIntegral");
+    const auto suggested = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+        .getChildFile (juce::File::createLegalFileName (proj + "_" + stem + "_"
+                          + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".png"));
+
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Save " + what + " image", suggested,
+                                                        "*.png;*.jpg;*.jpeg");
+    fileChooser_->launchAsync (
+        juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+            | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, shot, what] (const juce::FileChooser& fc)
+        {
+            auto f = fc.getResult();
+            if (f == juce::File{}) return;
+            const auto ext = f.getFileExtension().toLowerCase();
+            const bool jpeg = (ext == ".jpg" || ext == ".jpeg");
+            if (! jpeg) f = f.withFileExtension ("png");
+
+            f.deleteFile();   // FileOutputStream appends to an existing file
+            juce::FileOutputStream fos (f);
+            if (! fos.openedOk()) { reportStatus ("Could not write " + f.getFileName(), false); return; }
+
+            bool ok;
+            if (jpeg)
+            {
+                juce::JPEGImageFormat fmt; fmt.setQuality (0.95f);
+                ok = fmt.writeImageToStream (shot->convertedToFormat (juce::Image::RGB), fos);
+            }
+            else
+            {
+                juce::PNGImageFormat fmt;
+                ok = fmt.writeImageToStream (*shot, fos);
+            }
+            reportStatus (ok ? what + " saved: " + f.getFileName()
+                             : "Could not write " + f.getFileName(), ok);
+        });
+}
+
 void MainComponent::syncMicSelectionToPanel()
 {
     const int idx = patternComp_.getSelectedMic();
@@ -5144,28 +5220,59 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
     in.params = base;
+    // Solve the scene as it is NOW, not the last on-screen run - which may be
+    // from before an edit, or absent if Mapping was never opened.
+    in.result = AcousticEngine::compute (base);
 
     in.room = {};
     in.room.w = base.worldW;
     in.room.d = base.worldH;
 
-    // SPL heatmaps at every measured frequency (and current selection).
+    // SPL plots at the measured frequencies of the models actually in the
+    // scene (not whichever device the measurement browser last showed).
     std::vector<int> reportHz;
-    for (const auto& mf : measured_.freqs)
-        if (mf.ok) reportHz.push_back (mf.hz);
-    const int curHz = (int) (base.frequency + 0.5);
-    if (std::find (reportHz.begin(), reportHz.end(), curHz) == reportHz.end())
-        reportHz.push_back (curHz);
+    {
+        bool has[4] = { false, false, false, false };
+        for (const auto& s : base.speakers)
+            if (s.enabled && s.model >= 0 && s.model < 4) has[s.model] = true;
+        auto addTable = [&] (const std::vector<DirectivityPattern>& t)
+        {
+            for (const auto& d : t) if (d.ok && d.hz > 0) reportHz.push_back (d.hz);
+        };
+        if (has[0]) addTable (base.directivity);
+        if (has[2]) addTable (base.directivityBEM2inch);
+        if (has[3]) addTable (base.directivityQ212P);
+        if (reportHz.empty())
+            for (const auto& mf : measured_.freqs)
+                if (mf.ok) reportHz.push_back (mf.hz);
+    }
     std::sort (reportHz.begin(), reportHz.end());
+    // One page per distinct frequency: values within 3 % of each other are
+    // the same reading (two models' catalogues, or the scene's own pick).
+    {
+        std::vector<int> dedup;
+        for (int hz : reportHz)
+            if (dedup.empty() || hz > dedup.back() * 1.03) dedup.push_back (hz);
+        reportHz.swap (dedup);
+    }
+    const int curHz = (int) (base.frequency + 0.5);
+    {
+        bool near = false;
+        for (int hz : reportHz) if (std::abs (hz - curHz) <= 0.03 * curHz) near = true;
+        if (! near && curHz > 0) { reportHz.push_back (curHz); std::sort (reportHz.begin(), reportHz.end()); }
+    }
 
     for (int hz : reportHz)
     {
         ReportBuilder::HeatmapEntry e;
         e.image = renderHeatmapImage ((double) hz, base, e.coveragePct,
-                                      &e.peakAbsDb, &e.hasAbsoluteSpl);
+                                      &e.peakAbsDb, &e.hasAbsoluteSpl, &e.stats);
         e.hz = hz;
         in.heatmaps.push_back (std::move (e));
     }
+
+    // The results page reads the field at the scene's own frequency.
+    in.current = AcousticAnalysis::fieldStats (in.result, base);
 
     PdfDocument pdf;
     ReportBuilder::build (pdf, in);
@@ -5260,30 +5367,61 @@ void MainComponent::applyLayoutSettings()
 }
 
 juce::Image MainComponent::renderHeatmapImage (double freq, const SimParams& base, double& coverageOut,
-                                               double* peakAbsOut, bool* hasAbsOut)
+                                               double* peakAbsOut, bool* hasAbsOut,
+                                               AcousticAnalysis::FieldStats* statsOut)
 {
     SimParams p = base;
     p.frequency = freq;
-    // freq is drawn from measured_.freqs, i.e. measSource_'s own catalogue -
-    // update only that model's resolved frequency so the other model's
-    // speakers keep rendering at their own unrelated frequency.
-    setModelFrequency (p, measSource_, freq);
+    // A report page is ONE frequency for the whole scene: every model is
+    // solved at it, so the page's title is what every cabinet on it is
+    // actually doing. (Setting only measSource_'s model left a Q212P scene
+    // drawn at its own on-screen frequency on every page.) Each model still
+    // picks its own nearest measured pattern and its own crossover.
+    setModelFrequency (p, MeasurementData::Q212P, freq);
+    setModelFrequency (p, MeasurementData::BEM2in, freq);
+    setModelFrequency (p, 0 /* Q21S */, freq);
     p.viewMode  = ViewMode::SPL;
 
     SimResult r = AcousticEngine::compute (p);
-    coverageOut = AcousticAnalysis::coverageWithin (r, 6.0);
+    const auto st = AcousticAnalysis::fieldStats (r, p);
+    coverageOut = st.valid ? st.cov6 : AcousticAnalysis::coverageWithin (r, 6.0);
+    if (statsOut   != nullptr) *statsOut   = st;
     if (peakAbsOut != nullptr) *peakAbsOut = r.peakAbsDb;
     if (hasAbsOut  != nullptr) *hasAbsOut  = r.hasAbsoluteSpl;
 
+    // The page shows what the Mapping tab shows: the same framed sheet, the
+    // SPL map switched ON (an off-screen plot starts with it off, which is why
+    // the report's plots came out as a bare grid), the venue and drawings,
+    // and the plan's own size, zoom and centre - so the frame, its distance
+    // labels and the colour bar line up exactly as they do on screen.
     RadiationPatternComponent comp;
-    comp.setBounds (0, 0, 980, 760);
+    comp.setFigmaFrame (patternComp_.figmaFrame());
+    comp.setShowField (true);
+
+    // The canvas is shaped for the page's plot slot (about 5:4), not copied
+    // from the on-screen pane: the pane is a wide strip, and fitted into a
+    // portrait page it left two thirds of every plot page blank. The view
+    // keeps the screen's centre and its left-to-right span, so the throw
+    // reads the same; the taller canvas simply shows more of the spread.
+    const int w = 1100;
+    const int h = juce::roundToInt (w * 0.80);
+    comp.setBounds (0, 0, w, h);
     comp.setMeasuredData (measured_);
+    comp.setAnnotations (patternComp_.getAnnotations());
+    comp.setVenueShapes (patternComp_.venueShapes());
     comp.updateData (r, p);
     comp.setSpeakers (p.speakers, -1);
     comp.resetView();
+    auto view = patternComp_.captureView();
+    if (view.valid && patternComp_.getWidth() > 100)
+        view.pxPerM *= (float) w / (float) patternComp_.getWidth();
+    comp.restoreView (view);
 
-    juce::Image img (juce::Image::RGB, comp.getWidth(), comp.getHeight(), true);
+    // Drawn at 2x so text, rules and cabinets stay sharp in the PDF.
+    constexpr int kScale = 2;
+    juce::Image img (juce::Image::RGB, w * kScale, h * kScale, true);
     juce::Graphics g (img);
+    g.addTransform (juce::AffineTransform::scale ((float) kScale));
     comp.paint (g);
     return img;
 }

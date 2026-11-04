@@ -551,6 +551,8 @@ public:
         juce::String name;
     };
     void setVenueShapes (std::vector<VenueShape> s) { venueShapes_ = std::move (s); repaint(); }
+    const std::vector<VenueShape>& venueShapes() const noexcept { return venueShapes_; }
+    bool figmaFrame() const noexcept { return figmaFrame_; }
 
     /** Every closed listening plane drawn by hand on the plan, as surfaces
         for the solver: on the deck, at the posture's ear height. Venue

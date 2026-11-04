@@ -411,9 +411,16 @@ inline std::vector<HangPose> arrayHang (const std::vector<Speaker>& sp, const st
         const auto& a = sp[(size_t) members[k - 1]];
         const auto& b = sp[(size_t) members[k]];
         const auto ca = cabinetFor (a.model), cb = cabinetFor (b.model);
+        // The two boxes meet on the edge they stay touching on as they splay.
+        // Square boxes hinged at the front would swing the lower box's rear
+        // UP into the one above when it is tilted further down - the boxes
+        // overlapped. So a box turned further down than the one above hangs
+        // from the REAR edge (the gap opens at the front, nothing collides),
+        // and one turned less far down - splayed up - from the FRONT edge.
+        const float side = (b.tiltDeg >= a.tiltDeg) ? -1.0f : 1.0f;   // -1 rear, +1 front
         float pu, pz, qu, qz;
-        turn (a.tiltDeg, 0.5f * ca.depthM, -0.5f * ca.heightM, pu, pz);   // a's front-bottom
-        turn (b.tiltDeg, 0.5f * cb.depthM,  0.5f * cb.heightM, qu, qz);   // b's front-top
+        turn (a.tiltDeg, side * 0.5f * ca.depthM, -0.5f * ca.heightM, pu, pz);   // a's bottom edge
+        turn (b.tiltDeg, side * 0.5f * cb.depthM,  0.5f * cb.heightM, qu, qz);   // b's top edge
         cu += pu - qu;
         cz += pz - qz;
         out.push_back ({ cu, cz });

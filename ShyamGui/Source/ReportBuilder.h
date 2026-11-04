@@ -23,6 +23,7 @@ namespace ReportBuilder
         double coveragePct = 0.0;
         double peakAbsDb = 0.0;
         bool   hasAbsoluteSpl = false;
+        AcousticAnalysis::FieldStats stats;   // read off this page's own solve
     };
 
     struct ReportInputs
@@ -36,6 +37,7 @@ namespace ReportBuilder
         std::vector<double> frFreq, frDb;
 
         std::vector<HeatmapEntry> heatmaps;
+        AcousticAnalysis::FieldStats current;   // the scene at its own frequency
         juce::Image frGraph, rt60Graph, absGraph, tlGraph;
     };
 
@@ -59,6 +61,26 @@ namespace ReportBuilder
         inline const juce::Colour panel  { 0xfff5f6f8 };
 
         inline juce::String S (const juce::String& s) { return s.isEmpty() ? juce::String ("-") : s; }
+
+        // Fixed decimals with no "-0.0": a value that rounds to zero is zero.
+        inline juce::String num (double v, int dp)
+        {
+            const double q = std::pow (10.0, dp);
+            if (std::abs (v) * q < 0.5) v = 0.0;
+            return juce::String (v, dp);
+        }
+
+        inline juce::String level (const AcousticAnalysis::FieldStats& s, double v)
+        {
+            return num (v, 1) + (s.absolute ? " dB SPL" : " dB (rel.)");
+        }
+
+        inline juce::String regionText (const AcousticAnalysis::FieldStats& s)
+        {
+            if (! s.valid) return "-";
+            return juce::String (s.audience ? "Audience areas, " : "Field beyond 2 m of cabinets, ")
+                 + num (s.areaM2, 0) + " sq m";
+        }
     }
 
     inline void build (PdfDocument& pdf, const ReportInputs& in)
@@ -196,33 +218,47 @@ namespace ReportBuilder
             double ty = juce::jmax (y + 5 * rh, yy) + 16;
             ty = sectionTitle (ty, "2.1  Speaker Placement");
 
-            // Speaker table
-            const double c[] = { M, M + 60, M + 170, M + 280, M + 360, M + 440 };
+            // Speaker table - every value the Sources panel holds for a box:
+            // where it is (incl. height), where it points, how it is mounted.
+            //                   Unit X   Y   Z   H.Aim V.Aim Mount Gain Delay State
+            const double cwid[] = { 62, 42, 42, 42, 46,   44,   54,   40,  48 };
+            double c[10]; c[0] = M;
+            for (int k = 0; k < 9; ++k) c[k + 1] = c[k] + cwid[k];
             pdf.fillRect (M, ty, cw, 20, panel);
-            const char* hdr[] = { "Unit", "X (" , "Y (", "Gain", "Delay", "State" };
-            pdf.text (c[0] + 6, ty + 5, 9.5, "UNIT", sub, true);
-            pdf.text (c[1] + 6, ty + 5, 9.5, "X (" + len + ")", sub, true);
-            pdf.text (c[2] + 6, ty + 5, 9.5, "Y (" + len + ")", sub, true);
-            pdf.text (c[3] + 6, ty + 5, 9.5, "GAIN", sub, true);
-            pdf.text (c[4] + 6, ty + 5, 9.5, "DELAY", sub, true);
-            pdf.text (c[5] + 6, ty + 5, 9.5, "STATE", sub, true);
-            juce::ignoreUnused (hdr);
+            const juce::String hdr[] = { "UNIT", "X (" + len + ")", "Y (" + len + ")", "Z (" + len + ")",
+                                         "H. AIM", "V. AIM", "MOUNT", "GAIN", "DELAY", "STATE" };
+            for (int k = 0; k < 10; ++k) pdf.text (c[k] + 4, ty + 6, 8, hdr[k], sub, true);
             ty += 22;
-            int idx = 1;
-            for (const auto& s : in.params.speakers)
+            const auto& sp = in.params.speakers;
+            for (int i = 0; i < (int) sp.size(); ++i)
             {
+                const auto& s = sp[(size_t) i];
+                double head = s.rotationDeg;   // as the Sources panel's Horizontal Aim shows it
+                while (head > 180.0)   head -= 360.0;
+                while (head <= -180.0) head += 360.0;
+                const int mount = sourceMount (sp, i);
+                const char* mountName = mount == Mount::Flown ? "Flown"
+                                      : mount == Mount::Stacked ? "Stacked" : "Ground";
+
                 pdf.line (M, ty + 18, W - M, ty + 18, lineCol, 0.6);
-                pdf.text (c[0] + 6, ty + 4, 10,
-                          juce::String (speakerModelTag (s.model)) + "-"
-                              + juce::String (speakerModelOrdinal (in.params.speakers, idx - 1)), ink);
-                pdf.text (c[1] + 6, ty + 4, 10, juce::String (Units::metresToDisplay (s.x), 1), ink);
-                pdf.text (c[2] + 6, ty + 4, 10, juce::String (Units::metresToDisplay (s.y), 1), ink);
-                pdf.text (c[3] + 6, ty + 4, 10, juce::String (s.gainDB, 0) + " dB", ink);
-                pdf.text (c[4] + 6, ty + 4, 10, juce::String (s.delayMs, 1) + " ms", ink);
-                pdf.text (c[5] + 6, ty + 4, 10, s.enabled ? "Enabled" : "Off", ink);
-                ty += 22; ++idx;
-                if (ty > H - 80) break;
+                const juce::String cells[] = {
+                    juce::String (speakerModelTag (s.model)) + "-" + juce::String (speakerModelOrdinal (sp, i)),
+                    num (Units::metresToDisplay (s.x), 1),
+                    num (Units::metresToDisplay (s.y), 1),
+                    num (Units::metresToDisplay (s.baseHeightM), 2),
+                    num (head, 0) + juce::String (" deg"),
+                    num (-s.tiltDeg, 0) + juce::String (" deg"),
+                    mountName,
+                    num (s.gainDB, 0) + " dB",
+                    num (s.delayMs, 1) + " ms",
+                    s.enabled ? "Enabled" : "Off" };
+                for (int k = 0; k < 10; ++k) pdf.text (c[k] + 4, ty + 4, 9, cells[k], ink);
+                ty += 22;
+                if (ty > H - 110) break;
             }
+            pdf.text (M, ty + 8, 8.5,
+                      "Z = underside of the cabinet above the floor.  H. Aim: counter-clockwise from +X.  "
+                      "V. Aim: positive = up.", sub);
         }
         chrome ("Input Parameters");
 
@@ -232,72 +268,99 @@ namespace ReportBuilder
         pdf.newPage();
         y = sectionTitle (56, "3.  Simulation Results");
         {
-            const double cov6  = AcousticAnalysis::coverageWithin (in.result, 6.0);
-            const double cov3  = AcousticAnalysis::coverageWithin (in.result, 3.0);
+            const auto& st = in.current;
             int nDev = 0; for (auto& s : in.params.speakers) if (s.enabled) ++nDev;
+            auto pct = [] (const AcousticAnalysis::FieldStats& s, double v)
+            { return s.valid ? num (v, 1) + " %" : juce::String ("-"); };
+            auto lvl = [] (const AcousticAnalysis::FieldStats& s, double v)
+            { return s.valid ? level (s, v) : juce::String ("-"); };
 
             const double colW = (cw - 30) / 2.0;
             const double x1 = M + colW + 30;
-            const double rh = 48;
+            const double rh = 46;
             double yy = y;
             kv (M, yy, colW, "Active Devices",      juce::String (nDev)); yy += rh;
-            kv (M, yy, colW, "Frequency (current)", juce::String ((int) in.params.frequency) + " Hz"); yy += rh;
-            kv (M, yy, colW, "Wavelength",          juce::String (Units::metresToDisplay (in.result.lambda), 2) + " " + len); yy += rh;
-            kv (M, yy, colW, "Coverage within 3 dB", juce::String (cov3, 1) + " %"); yy += rh;
+            kv (M, yy, colW, "Frequency (current)", juce::String ((int) (in.params.frequency + 0.5)) + " Hz"); yy += rh;
+            kv (M, yy, colW, "Wavelength",          num (Units::metresToDisplay (in.result.lambda), 2) + " " + len); yy += rh;
+            kv (M, yy, colW, "Evaluated region",    regionText (st)); yy += rh;
+            kv (M, yy, colW, "Coverage within 3 dB", pct (st, st.cov3)); yy += rh;
+            kv (M, yy, colW, "Coverage within 6 dB", pct (st, st.cov6)); yy += rh;
 
             yy = y;
-            kv (x1, yy, colW, "Coverage within 6 dB", juce::String (cov6, 1) + " %"); yy += rh;
-            // Peak SPL omitted: only meaningful when every active unit's model
-            // is absolutely calibrated, which the 2" horn's unit-drive BEM run
-            // is not. Reported as a relative scale instead, matching the image
-            // export and the gradient legend.
-            kv (x1, yy, colW, "Scale (Rel. SPL)",
-                "0 to " + juce::String ((int) in.params.dBfloor) + " dB"); yy += rh;
-            kv (x1, yy, colW, "Directivity model",    in.result.usedMeasuredDirectivity ? "Measured" : "Model"); yy += rh;
-            kv (x1, yy, colW, "Display dynamic range", juce::String ((int) -in.params.dBfloor) + " dB"); yy += rh;
-            kv (x1, yy, colW, "Directivity Plot frequencies",  juce::String ((int) in.heatmaps.size())); yy += rh;
+            kv (x1, yy, colW, "Maximum level",   lvl (st, st.maxDb)); yy += rh;
+            kv (x1, yy, colW, "Average level",   lvl (st, st.avgDb)); yy += rh;
+            kv (x1, yy, colW, "Minimum level",   lvl (st, st.minDb)); yy += rh;
+            kv (x1, yy, colW, "Std. deviation",  st.valid ? num (st.stdDb, 1) + " dB" : juce::String ("-")); yy += rh;
+            kv (x1, yy, colW, "Directivity model", in.result.usedMeasuredDirectivity ? "Measured" : "Model"); yy += rh;
+            kv (x1, yy, colW, "Directivity Plot frequencies", juce::String ((int) in.heatmaps.size())); yy += rh;
 
             double ny = y + 6 * rh + 10;
             ny = sectionTitle (ny, "3.1  Overview");
             pdf.textWrapped (M, ny, cw, 12.0,
-                "The table above summarises predicted SPL coverage for the current array. "
-                "Levels are relative to the gradient plot's Rel. SPL = 0 dB cell (the "
-                "loudest point on the map). Coverage is the share of the field within "
-                "3 dB / 6 dB of that point, using the selected measurement distance and "
-                "frequency-dependent directivity.", sub, false);
+                juce::String ("Values are solved for the scene as exported, at the current frequency. ")
+                + (st.absolute ? "Levels are absolute dB SPL from each cabinet's measured calibration. "
+                               : "Levels are relative dB (not every unit is calibrated for absolute SPL). ")
+                + (st.audience ? "Statistics cover the drawn audience areas only, at seated ear height. "
+                               : "No audience area is drawn, so statistics cover the whole field except the "
+                                 "2 m around each cabinet, where the level is dominated by the box itself. ")
+                + "Coverage is the share of that region within 3 dB / 6 dB of its loudest point; "
+                  "the standard deviation is the spread of level across it (lower = more even).",
+                sub, false);
         }
         chrome ("Simulation Results");
 
         // =================================================================
         // 4) SPL HEATMAPS (one page per frequency)
         // =================================================================
+        int plotNo = 0;
         for (const auto& hmEntry : in.heatmaps)
         {
+            ++plotNo;
+            const auto& st = hmEntry.stats;
             pdf.newPage();
-            double hy = sectionTitle (56, "4.  Directivity Plot - " + juce::String (hmEntry.hz) + " Hz");
-            fitImage (hmEntry.image, M, hy, cw, H - hy - 110);
-            const double capY = H - 96;
-            pdf.fillRect (M, capY, cw, 44, panel);
-            pdf.text (M + 14, capY + 8,  11, "FREQUENCY", sub, true);
-            pdf.text (M + 14, capY + 22, 14, juce::String (hmEntry.hz) + " Hz", ink);
-            pdf.text (M + 160, capY + 8,  11, "COVERAGE (within 6 dB)", sub, true);
-            pdf.text (M + 160, capY + 22, 14, juce::String (hmEntry.coveragePct, 1) + " %", ink);
-            if (hmEntry.hasAbsoluteSpl)
+            double hy = sectionTitle (56, "4." + juce::String (plotNo) + "  Directivity Plot - "
+                                          + juce::String (hmEntry.hz) + " Hz");
+
+            // The plot fills the text width; the canvas is drawn 5:4 to match.
+            const double imgH = cw * 0.80;
+            fitImage (hmEntry.image, M, hy, cw, imgH);
+            double yy = hy + imgH + 14;
+
+            // Headline numbers, directly under the plot, five even columns.
+            const double bandH = 50;
+            pdf.fillRect (M, yy, cw, bandH, Brand::charcoal());
+            pdf.fillRect (M, yy, 4, bandH, Brand::accent());
+            const double colW5 = (cw - 8) / 5.0;
+            const juce::Colour capK (0xff9aa0a8), capV (0xffffffff);
+            auto cell = [&] (int k, const juce::String& key, const juce::String& val)
             {
-                pdf.text (M + 360, capY + 8,  11, "PEAK (gradient 0 dB)", sub, true);
-                pdf.text (M + 360, capY + 22, 14, juce::String (hmEntry.peakAbsDb, 1) + " dB SPL", ink);
-                pdf.text (M + 520, capY + 8,  11, "SCALE", sub, true);
-                pdf.text (M + 520, capY + 22, 14,
-                          juce::String (hmEntry.peakAbsDb, 1) + " to "
-                          + juce::String (hmEntry.peakAbsDb + in.params.dBfloor, 1) + " dB", ink);
-            }
-            else
-            {
-                pdf.text (M + 360, capY + 8,  11, "PEAK", sub, true);
-                pdf.text (M + 360, capY + 22, 14, "0 dB (rel.)", ink);
-                pdf.text (M + 480, capY + 8,  11, "SCALE", sub, true);
-                pdf.text (M + 480, capY + 22, 14, "0 to " + juce::String ((int) in.params.dBfloor) + " dB", ink);
-            }
+                const double x = M + 12 + k * colW5;
+                pdf.text (x, yy + 10, 7.5, key, capK, true);
+                pdf.text (x, yy + 26, 12, val, capV, false);
+            };
+            const juce::String u = st.absolute ? " dB SPL" : " dB";
+            cell (0, "FREQUENCY", juce::String (hmEntry.hz) + " Hz");
+            cell (1, "MAX LEVEL",   st.valid ? num (st.maxDb, 1) + u : juce::String ("-"));
+            cell (2, "AVERAGE",     st.valid ? num (st.avgDb, 1) + u : juce::String ("-"));
+            cell (3, "WITHIN 6 dB", st.valid ? num (st.cov6, 1) + " %" : juce::String ("-"));
+            cell (4, "WITHIN 3 dB", st.valid ? num (st.cov3, 1) + " %" : juce::String ("-"));
+            yy += bandH + 20;
+
+            // The rest of what this solve says, in three columns.
+            const double colW3 = cw / 3.0;
+            const double rh = 40;
+            kv (M,             yy, colW3, "Evaluated region", regionText (st));
+            yy += rh;
+            kv (M,             yy, colW3, "Minimum level",  st.valid ? level (st, st.minDb) : juce::String ("-"));
+            kv (M + colW3,     yy, colW3, "Std. deviation", st.valid ? num (st.stdDb, 1) + " dB" : juce::String ("-"));
+            kv (M + 2 * colW3, yy, colW3, "Wavelength",
+                num (Units::metresToDisplay (343.0 / juce::jmax (1, hmEntry.hz)), 2) + " " + len);
+            yy += rh;
+            kv (M,             yy, colW3, "Map scale",
+                "0 to " + juce::String ((int) in.params.dBfloor) + " dB (rel.)");
+            kv (M + colW3,     yy, colW3, "Peak on map",
+                hmEntry.hasAbsoluteSpl ? num (hmEntry.peakAbsDb, 1) + " dB SPL" : juce::String ("0 dB (rel.)"));
+            kv (M + 2 * colW3, yy, colW3, "Level type", st.absolute ? "Absolute (calibrated)" : "Relative");
             chrome ("Directivity Plot");
         }
 
@@ -307,26 +370,46 @@ namespace ReportBuilder
         pdf.newPage();
         y = sectionTitle (56, "5.  Summary & Recommendations");
         {
-            const double cov6 = AcousticAnalysis::coverageWithin (in.result, 6.0);
-            int weakHz = 0; double weakCov = 1e9;
-            for (const auto& h : in.heatmaps) if (h.coveragePct < weakCov) { weakCov = h.coveragePct; weakHz = h.hz; }
-            int nQ21S = 0, nBEM2inch = 0;
+            const auto& st = in.current;
+
+            // Weakest / strongest page by evenness (6 dB coverage), real solves only.
+            const HeatmapEntry* weak = nullptr;
+            const HeatmapEntry* best = nullptr;
+            for (const auto& h : in.heatmaps)
+            {
+                if (! h.stats.valid) continue;
+                if (weak == nullptr || h.stats.cov6 < weak->stats.cov6) weak = &h;
+                if (best == nullptr || h.stats.cov6 > best->stats.cov6) best = &h;
+            }
+
+            // Fleet, by each model's own name.
+            int nModel[4] = { 0, 0, 0, 0 };
             for (auto& s : in.params.speakers)
-                if (s.enabled) { if (s.model == 2) ++nBEM2inch; else ++nQ21S; }
+                if (s.enabled && s.model >= 0 && s.model < 4) ++nModel[s.model];
             juce::String fleet;
-            if (nQ21S > 0)   fleet << nQ21S   << " Q21S";
-            if (nBEM2inch > 0) fleet << (fleet.isEmpty() ? "" : " + ") << nBEM2inch << " BEM2inch";
-            if (fleet.isEmpty()) fleet = "0";
+            for (int m : { 3, 0, 2 })
+                if (nModel[m] > 0)
+                    fleet << (fleet.isEmpty() ? "" : " + ") << nModel[m] << " x " << speakerModelTag (m);
+            if (fleet.isEmpty()) fleet = "No active units";
 
             pdf.text (M, y, 14, "Key Findings", ink, true); y += 22;
             juce::StringArray findings;
-            findings.add ("Array of " + fleet + " unit(s) simulated over a "
-                          + juce::String (Units::metresToDisplay (in.params.worldW), 0) + " x "
-                          + juce::String (Units::metresToDisplay (in.params.worldH), 0) + " " + len + " plane.");
-            findings.add ("Predicted coverage within 6 dB of peak: " + juce::String (cov6, 1) + " % of the area.");
-            if (! in.heatmaps.empty())
-                findings.add ("Weakest uniformity occurs around " + juce::String (weakHz)
-                              + " Hz (" + juce::String (weakCov, 1) + " % within 6 dB).");
+            findings.add (fleet + ", simulated over a "
+                          + num (Units::metresToDisplay (in.params.worldW), 0) + " x "
+                          + num (Units::metresToDisplay (in.params.worldH), 0) + " " + len + " plane.");
+            if (st.valid)
+            {
+                findings.add ("At " + juce::String ((int) (in.params.frequency + 0.5)) + " Hz, over "
+                              + regionText (st).toLowerCase() + ": maximum " + level (st, st.maxDb)
+                              + ", average " + level (st, st.avgDb)
+                              + ", spread " + num (st.stdDb, 1) + " dB (std. dev.).");
+                findings.add (num (st.cov6, 1) + " % of that region is within 6 dB of its loudest point, "
+                              + num (st.cov3, 1) + " % within 3 dB.");
+            }
+            if (weak != nullptr && best != nullptr && weak != best)
+                findings.add ("Most even at " + juce::String (best->hz) + " Hz ("
+                              + num (best->stats.cov6, 1) + " % within 6 dB); least even at "
+                              + juce::String (weak->hz) + " Hz (" + num (weak->stats.cov6, 1) + " %).");
             findings.add (juce::String ("Directivity source: ")
                           + (in.result.usedMeasuredDirectivity ? "measured polar data." : "analytical model."));
             for (auto& f : findings) { y = pdf.textWrapped (M + 12, y, cw - 12, 12.0, "-  " + f, sub) + 4; }
@@ -334,9 +417,18 @@ namespace ReportBuilder
             y += 12;
             pdf.text (M, y, 14, "Recommendations", ink, true); y += 22;
             juce::StringArray recs;
-            recs.add ("Fine-tune inter-unit spacing and delay to widen the uniform-coverage zone.");
-            recs.add ("Review Directivity Plots at each frequency for cancellation lobes.");
-            recs.add ("Consider additional units or re-aiming if coverage within 6 dB falls below target.");
+            if (! st.audience)
+                recs.add ("Draw the audience areas on the plan: coverage is then measured where people "
+                          "actually are, at ear height, instead of over the whole field.");
+            if (st.valid && st.cov6 < 50.0)
+                recs.add ("Under half of the region is within 6 dB - re-aim or add units toward the "
+                          "quiet areas visible on the plots.");
+            if (st.valid && st.stdDb > 6.0)
+                recs.add ("Level spread is " + num (st.stdDb, 1) + " dB - consider splay angles, "
+                          "delay or extra fills to even it out.");
+            if (weak != nullptr && weak->stats.cov6 < 30.0)
+                recs.add ("Check the " + juce::String (weak->hz) + " Hz plot for cancellation lobes; "
+                          "spacing or delay between units sets where they fall.");
             recs.add ("Re-run the simulation after any change to device count, position, gain or delay.");
             for (auto& r : recs) { y = pdf.textWrapped (M + 12, y, cw - 12, 12.0, "-  " + r, sub) + 4; }
         }
