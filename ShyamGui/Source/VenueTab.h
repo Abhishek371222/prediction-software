@@ -44,6 +44,8 @@ struct VenueElement
     juce::String name   = "Audience";
     Type         type   = Type::Listening;
     AudHeight    height = AudHeight::Seated;
+    /** Locked: the plan will not move or reshape it (the row's padlock). */
+    bool         locked = false;
 
     /** Ear height above the plane, metres: seated 3.5 ft, standing 5 ft. */
     static float earHeightM (AudHeight h) noexcept
@@ -91,19 +93,22 @@ struct VenueElement
         return a + b * x + c * y;
     }
 
-    // A box of w x d metres about the origin, lying at height z. Everything
-    // added lands here; it is dragged or typed somewhere else afterwards.
+    // A box of w x d metres lying at height z, placed IN FRONT of the origin:
+    // the middle of its left edge sits on (0, 0), so it runs from x = 0 to
+    // x = w and from y = -d/2 to +d/2. The sources stand at the origin and
+    // fire along +x, so a new audience area lands where they point instead
+    // of straddling them. It is dragged or typed somewhere else afterwards.
     static VenueElement centred (const juce::String& nm, Type t,
                                  float w, float d, float z)
     {
         VenueElement e;
         e.name = nm;
         e.type = t;
-        const float hx = w * 0.5f, hy = d * 0.5f;
-        e.pts[0] = { -hx,  hy, z };
-        e.pts[1] = {  hx,  hy, z };
-        e.pts[2] = {  hx, -hy, z };
-        e.pts[3] = { -hx, -hy, z };
+        const float hy = d * 0.5f;
+        e.pts[0] = { 0.0f,  hy, z };
+        e.pts[1] = {    w,  hy, z };
+        e.pts[2] = {    w, -hy, z };
+        e.pts[3] = { 0.0f, -hy, z };
         return e;
     }
 
@@ -121,6 +126,7 @@ struct VenueElement
         juce::Array<juce::var> pa;
         for (const auto& p : pts) { pa.add (p.x); pa.add (p.y); pa.add (p.z); }
         o->setProperty ("pts", pa);
+        if (locked) o->setProperty ("locked", true);
         return juce::var (o);
     }
 
@@ -136,6 +142,7 @@ struct VenueElement
                                       : Type::Listening;
             e.height = o->getProperty ("height").toString() == "standing"
                            ? AudHeight::Standing : AudHeight::Seated;
+            e.locked = o->hasProperty ("locked") && (bool) o->getProperty ("locked");
             if (auto* pa = o->getProperty ("pts").getArray())
                 for (int i = 0; i < 4 && i * 3 + 2 < pa->size(); ++i)
                 {
@@ -256,7 +263,18 @@ class VenuePlotBase : public juce::Component
 public:
     void setElements (const std::vector<VenueElement>* e, int sel)
     {
-        elems_ = e; sel_ = sel; repaint();
+        elems_ = e; sel_ = sel;
+        // The multi-selection survives a refresh, minus anything now gone.
+        if (sel_ < 0 || e == nullptr) multi_.clear();
+        else multi_.erase (std::remove_if (multi_.begin(), multi_.end(),
+                               [n = (int) e->size()] (int i) { return i < 0 || i >= n; }),
+                           multi_.end());
+        repaint();
+    }
+
+    bool isSelected (int i) const
+    {
+        return i == sel_ || std::find (multi_.begin(), multi_.end(), i) != multi_.end();
     }
 
     void setRig (const std::vector<VenueRigMark>* r) { rig_ = r; repaint(); }
@@ -277,12 +295,17 @@ public:
         this design, so they are reached by right-clicking the shape they act
         on - no new chrome, and the target is never ambiguous. */
     std::function<void (int index, int action)>   onAction;
-    enum Action { ActDelete = 1, ActDuplicate, ActMirrorX, ActMirrorY };
+    enum Action { ActDelete = 1, ActDuplicate, ActMirrorX, ActMirrorY, ActRename,
+                  ActDupXY, ActDupYZ, ActDupXZ };
+    /** Duplicate (mirrored across a plane) or Delete, on every selected
+        element at once. */
+    std::function<void (std::vector<int> indices, int action)> onActionMany;
 
 protected:
     const std::vector<VenueElement>* elems_ = nullptr;
     int                              sel_   = -1;
     const std::vector<VenueRigMark>* rig_   = nullptr;
+    std::vector<int>                 multi_;   // Ctrl+Shift+click picks: the multi-selection
 
     // The Sources tab's cabinet look: pale blue body, grey hairline edge.
     static juce::Colour rigFill (bool sub) { return juce::Colour (sub ? 0xffdbe1ea : 0xffd3def1); }
@@ -565,10 +588,10 @@ public:
 
         if (elems_ == nullptr) { grab_ = Grab::Pan; return; }
 
-        // Ctrl + drag (or the middle button) pans from anywhere, even over a
-        // shape - the same gesture as the Mapping plot - and leaves the
-        // selection as it was.
-        if (e.mods.isCtrlDown() || e.mods.isCommandDown() || e.mods.isMiddleButtonDown())
+        // The middle button pans from anywhere. A left-drag ON a shape (or a
+        // handle of the selected one) moves it; on empty space it pans -
+        // the same rule as the Sources plan.
+        if (e.mods.isMiddleButtonDown())
         {
             grab_ = Grab::Pan;
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
@@ -578,7 +601,7 @@ public:
         // Handles belong to the SELECTED element only - that is what the
         // drawing shows, and picking a handle on a shape you have not chosen
         // would move something you cannot see the numbers for.
-        if (sel_ >= 0 && sel_ < (int) elems_->size())
+        if (sel_ >= 0 && sel_ < (int) elems_->size() && ! (*elems_)[(size_t) sel_].locked)
         {
             const auto& el = (*elems_)[(size_t) sel_];
             const float r = (float) UiConfig::Scale::px (6);
@@ -601,13 +624,35 @@ public:
         for (int i = (int) elems_->size() - 1; i >= 0; --i)
             if (hits ((*elems_)[(size_t) i], e.position, f))
             {
+                // Ctrl+Shift+click adds it to (or takes it out of) the
+                // multi-selection; nothing moves.
+                if (e.mods.isShiftDown())
+                {
+                    if (multi_.empty() && sel_ >= 0) multi_.push_back (sel_);
+                    const auto it = std::find (multi_.begin(), multi_.end(), i);
+                    if (it != multi_.end()) multi_.erase (it);
+                    else { multi_.push_back (i); if (onSelect) onSelect (i); }
+                    grab_ = Grab::None;
+                    grabIdx_ = -1;
+                    repaint();
+                    return;
+                }
+                multi_.clear();
                 if (i != sel_ && onSelect) onSelect (i);
+                if ((*elems_)[(size_t) i].locked)
+                {
+                    // Locked: a click still selects it, but nothing moves.
+                    grab_ = Grab::None;
+                    grabIdx_ = -1;
+                    return;
+                }
                 grab_ = Grab::Body;
                 grabIdx_ = i;
                 start_ = (*elems_)[(size_t) i];
                 return;
             }
 
+        multi_.clear();
         if (onSelect) onSelect (-1);
         grab_ = Grab::Pan;
     }
@@ -680,12 +725,34 @@ public:
         onElementChanged (grab_ == Grab::Body ? grabIdx_ : sel_, out);
     }
 
-    void mouseUp (const juce::MouseEvent&) override
+    void mouseUp (const juce::MouseEvent& e) override
     {
         grab_ = Grab::None;
         grabIdx_ = -1;
-        setMouseCursor (juce::MouseCursor::NormalCursor);
+        hover_ = e.position;
+        updateHandCursor (e.mods);
     }
+
+    // Hand over empty space (a drag pans); the arrow over a shape (a drag
+    // moves it).
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        hover_ = e.position;
+        updateHandCursor (e.mods);
+    }
+    void updateHandCursor (juce::ModifierKeys)
+    {
+        bool over = false;
+        if (elems_ != nullptr)
+        {
+            const auto f = fieldArea();
+            for (const auto& el : *elems_)
+                if (hits (el, hover_, f)) { over = true; break; }
+        }
+        setMouseCursor (over ? juce::MouseCursor::NormalCursor
+                             : juce::MouseCursor::DraggingHandCursor);
+    }
+    juce::Point<float> hover_;
 
     void paint (juce::Graphics& g) override
     {
@@ -735,7 +802,7 @@ public:
 
             if (elems_ != nullptr)
                 for (int i = 0; i < (int) elems_->size(); ++i)
-                    drawElement (g, f, (*elems_)[(size_t) i], i == sel_);
+                    drawElement (g, f, (*elems_)[(size_t) i], isSelected (i));
 
             if (rig_ != nullptr)
                 for (const auto& m : *rig_)
@@ -756,23 +823,47 @@ private:
             if (hits ((*elems_)[(size_t) i], e.position, f)) { idx = i; break; }
         if (idx < 0) return;                 // nothing under the pointer
 
-        if (idx != sel_ && onSelect) onSelect (idx);
+        // Right-click inside the selection acts on ALL of it; anywhere else
+        // it selects just the shape under the pointer.
+        std::vector<int> targets;
+        if (isSelected (idx) && ! multi_.empty())
+        {
+            targets = multi_;
+            if (sel_ >= 0 && std::find (targets.begin(), targets.end(), sel_) == targets.end())
+                targets.push_back (sel_);
+        }
+        else
+        {
+            multi_.clear();
+            if (idx != sel_ && onSelect) onSelect (idx);
+            targets = { idx };
+        }
+        const bool many = targets.size() > 1;
 
         juce::PopupMenu m;
-        m.addSectionHeader ((*elems_)[(size_t) idx].name);
-        m.addItem (ActDuplicate, "Duplicate");
-        m.addItem (ActMirrorX,   "Mirror x");
-        m.addItem (ActMirrorY,   "Mirror y");
-        m.addSeparator();
-        m.addItem (ActDelete,    "Delete");
+        // Rename opens the name for editing in place, on its row in the
+        // Elements list (one element at a time). Duplicate makes MIRRORED
+        // copies across a plane through the origin; the originals stay.
+        m.addItem (ActRename, "Rename", ! many);
+        // Duplicate (mirrored across a plane) is withheld on the Venue tab;
+        // the handlers stay in place should it come back.
+        m.addItem (ActDelete, many ? "Delete " + juce::String ((int) targets.size()) + " elements"
+                                   : juce::String ("Delete"));
 
         // At the pointer, not at the component. withTargetComponent anchors
         // the menu to the whole plot, which put it in a corner nowhere near
         // the shape it was acting on.
         auto cb = onAction;
+        auto cbMany = onActionMany;
         const juce::Rectangle<int> at (e.getScreenX(), e.getScreenY(), 1, 1);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (at),
-                         [cb, idx] (int r) { if (r > 0) cb (idx, r); });
+                         [cb, cbMany, idx, targets] (int r)
+                         {
+                             if (r <= 0) return;
+                             if (r == ActRename) { if (cb) cb (idx, r); return; }
+                             if (cbMany) cbMany (targets, r);
+                             else if (cb) for (int t : targets) cb (t, r);
+                         });
     }
 
     Grab                 grab_ = Grab::None;
@@ -855,7 +946,7 @@ private:
         g.setColour (sel ? markCol() : FigPlot::venueEdge());
         g.strokePath (p, juce::PathStrokeType (1.2f));
 
-        if (! sel) return;
+        if (! sel || e.locked) return;   // a locked shape offers no handles
         // Corners, and one on each edge's midpoint - the marks the reference
         // drawing puts there.
         for (int i = 0; i < 4; ++i)
@@ -879,14 +970,54 @@ class VenueElevationPlot : public VenuePlotBase
 public:
     VenueElevationPlot() { margins_ = { 59.0f, 41.0f, 39.0f, 44.0f }; }
 
-    // Panning only. Shapes are edited in the plan, where both of their
-    // horizontal coordinates are visible; dragging here could only ever move
-    // one of them and would look like it had lost the other.
-    // Across moves the shared x; up and down moves this pane's own heights,
-    // never the plan's y.
-    void mouseDown (const juce::MouseEvent& e) override { lastPx_ = e.position; }
+    // The same rule as every other plane: a left-drag ON an element moves it
+    // - along the shared x and up or down in height (its y stays the plan's)
+    // - and on empty space it pans. A locked element is selected, not moved.
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        lastPx_ = e.position;
+        dragIdx_ = -1;
+        dragEdited_ = false;
+        if (e.mods.isPopupMenu() || e.mods.isMiddleButtonDown()) return;
+        const int hit = elementAt (e.position);
+        if (hit < 0) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
+        if (hit != sel_ && onSelect) onSelect (hit);
+        if ((*elems_)[(size_t) hit].locked) return;
+        dragIdx_ = hit;
+        start_   = (*elems_)[(size_t) hit];
+        const auto f = fieldArea();
+        fromX_ = screenToX (e.position.x, f);
+        fromZ_ = screenToZ (e.position.y, f);
+    }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        dragIdx_ = -1;
+        mouseMove (e);
+    }
+    // Arrow over an element (a drag moves it), the hand elsewhere (it pans).
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        setMouseCursor (elementAt (e.position) >= 0 ? juce::MouseCursor::NormalCursor
+                                                    : juce::MouseCursor::DraggingHandCursor);
+    }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (dragIdx_ >= 0)
+        {
+            if (! dragEdited_)
+            {
+                if (e.getDistanceFromDragStart() < 3) return;
+                dragEdited_ = true;
+                if (onEditStart) onEditStart();
+            }
+            const auto f = fieldArea();
+            const float dx = (float) (screenToX (e.position.x, f) - fromX_);
+            const float dz = (float) (screenToZ (e.position.y, f) - fromZ_);
+            VenueElement out = start_;
+            for (auto& q : out.pts) { q.x += dx; q.z += dz; }
+            if (onElementChanged) onElementChanged (dragIdx_, out);
+            return;
+        }
         // Heights follow the hand too, so the profile drags the same way the
         // plan above it does - zBase is the height at the frame's bottom, so
         // it moves WITH the drag to carry the drawing along.
@@ -1042,7 +1173,45 @@ public:
     }
 
 private:
+    /** The element drawn under @p p, topmost first, or -1: a stage's block,
+        or within a few pixels of a seating plane's run. */
+    int elementAt (juce::Point<float> p) const
+    {
+        if (elems_ == nullptr) return -1;
+        const auto f = fieldArea();
+        for (int i = (int) elems_->size() - 1; i >= 0; --i)
+        {
+            const auto& e = (*elems_)[(size_t) i];
+            float lo = e.pts[0].x, hi = e.pts[0].x, ym = 0.0f;
+            for (int k = 0; k < 4; ++k)
+            {
+                lo = juce::jmin (lo, e.pts[k].x);
+                hi = juce::jmax (hi, e.pts[k].x);
+                ym += 0.25f * e.pts[k].y;
+            }
+            const double za = e.floorAt (lo, ym), zb = e.floorAt (hi, ym);
+            float x0 = xToScreen (lo, f), x1 = xToScreen (hi, f);
+            if (x0 > x1) std::swap (x0, x1);
+            if (p.x < x0 - 4.0f || p.x > x1 + 4.0f) continue;
+            const float t  = x1 > x0 ? (p.x - x0) / (x1 - x0) : 0.0f;
+            const float yl = zToScreen (za + (zb - za) * juce::jlimit (0.0f, 1.0f, t), f);
+            if (! e.hasAudHeight())
+            {
+                const float deck = zToScreen (0.0, f);
+                const float top  = juce::jmin (yl, deck - 4.0f);
+                if (p.y >= top - 4.0f && p.y <= deck + 4.0f) return i;
+            }
+            else if (std::abs (p.y - yl) <= 6.0f)
+                return i;
+        }
+        return -1;
+    }
+
     juce::Point<float> lastPx_;
+    int          dragIdx_ = -1;
+    bool         dragEdited_ = false;
+    VenueElement start_;
+    double       fromX_ = 0.0, fromZ_ = 0.0;
 };
 
 // -----------------------------------------------------------------------------
@@ -1069,7 +1238,13 @@ public:
         top_.onElementChanged = [this] (int i, VenueElement el)
         { if (onElementChanged) onElementChanged (i, el); };
         top_.onEditStart = [this] { if (onEditStart) onEditStart(); };
+        // The elevation moves elements too (x and height), through the same calls.
+        elev_.onSelect = [this] (int i) { if (onSelect) onSelect (i); };
+        elev_.onElementChanged = [this] (int i, VenueElement el)
+        { if (onElementChanged) onElementChanged (i, el); };
+        elev_.onEditStart = [this] { if (onEditStart) onEditStart(); };
         top_.onAction = [this] (int i, int a) { if (onAction) onAction (i, a); };
+        top_.onActionMany = [this] (std::vector<int> i, int a) { if (onActionMany) onActionMany (std::move (i), a); };
         elevHead_.onFold = [this] (bool) { resized(); };
     }
 
@@ -1091,6 +1266,7 @@ public:
     std::function<void (int, VenueElement)>      onElementChanged;
     std::function<void()>                        onEditStart;
     std::function<void (int, int)>               onAction;
+    std::function<void (std::vector<int>, int)>  onActionMany;
     using Action = VenueTopPlot::Action;
 
     /** Back to the framing the panes open with. */

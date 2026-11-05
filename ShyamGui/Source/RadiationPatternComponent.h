@@ -381,6 +381,10 @@ public:
     bool cutSelection();
     bool pasteClipboard();
     bool deleteSelection();
+    /** Right-click Duplicate: a MIRRORED copy of the whole selection across a
+        plane through the origin - 0 = XY (mirror z), 1 = YZ (mirror x),
+        2 = XZ (mirror y). The originals stay; the copies become selected. */
+    bool duplicateMirrored (int plane);
     /** Translate current selection (annotations in annot space; mics/speakers in world). */
     void moveSelectionBy (juce::Point<float> deltaAnnot, juce::Point<float> deltaWorld);
     void showSelectionContextMenu (juce::Point<int> screenPos);
@@ -447,6 +451,7 @@ public:
     void mouseUp        (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMove      (const juce::MouseEvent&) override;
+    void modifierKeysChanged (const juce::ModifierKeys&) override;
     void mouseExit      (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
@@ -1055,9 +1060,23 @@ private:
     int                      selectedMic_ = -1;           // primary
     int                      hoveredMic_  = -1;           // mic under the cursor: shows its full label
     bool                     micsShown_ = false;          // only on the Mapping tab
-    bool                     ctrlPanPending_ = false;     // Ctrl+left press: pan if dragged, click if not
+    // Left-drag PANS; Ctrl + left selects and moves things (the red
+    // selection). ctrlGesture_ marks a Ctrl press, so the select logic below
+    // runs as an ordinary click for the whole gesture (Ctrl+Shift adds to the
+    // selection, as Ctrl alone used to).
+    bool                     ctrlPanPending_ = false;     // (unused - kept for layout)
     bool                     ctrlPanMoved_   = false;
-    bool                     replayingCtrlClick_ = false;
+    bool                     replayingCtrlClick_ = false; // re-entry guard for the Ctrl forward
+    bool                     ctrlGesture_    = false;
+    /** Plain left in the Select tool pans, the hand cursor says so; with
+        Ctrl held it is the arrow, for selecting. */
+    bool  isPanMode (juce::ModifierKeys m) const;
+    void  refreshHandCursor (juce::ModifierKeys m);
+    /** Is there something under this screen point that a left-drag would
+        move (a cabinet, a mic, a drawn shape)? Venue planes do not count -
+        they are the background the plan is panned over. */
+    bool  objectUnderScreen (juce::Point<float> p);
+    juce::Point<float> lastHover_;
     bool                     addMicArmed_ = false;
     bool                     addSpeakerArmed_ = false;
     int                      nextMicId_ = 1;

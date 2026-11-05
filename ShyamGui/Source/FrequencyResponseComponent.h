@@ -9,7 +9,7 @@
 #include <cmath>
 
 // ---------------------------------------------------------------------------
-// Frequency Response plot - one curve per mic across kSupportedFrequencies.
+// Frequency Response plot - one curve per mic across kQ21SFrequencies.
 // Levels are calibrated dB SPL where the device carries a sensitivity.
 // Hosted in a small floating window (MicFrequencyResponseWindow).
 //
@@ -91,7 +91,7 @@ public:
         // impossible to see what a filter, a gain or a delay had done: the
         // shape survived and the level - the thing you were changing -
         // normalised itself away. It shows calibrated dB SPL now.
-        const int nHz = kNumSupportedFrequencies;
+        const int nHz = kNumQ21SFrequencies;
         // A probe that could not be taken comes back at this floor; drawing it
         // would invent a cliff that is not in the prediction.
         auto valid = [] (float db) { return db > -119.0f; };
@@ -201,8 +201,8 @@ public:
         // number beside it is a relative level, not a sound pressure anyone
         // could stand in front of and meter. Saying so is the difference
         // between a relative plot and a wrong absolute one.
-        g.drawText (absolute_ ? "Rel. dB (distance-compensated)"
-                              : "Rel. dB (distance-compensated - device not calibrated)",
+        g.drawText (absolute_ ? "dB SPL at the mic (subs only)"
+                              : "dB (subs only - device not calibrated)",
                     plot.getX(), plot.getY() - capH_, plot.getWidth(), capH_,
                     juce::Justification::centredLeft, false);
 
@@ -210,7 +210,7 @@ public:
         int maxLblW = 0;
         for (int hi = 0; hi < nHz; ++hi)
             maxLblW = juce::jmax (maxLblW,
-                                  axisFont.getStringWidth (juce::String ((int) kSupportedFrequencies[hi])));
+                                  axisFont.getStringWidth (juce::String ((int) kQ21SFrequencies[hi])));
         const int slotW = maxLblW + (int) (10.0f * sc);
         const int step  = juce::jmax (1, (int) std::ceil ((double) (nHz * slotW)
                                                           / (double) juce::jmax (1, plot.getWidth())));
@@ -218,7 +218,7 @@ public:
         for (int hi = 0; hi < nHz; hi += step)
         {
             const float x = xFor (hi, plot, nHz);
-            g.drawText (juce::String ((int) kSupportedFrequencies[hi]),
+            g.drawText (juce::String ((int) kQ21SFrequencies[hi]),
                         (int) x - slotW / 2, plot.getBottom() + (int) (3.0f * sc),
                         slotW, tickH_, juce::Justification::centred, false);
         }

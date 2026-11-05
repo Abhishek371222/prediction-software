@@ -154,6 +154,8 @@ struct ProjectData
             o->setProperty ("mount", s.mount);
             o->setProperty ("spacingM", s.spacingM);
             o->setProperty ("symmetric", s.symmetric);
+            if (! s.name.empty())
+                o->setProperty ("name", juce::String (s.name));
             o->setProperty ("filterType",   (int) s.filter.type);
             o->setProperty ("filterFamily", (int) s.filter.family);
             o->setProperty ("filterOrder",  s.filter.order);
@@ -257,6 +259,8 @@ struct ProjectData
                         s.spacingM    = o->hasProperty ("spacingM")
                                       ? juce::jmax (0.0f, (float) (double) o->getProperty ("spacingM")) : 0.0f;
                         s.symmetric   = o->hasProperty ("symmetric") && (bool) o->getProperty ("symmetric");
+                        // A renamed source keeps its name; absent = default.
+                        s.name = o->getProperty ("name").toString().toStdString();
                         // Older projects predate the per-unit hide, and every
                         // aiming line was drawn then, so absent means shown.
                         s.showAimLine = (! o->hasProperty ("showAimLine"))

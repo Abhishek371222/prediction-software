@@ -231,6 +231,8 @@ public:
     /** Ground row spacing, centre to centre, re-laying the row. */
     void setSourceSpacing   (int index, float metres);
     void setSourceSymmetric (int index, bool on);
+    /** Rename the source owning @p index (every box of it). Empty = default. */
+    void setSourceName      (int index, const juce::String& name);
     /** Re-lay the source from @p ref without an undo step or notice - the
         caller owns both (cabinet count, which adds and removes boxes). */
     void arrangeSourceFrom  (int index, SourceRef ref);

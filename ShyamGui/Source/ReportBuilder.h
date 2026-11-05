@@ -148,7 +148,7 @@ namespace ReportBuilder
         pdf.drawImage (logoTile (430, 70, Brand::white(), Brand::charcoal()),
                        M, 40, 215, 52);
         pdf.textRight (W - M, 64, 13, softwareName.toUpperCase(), juce::Colour (0xffd7d9de), false);
-        pdf.textRight (W - M, 84, 10, "v1.5.1  -  Q21S / Q212P Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
+        pdf.textRight (W - M, 84, 10, "v1.5.2  -  Q21S / Q212P Coverage & Directivity", juce::Colour (0xff9aa0a8), false);
 
         pdf.text (M, 300, 14, "ACOUSTIC SIMULATION REPORT", Brand::accent(), true);
         pdf.text (M, 322, 36, S (meta.projectName), ink, true);
@@ -242,7 +242,9 @@ namespace ReportBuilder
 
                 pdf.line (M, ty + 18, W - M, ty + 18, lineCol, 0.6);
                 const juce::String cells[] = {
-                    juce::String (speakerModelTag (s.model)) + "-" + juce::String (speakerModelOrdinal (sp, i)),
+                    customSourceName (sp, i).empty()
+                        ? juce::String (speakerModelTag (s.model)) + "-" + juce::String (speakerModelOrdinal (sp, i))
+                        : juce::String (customSourceName (sp, i)),
                     num (Units::metresToDisplay (s.x), 1),
                     num (Units::metresToDisplay (s.y), 1),
                     num (Units::metresToDisplay (s.baseHeightM), 2),

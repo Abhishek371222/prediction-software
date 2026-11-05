@@ -176,6 +176,49 @@ private:
     HeaderGlyphButton fold_ { "Fold", HeaderGlyphButton::Glyph::ChevronDown };
 };
 
+/** Snap on / off: a horseshoe magnet, red while snapping is on. */
+class SnapGlyphButton : public juce::Button
+{
+public:
+    SnapGlyphButton() : juce::Button ("Snap")
+    {
+        setClickingTogglesState (true);
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    void paintButton (juce::Graphics& g, bool over, bool) override
+    {
+        const auto r  = getLocalBounds().toFloat().reduced (getWidth() * 0.16f);
+        const bool on = getToggleState();
+        const auto ink = on ? Brand::accent()
+                            : Brand::text().withAlpha (over ? 0.85f : 0.6f);
+        const float w  = r.getWidth();
+        const float t  = juce::jmax (2.0f, w * 0.22f);          // limb thickness
+        const float cx = r.getCentreX();
+        const float rad = (w - t) * 0.5f;
+        const float top = r.getY() + w * 0.08f;
+        const float arcCy = r.getBottom() - rad - t * 0.5f;
+
+        // The U: two legs from the top down into a half-circle.
+        juce::Path u;
+        u.startNewSubPath (cx - rad, top);
+        u.lineTo (cx - rad, arcCy);
+        // 9 o'clock round the bottom to 3 o'clock (JUCE angles: 0 = 12, clockwise).
+        u.addCentredArc (cx, arcCy, rad, rad, 0.0f,
+                         juce::MathConstants<float>::pi * 1.5f,
+                         juce::MathConstants<float>::halfPi, false);
+        u.lineTo (cx + rad, top);
+        g.setColour (ink);
+        g.strokePath (u, juce::PathStrokeType (t, juce::PathStrokeType::mitered,
+                                               juce::PathStrokeType::butt));
+        // Pole tips, lighter, so it reads as a magnet rather than a cup.
+        g.setColour (on ? Brand::white() : Brand::panel());
+        const float tipH = w * 0.18f;
+        g.fillRect (cx - rad - t * 0.5f + 1.0f, top, t - 2.0f, tipH);
+        g.fillRect (cx + rad - t * 0.5f + 1.0f, top, t - 2.0f, tipH);
+    }
+};
+
 class ViewHeaderBar : public juce::Component
 {
 public:
@@ -193,6 +236,8 @@ public:
         btnLocate_.setMouseCursor (juce::MouseCursor::PointingHandCursor);
         btnLocate_.setTooltip ("Back to the action - frame the rig, mics and venue");
         addAndMakeVisible (btnLocate_);
+        btnSnap_.setTooltip ("Snap on / off (Ctrl+F)");
+        addAndMakeVisible (btnSnap_);
 
         lblSources_.setText ("Sources", juce::dontSendNotification);
         lblView_.setText ("Top View", juce::dontSendNotification);
@@ -220,6 +265,7 @@ public:
     void setToolsVisible (bool on)
     {
         btnRays_.setVisible (on);
+        btnSnap_.setVisible (on);
         resized(); repaint();
     }
 
@@ -248,9 +294,9 @@ public:
         left-hand furniture stops and free space begins. */
     int toolsRight() const noexcept
     {
-        // The crosshair is always last and always present, so it is the end
-        // of the strip's left-hand furniture whatever else is showing.
-        return btnLocate_.getRight();
+        // The crosshair (and the snap magnet after it, where shown) closes
+        // the strip's left-hand furniture.
+        return btnSnap_.isVisible() ? btnSnap_.getRight() : btnLocate_.getRight();
     }
 
     void paint (juce::Graphics& g) override
@@ -331,6 +377,9 @@ public:
             // unlike those two it is laid out on EVERY tab, because framing
             // the view is something the Venue sheet wants as much as the plan.
             btnLocate_.setBounds (right + fig (20.0f), (h - icon) / 2, icon, icon);
+            // Snap on / off, 20 px after the crosshair.
+            if (btnSnap_.isVisible())
+                btnSnap_.setBounds (btnLocate_.getRight() + fig (20.0f), (h - icon) / 2, icon, icon);
         }
 
         const int fold = fig (35.0f);
@@ -344,6 +393,7 @@ public:
                                                  0, 0, 24, 24 } } };
     RibbonIconButton btnMic_  { "Mic", { { "Mic.png", "Mic Active.png", 2, 2, 20, 20 } } };
     TopMenuBar::Locate btnLocate_;
+    SnapGlyphButton    btnSnap_;
 
 private:
     juce::Label lblSources_, lblView_;

@@ -3,6 +3,7 @@
 #include "BrandTheme.h"
 #include "AcousticEngine.h"
 #include "RiggingPoints.h"
+#include "InlineRename.h"
 
 // =============================================================================
 // The panel's type scale, in Figma px.
@@ -179,6 +180,17 @@ public:
             }
 
             drawDropArrow (g, w, h, box.isEnabled());
+
+            // The value's ink follows the box's state EVERY paint. It used to
+            // be set only in positionComboBoxText(), which runs on layout -
+            // so a combo laid out while nothing was selected (disabled) kept
+            // its faded grey text after it was enabled, and System / Mounting
+            // read as locked beside the black Hor. / Ver. Aim. setColour is a
+            // no-op when the colour is unchanged, so this cannot loop.
+            for (auto* c : box.getChildren())
+                if (auto* l = dynamic_cast<juce::Label*> (c))
+                    l->setColour (juce::Label::textColourId,
+                                  Brand::text().withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.45f));
         }
 
         juce::Font getComboBoxFont (juce::ComboBox&) override
@@ -883,6 +895,8 @@ public:
     std::function<void (int index, float ms)>         onDelay;
     std::function<void()>                             onAddSource;
     std::function<void (int index)>                   onDeleteSource;
+    /** The user renamed source @p index in place on its list row. */
+    std::function<void (int index, const juce::String&)> onRenameSource;
     // Listening planes share the Sources list with the cabinets: a
     // plane is a thing you add from the same "+", so it belongs in the
     // same list rather than in a second one nobody thinks to look at.
@@ -990,6 +1004,10 @@ public:
         // the sections below follow whichever source was just touched.
         if (ev.eventComponent != this)
         {
+            // M (mute) only mutes: it never selects the row it sits on.
+            for (const auto& r : sources_)
+                if (r != nullptr && ev.eventComponent == r->mute.get())
+                    return;
             if (! e.mods.isPopupMenu())
                 for (size_t i = 0; i < sourceRowY_.size(); ++i)
                     if (sourceRowY_[i].contains (e.y) && (int) i != selected_)
@@ -1014,12 +1032,14 @@ public:
         {
             if (onSelect) onSelect (i);
             juce::PopupMenu m;
-            m.addItem (1, "Delete " + sources_[(size_t) i]->name, onDeleteSource != nullptr);
+            m.addItem (2, "Rename", onRenameSource != nullptr);
+            m.addItem (1, "Delete", onDeleteSource != nullptr);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ e.getScreenX(), e.getScreenY(), 1, 1 }),
                              [safe = juce::Component::SafePointer<SourcePanel> (this), i] (int r)
                              {
-                                 if (r == 1 && safe != nullptr && safe->onDeleteSource)
-                                     safe->onDeleteSource (i);
+                                 if (safe == nullptr) return;
+                                 if (r == 2) safe->beginSourceRename (i);
+                                 else if (r == 1 && safe->onDeleteSource) safe->onDeleteSource (i);
                              });
         }
         else if (const int p = rowAt (planeRowY_); p >= 0)
@@ -1041,7 +1061,9 @@ public:
     void mouseMove (const juce::MouseEvent& e) override
     {
         setMouseCursor (overAngleGrip (e) ? juce::MouseCursor::UpDownResizeCursor
-                                          : juce::MouseCursor::NormalCursor);
+                        : sourceNameAt (e.getEventRelativeTo (this).getPosition()) >= 0
+                              ? juce::MouseCursor::IBeamCursor
+                              : juce::MouseCursor::NormalCursor);
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
@@ -1071,11 +1093,14 @@ public:
 
         if (e.mods.isPopupMenu() || e.eventComponent != this) return;
 
-        // Clicking a source row selects it, as clicking a unit on the plan does.
+        // Clicking a source row selects it, as clicking a unit on the plan
+        // does; a click ON ITS NAME also opens the name for editing.
         for (size_t i = 0; i < sourceRowY_.size(); ++i)
             if (e.y >= sourceRowY_[i].getStart() && e.y < sourceRowY_[i].getEnd())
             {
+                const bool onName = sourceNameAt (e.getPosition()) == (int) i;
                 if (onSelect) onSelect ((int) i);
+                if (onName) beginSourceRename ((int) i);
                 return;
             }
 
@@ -1105,7 +1130,7 @@ public:
         // live underneath - the positioning and rigging sections go on editing
         // it - but showing both marks at once reads as two selected rows, and
         // only one of them is what the click just chose.
-        if (selPlane_ < 0 && selected_ >= 0 && (size_t) selected_ < sourceRowY_.size())
+        if (selected_ >= 0 && (size_t) selected_ < sourceRowY_.size())
         {
             const auto r = sourceRowY_[(size_t) selected_];
             // The selection blue, flat across the row, as the Venue list
@@ -1137,6 +1162,9 @@ public:
         // Sizes are Figma px; a "\n" in a caption is the Figma's own line break.
         for (const auto& t : texts_)
         {
+            if (renamingSrc_ >= 0 && (size_t) renamingSrc_ < srcNameArea_.size()
+                && t.area == srcNameArea_[(size_t) renamingSrc_])
+                continue;   // its editor is on top
             g.setFont (t.bold ? Brand::figSemi (t.size) : Brand::figMed (t.size));
             g.setColour (t.dim ? Brand::text().withAlpha (0.62f) : Brand::text());
             // 0.9, not 1.0: a label that overruns its cell by a hair now
@@ -1159,7 +1187,7 @@ public:
         }
 
         // Only when the list is genuinely empty - a plane is a row in it too.
-        if (sources_.empty() && planes_.empty() && ! headSrc_->isFolded())
+        if (sources_.empty() && ! headSrc_->isFolded())
         {
             g.setColour (Brand::text().withAlpha (0.55f));
             g.setFont (Brand::figMed (12.0f));
@@ -1176,6 +1204,7 @@ public:
         bands_.clear();
         sourceRowY_.clear();
         planeRowY_.clear();
+        srcNameArea_.assign (sources_.size(), {});
         vRules_.clear();
 
         // Every number below is a Figma pixel from "Source screen_FOR TOP -
@@ -1243,6 +1272,7 @@ public:
                 // A source carries its cabinet count, as ArrayCalc's list does.
                 label (s->name + (n > 1 ? "  (Arrays_" + juce::String (n) + ")" : juce::String()),
                        { fig (14.0f), y, fig (160.0f), rowH });
+                srcNameArea_[i] = { fig (14.0f), y, fig (160.0f), rowH };
                 label ("System", { fig (179.0f), y, fig (64.0f), rowH });
                 ctl (*s->system, 244.0f, 110.0f);
                 ctl (*s->mute,   363.6f, 28.3f);
@@ -1250,16 +1280,9 @@ public:
                 y += rowH;
                 listRules_.push_back (y - 1);
             }
-            // Name only: what a plane is, and its Delete, live on the Venue tab
-            // and on the row's right-click.
-            for (auto& p : planes_)
-            {
-                label (p->name, { fig (14.0f), y, fig (160.0f), rowH });
-                planeRowY_.push_back ({ y, y + rowH });
-                y += rowH;
-                listRules_.push_back (y - 1);
-            }
-            if (sources_.empty() && planes_.empty())
+            // Listening planes are NOT listed here: they belong to the Venue
+            // tab (and the Mapping plan), not to the Sources list.
+            if (sources_.empty())
             {
                 emptyArea_ = { 0, y, W, rowH };
                 y += rowH;
@@ -1279,7 +1302,11 @@ public:
 
         // --------------------------------------------- Source Positioning
         const bool posOpen = head (*headPos_);
-        show (posOpen, { posSystem_.get(), posMounting_.get(), posCabinets_.get(),
+        // The System combo is replaced here by the source's Name, as the
+        // Venue tab's Element Settings has it; the model is still chosen on
+        // the source's own row in the list above.
+        if (posSystem_ != nullptr) posSystem_->setVisible (false);
+        show (posOpen, { posName_.get(), posMounting_.get(), posCabinets_.get(),
                          posInterdist_.get(),
                          posHorAim_.get(), posVerAim_.get(),
                          posXYZ_[0].get(), posXYZ_[1].get(), posXYZ_[2].get() });
@@ -1287,8 +1314,8 @@ public:
         {
             // Labels at 14 and 203; controls 81..183 and 282..384.
             rowAt (mapping_ ? 43.0f : 44.0f, 7.0f);
-            label ("System",   { fig (14.0f),  y, fig (66.0f), rowH });
-            ctl (*posSystem_,   81.0f, 102.0f);
+            label ("Name",     { fig (14.0f),  y, fig (66.0f), rowH });
+            if (posName_ != nullptr) ctl (*posName_, 81.0f, 102.0f);
             label ("Mounting", { fig (203.0f), y, fig (78.0f), rowH });
             ctl (*posMounting_, 282.0f, 102.0f);
             row (false);
@@ -1492,10 +1519,21 @@ private:
         const bool sub   = isSubwooferModel (model);
         const bool hasGround = ! q212p, hasFlown = ! sub;
         const int  want = (hasGround ? 1 : 0) + 1 + (hasFlown ? 1 : 0);
-        if (posMounting_->getNumItems() == want
-            && (posMounting_->getItemId (0) == 1) == hasGround
-            && (posMounting_->getItemId (want - 1) == 3) == hasFlown)
-            return;
+        // Same ids AND the same names, or rebuild. Checking the ids alone let
+        // a list built as "Ground / Flown" (ids 1, 2) pass for a sub's
+        // "Ground / Stacked" - so a stacked sub read "Flown".
+        {
+            juce::StringArray wantText;
+            juce::Array<int>  wantIds;
+            if (hasGround) { wantText.add ("Ground");  wantIds.add (1); }
+            wantText.add ("Stacked"); wantIds.add (2);
+            if (hasFlown)  { wantText.add ("Flown");   wantIds.add (3); }
+            bool same = posMounting_->getNumItems() == want;
+            for (int k = 0; same && k < want; ++k)
+                same = posMounting_->getItemId (k) == wantIds[k]
+                    && posMounting_->getItemText (k) == wantText[k];
+            if (same) return;
+        }
 
         const int keep = posMounting_->getSelectedId();
         posMounting_->clear (juce::dontSendNotification);
@@ -1619,6 +1657,101 @@ private:
 
     static juce::String modelName (int m)
     { return m == 0 ? "Q21S" : m == 3 ? "Q212P" : m == 2 ? "BEM 2inch" : "Unit"; }
+
+    /** A source's name: the user's, else model + its own id - which never
+        changes, so numbering by list position cannot rename it. */
+    static juce::String sourceDisplayName (const std::vector<Speaker>& sp, int i)
+    {
+        const auto custom = customSourceName (sp, i);
+        if (! custom.empty()) return juce::String (custom);
+        return modelName (sp[(size_t) i].model) + "-"
+             + juce::String (sp[(size_t) i].arrayId >= 0 ? sp[(size_t) i].arrayId : i + 1);
+    }
+
+    // ---- inline rename of a source row ----------------------------------
+public:
+    void beginSourceRename (int i)
+    {
+        if (i < 0 || (size_t) i >= sources_.size() || (size_t) i >= srcNameArea_.size()
+            || srcNameArea_[(size_t) i].isEmpty() || onRenameSource == nullptr)
+            return;
+        if (renameEd_ == nullptr)
+        {
+            renameEd_ = std::make_unique<juce::TextEditor>();
+            renameEd_->setMultiLine (false);
+            renameEd_->setReturnKeyStartsNewLine (false);
+            renameEd_->setColour (juce::TextEditor::backgroundColourId, juce::Colours::white);
+            renameEd_->setColour (juce::TextEditor::textColourId, Brand::text());
+            renameEd_->setColour (juce::TextEditor::outlineColourId, Brand::accent());
+            renameEd_->setColour (juce::TextEditor::focusedOutlineColourId, Brand::accent());
+            renameEd_->setColour (juce::TextEditor::highlightColourId, rowSelect());
+            renameEd_->setColour (juce::CaretComponent::caretColourId, Brand::text());
+            renameEd_->onReturnKey = [this] { endSourceRename (true); };
+            renameEd_->onEscapeKey = [this] { endSourceRename (false); };
+            renameEd_->onFocusLost = [this] { endSourceRename (true); };
+            clickAway_.onClickAway = [this] { endSourceRename (true); };
+            addChildComponent (*renameEd_);
+        }
+        renamingSrc_ = i;
+        renameEd_->setFont (Brand::figMed (PanelType::field));
+        renameEd_->setIndents (UiConfig::Scale::fig (4.0f), 0);
+        renameEd_->setJustification (juce::Justification::centredLeft);
+        renameEd_->setBounds (srcEditorBounds (i));
+        renameEd_->setText (sources_[(size_t) i]->name, juce::dontSendNotification);
+        renameEd_->setVisible (true);
+        renameEd_->toFront (true);
+        renameEd_->grabKeyboardFocus();
+        renameEd_->selectAll();
+        clickAway_.start (*renameEd_);
+        repaint();
+    }
+
+private:
+    juce::Rectangle<int> srcEditorBounds (int i) const
+    {
+        using UiConfig::Scale::fig;
+        return srcNameArea_[(size_t) i].reduced (0, fig (8.0f)).withTrimmedLeft (-fig (4.0f));
+    }
+
+    /** The source row whose NAME TEXT is under @p p, or -1. */
+    int sourceNameAt (juce::Point<int> p) const
+    {
+        using UiConfig::Scale::fig;
+        const auto f = Brand::figMed (PanelType::field);
+        for (size_t i = 0; i < srcNameArea_.size() && i < sources_.size(); ++i)
+        {
+            auto a = srcNameArea_[i];
+            if (a.isEmpty()) continue;
+            const int w = juce::roundToInt (f.getStringWidthFloat (sources_[i]->name)) + fig (6.0f);
+            a.setWidth (juce::jlimit (fig (24.0f), a.getWidth(), w));
+            a = a.withSizeKeepingCentre (a.getWidth(), juce::roundToInt (f.getHeight()) + fig (8.0f));
+            if (a.contains (p)) return (int) i;
+        }
+        return -1;
+    }
+
+    /** Close the editor; @p save renames (if changed and not blank), after
+        the click that ended it has been delivered. */
+    void endSourceRename (bool save)
+    {
+        if (renamingSrc_ < 0 || renameEd_ == nullptr) return;
+        const int i = renamingSrc_;
+        renamingSrc_ = -1;
+        clickAway_.stop();
+        const auto text = renameEd_->getText().trim();
+        renameEd_->setVisible (false);
+        repaint();
+        if (save && text.isNotEmpty() && (size_t) i < sources_.size()
+            && text != sources_[(size_t) i]->name)
+            juce::MessageManager::callAsync (
+                [safe = juce::Component::SafePointer<SourcePanel> (this), i, text]
+                { if (safe != nullptr && safe->onRenameSource) safe->onRenameSource (i, text); });
+    }
+
+    std::vector<juce::Rectangle<int>>  srcNameArea_;
+    std::unique_ptr<juce::TextEditor>  renameEd_;
+    ClickAwayWatcher                   clickAway_;
+    int                                renamingSrc_ = -1;
     static int modelFromItem (int id) { return id == 1 ? 3 : id == 2 ? 0 : 2; }
     static int itemFromModel (int m)  { return m == 3 ? 1 : m == 0 ? 2 : 3; }
 
@@ -1663,7 +1796,7 @@ private:
         // this cabinet, and its name changes with the model - see
         // setMountingForModel(). Built here with the default pair so the combo
         // is never empty before a source is selected.
-        combo (posMounting_, { "Ground", "Flown" });
+        combo (posMounting_, { "Ground", "Stacked" });   // ids 1, 2 - as setMountingForModel names them
         combo (posCabinets_, { "1" });
         // Front and rear pick are hole numbers on the bumper; single pick is
         // the lever hole, which IS the tilt. All three come from the supplied
@@ -1680,6 +1813,27 @@ private:
                                           + " Deg.  (" + Rigging::label (p) + ")", id++);
             addAndMakeVisible (*singlePick_);
         }
+
+        // Name: typed in, saved on Enter or on clicking away - the source's
+        // name everywhere it is shown (list, headings, plans, report).
+        posName_ = std::make_unique<FieldBox> (juce::String());
+        posName_->setStyle (12.0f, 9.0f);
+        posName_->onTextChange = [this]
+        {
+            if (building_ || onRenameSource == nullptr || selected_ < 0
+                || (size_t) selected_ >= sources_.size()) return;
+            const auto t = posName_->getText().trim();
+            if (t.isEmpty() || t == sources_[(size_t) selected_]->name)
+            {
+                posName_->setText (sources_[(size_t) selected_]->name, juce::dontSendNotification);
+                return;
+            }
+            const int i = selected_;
+            juce::MessageManager::callAsync (
+                [safe = juce::Component::SafePointer<SourcePanel> (this), i, t]
+                { if (safe != nullptr && safe->onRenameSource) safe->onRenameSource (i, t); });
+        };
+        addAndMakeVisible (*posName_);
 
         posSystem_->onChange = [this]
         {
@@ -1939,8 +2093,7 @@ private:
         if (sp.size() != sources_.size() || sp.size() != angles_.size()) return false;
         for (size_t i = 0; i < sp.size(); ++i)
             if (sources_[i]->model != sp[i].model
-                || ! sources_[i]->name.endsWith ("-" + juce::String (sp[i].arrayId >= 0 ? sp[i].arrayId
-                                                                                        : (int) i + 1)))
+                || sources_[i]->name != sourceDisplayName (sp, (int) i))
                 return false;
         return true;
     }
@@ -1977,8 +2130,7 @@ private:
             row->model = sp[i].model;
             // Named by the source's own id, which never changes - numbering by
             // list position renamed every source after a deletion.
-            row->name  = modelName (sp[i].model) + "-"
-                       + juce::String (sp[i].arrayId >= 0 ? sp[i].arrayId : idx + 1);
+            row->name  = sourceDisplayName (sp, idx);
             row->system = std::make_unique<juce::ComboBox>();
             row->system->addItem ("Q212P", 1);
             row->system->addItem ("Q21S", 2);   // BEM 2inch (3) withheld from the UI
@@ -2174,15 +2326,25 @@ private:
             const auto ref = sourceRef (sp, selected_);
             lastX_ = ref.cx; lastY_ = ref.cy; lastHeight_ = ref.z;
             posSystem_->setSelectedId (itemFromModel (sel.model), juce::dontSendNotification);
+            if (posName_ != nullptr) posName_->setValue (sources_[(size_t) selected_]->name);
             setMountingForModel (sel.model);
             posMounting_->setSelectedId (sourceMount (sp, selected_) + 1, juce::dontSendNotification);
             posXYZ_[0]->setValue (num (Units::metresToDisplay (ref.cx)));
             posXYZ_[1]->setValue (num (Units::metresToDisplay (ref.cy)));
-            // Pos. Z is the TOP of the source; the model keeps the bottom,
-            // so remember the gap to turn a typed top back into it.
-            const float topZ = sourceTopM (sp, selected_);
-            topOffsetM_ = topZ - ref.z;
-            posXYZ_[2]->setValue (num (Units::metresToDisplay (topZ)));
+            // Pos. Z: a SUB source shows its TOP (the stack's height), a top
+            // such as the Q212P its BOTTOM (the underside of its lowest box -
+            // the clearance a hang is trimmed to). The model keeps its own
+            // reference height, so remember the gap to turn a typed value
+            // back into it.
+            float shownZ = sourceTopM (sp, selected_);
+            if (! isSubwooferModel (sel.model))
+            {
+                shownZ = sp[(size_t) selected_].baseHeightM;
+                for (int m : arrayMembers (sp, selected_))
+                    shownZ = juce::jmin (shownZ, sp[(size_t) m].baseHeightM);
+            }
+            topOffsetM_ = shownZ - ref.z;
+            posXYZ_[2]->setValue (num (Units::metresToDisplay (shownZ)));
             posHorAim_->setValue (num (wrap180 (sourceHeadingDeg (sp, selected_))));
             posVerAim_->setValue (num (-sp[(size_t) aimBox()].tiltDeg));
             posInterdist_->setValue (num (Units::metresToDisplay (rowSpacingM (sp, selected_))));
@@ -2213,6 +2375,7 @@ private:
         }
 
         for (juce::Component* c : { (juce::Component*) posSystem_.get(),
+                                    (juce::Component*) posName_.get(),
                                     (juce::Component*) posMounting_.get(),
                                     (juce::Component*) posXYZ_[0].get(),
                                     (juce::Component*) posXYZ_[1].get(),
@@ -2258,7 +2421,7 @@ private:
     int                                    selPlane_ = -1;
     std::unique_ptr<juce::ComboBox> posSystem_, posMounting_, posCabinets_,
                                     frontPick_, rearPick_, singlePick_;
-    std::unique_ptr<FieldBox> posXYZ_[3], posHorAim_, posVerAim_, posInterdist_;
+    std::unique_ptr<FieldBox> posXYZ_[3], posHorAim_, posVerAim_, posInterdist_, posName_;
     std::unique_ptr<TickBox>  symToggle_;
     std::unique_ptr<LoadBar>  loadBar_;
 

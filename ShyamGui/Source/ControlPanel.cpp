@@ -1347,6 +1347,15 @@ void ControlPanel::setSourceSymmetric (int index, bool on)
     notifyChanged();
 }
 
+void ControlPanel::setSourceName (int index, const juce::String& name)
+{
+    if (index < 0 || index >= (int) speakers_.size()) return;
+    willEdit();
+    const auto n = name.trim().toStdString();
+    for (int m : arrayMembers (speakers_, index)) speakers_[(size_t) m].name = n;
+    notifyChanged();
+}
+
 void ControlPanel::arrangeSourceFrom (int index, SourceRef ref)
 {
     if (index < 0 || index >= (int) speakers_.size()) return;

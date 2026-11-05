@@ -35,11 +35,25 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.4.6** | 2026-10-24 | Each cabinet model is simulated at its own frequency; the Mapping ribbon follows the Figma: Ortho split from Ortho Controls, Plane Prediction named in full, every cluster centred on its plate |
 | **1.5.0** | 2026-10-28 | Venue tab: the room as its own screen, wired to the solver; one plot style across every tab |
 | **1.5.1** | 2026-11-03 | Sources and Mapping to the Figma; one source holds many cabinets (mounting, ground stacks, interdistance, symmetry, rigging lever angles); audiences heard at ear height; elevation snap and vertical zoom; Apply Layout |
+| **1.5.2** | 2026-11-04 | Real SPL report plots and statistics; sub FR from absolute BEM data (5 m reference); rename / lock / sync / mirror for sources and venue elements; drag-to-move, drag-to-pan everywhere; maximised window with optional F11 full screen |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
+
+## [1.5.2] - 2026-11-04
+
+**Atomik Integral v1.5.2**
+
+- **PDF report:** plots drawn with the SPL map on, page-shaped; each page solved at its own frequency for every model; real statistics (max / average / min, spread, 3 / 6 dB coverage) over audience areas; speaker table adds Z, aim and mount; correct model names.
+- **Export > Save Image:** top view, side elevation, full screen.
+- **Frequency response:** subs only, 20-500 Hz axis, absolute dB SPL; sub levels anchored at 5 m on the absolute BEM field (Q212S Absolute), 6 dB per doubling beyond; follows every mute / gain change at once.
+- **Sources:** rename in place (list or Name field), Mirror on the X / Y axis about the nearest plane, Pos. Z = top for subs, bottom for tops; Mounting names fixed (Q21S Ground / Stacked, Q212P Stacked / Flown); M only mutes.
+- **Venue:** new elements placed in front of the origin; rename in place; per-element lock; per-axis sync of the four points; elevation drags elements; elements editable on the Venue tab only.
+- **Mouse:** drag an object to move it, drag empty space to pan, on every plane; snap magnet on the Top View bar.
+- **Window:** opens maximised; F11 / Settings > Full Screen; File > New project reuses the window; Atomik logo restored; File > Exit.
+- **Elevation:** boxes drawn along their aim, tops slid onto the front line of the sub they stand with.
 
 ## [1.5.1] - 2026-11-03
 

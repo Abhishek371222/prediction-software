@@ -438,6 +438,31 @@ namespace MeasurementData
     // Flip to true once kQ212PSensitivityDb holds a real figure.
     constexpr bool   kQ212PCalibrated = false;
 
+    // Q21S on-axis level at 5 m, dB SPL, read straight off the absolute BEM
+    // field (Q212S Absolute / BEM_Data_10m: |p| re 20 uPa at X = 0, Z = +5 m,
+    // the farthest on-axis point the solve covers).
+    //
+    // Why 5 m and not the 2 m arc the polar CSVs come from: a sub is still in
+    // its near field at 2 m - the solve falls 7 to 18 dB from 1 to 2 m and
+    // 7 to 11 dB from 2 to 4 m at several bands, not the 6 dB of the inverse-
+    // square law. Anchoring at 2 m and then taking 6 dB per doubling read up
+    // to 5 dB hot at any real listening distance. Anchored here, the level is
+    // exactly the solve's at 5 m and falls 6 dB per doubling beyond it, which
+    // is where the field has settled into that law (4 -> 5 m: 1.6-2.9 dB
+    // against 1.9 dB for 1/r). Returns < 0 when a band has no entry.
+    inline double q21sOnAxisDbAt5m (int hz)
+    {
+        struct E { int hz; double db; };
+        static const E table[] = {
+            {  20, 53.45 }, {  29, 69.77 }, {  52, 94.64 }, {  60, 93.41 },
+            {  81, 97.02 }, {  98, 100.68 }, { 153, 89.46 }, { 198, 76.63 },
+            { 256, 85.76 }, { 309, 87.66 }, { 352, 71.97 }, { 400, 90.30 },
+            { 401, 90.30 } };   // the "401 Hz" file is the 400 Hz solve again
+        for (const auto& e : table) if (e.hz == hz) return e.db;
+        return -1.0;
+    }
+    constexpr float kQ21SFarRefM = 5.0f;
+
     struct Calibration
     {
         double offsetDb = 0.0;   // added to on-axis dB to reach real dB SPL
@@ -1225,6 +1250,14 @@ namespace MeasurementData
             const auto cal = calibrationFor (set.source);
             dp.onAxisSplDb = syn.curve.onAxisSpl + (float) cal.offsetDb;
             dp.refDistanceM = distanceM > 0.05f ? distanceM : 2.0f;
+            // The sub's absolute level is anchored at 5 m on the BEM field
+            // (see q21sOnAxisDbAt5m); its SHAPE still comes from the arc.
+            if (set.source == OpenField)
+                if (const double far = q21sOnAxisDbAt5m (hz); far > 0.0)
+                {
+                    dp.onAxisSplDb  = (float) far;
+                    dp.refDistanceM = kQ21SFarRefM;
+                }
             dp.hasAbsolute = cal.absolute && dp.onAxisSplDb > 20.0f;
             dp.ok = true;
             out.push_back (std::move (dp));
@@ -1370,7 +1403,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.5.1'");
+        line ("Version='v1.5.2'");
         line ("Author='Atomik Integral'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

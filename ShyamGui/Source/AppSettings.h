@@ -124,6 +124,22 @@ public:
         props_->saveIfNeeded();
     }
 
+    // Open the workspace borderless full screen (true) or MAXIMISED with its
+    // title bar (false, the default - minimise / maximise / close stay in
+    // reach). Flipped by F11 / Settings > Full Screen and remembered. A new
+    // key, so an earlier full-screen default does not carry over.
+    bool startFullScreen() const
+    {
+        return props_ != nullptr ? props_->getBoolValue ("startBorderlessFullScreen", false) : false;
+    }
+
+    void setStartFullScreen (bool b)
+    {
+        if (props_ == nullptr) return;
+        props_->setValue ("startBorderlessFullScreen", b);
+        props_->saveIfNeeded();
+    }
+
     void addRecentProject (const juce::File& f)
     {
         if (props_ == nullptr || f == juce::File()) return;

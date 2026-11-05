@@ -56,16 +56,26 @@ public:
         g.setColour (Brand::white());
         g.fillRect (plot);
 
+        // ABSOLUTE dB SPL: the top line is the loudest level on any curve,
+        // rounded up to a 6 dB step, so every line is a real level and two
+        // mics at 1x and 2x the distance sit 6 dB apart on the grid.
+        {
+            float peak = -1.0e9f;
+            for (const auto& cv : curves_)
+                for (float v : cv) if (v > -119.0f) peak = juce::jmax (peak, v);
+            axisTop_ = peak > -1.0e8f ? std::ceil (peak / 6.0f) * 6.0f : 0.0f;
+        }
+
         // Third-octave-ish vertical rules on every 1-2-5 step, decades darker.
         for (double dec = 10.0; dec <= 10000.0; dec *= 10.0)
             for (int k = 1; k <= 9; ++k)
             {
                 const double f = dec * k;
-                if (f < kLoHz || f > kHiHz * 1.4) continue;
+                if (f < kLoHz - 0.5 || f > kHiHz + 0.5) continue;
                 g.setColour (k == 1 ? MappingSkin::grid().darker (0.15f) : MappingSkin::grid());
                 g.drawVerticalLine (juce::roundToInt (xFor (f, plot)), plot.getY(), plot.getBottom());
             }
-        for (int db = 0; db >= -36; db -= 6)
+        for (int db = 0; db >= -(int) kSpanDb; db -= 6)
         {
             g.setColour (MappingSkin::grid());
             g.drawHorizontalLine (juce::roundToInt (yFor ((float) db, plot)), plot.getX(), plot.getRight());
@@ -76,25 +86,24 @@ public:
         // dB down the left, right-aligned 13 px short of the plot.
         g.setColour (Brand::text());
         g.setFont (Brand::figMed (12.0f));
-        for (int db = 0; db >= -36; db -= 6)
+        for (int db = 0; db >= -(int) kSpanDb; db -= 6)
         {
             const float y = yFor ((float) db, plot);
-            g.drawText (juce::String (db) + " db",
+            g.drawText (juce::String ((int) axisTop_ + db) + " dB",
                         juce::Rectangle<float> (0.0f, y - figf (8.0f), plot.getX() - figf (13.0f), figf (16.0f)),
                         juce::Justification::centredRight, false);
         }
         g.setFont (Brand::figSemi (10.0f));
-        g.drawText ("Rel. SPL", juce::Rectangle<float> (figf (12.0f), plot.getBottom() - figf (24.0f),
+        g.drawText ("dB SPL", juce::Rectangle<float> (figf (12.0f), plot.getBottom() - figf (24.0f),
                                                         plot.getX() - figf (14.0f), figf (14.0f)),
                     juce::Justification::centredLeft, false);
-        // The curves arrive referenced to one metre from the nearest cabinet,
-        // not to each mic's own distance, so a mic further back no longer
-        // simply sits lower. ArrayCalc marks its equivalent the same way.
-        // It goes in the legend column, clear of the frequency ticks - at the
-        // plot's bottom right it sat on top of "20K".
+        // The curves are absolute dB SPL at each mic's own position (subs
+        // only, from the Q21S absolute BEM data), so a mic twice as far from
+        // the sub sits 6 dB lower. Noted in the legend column, clear of the
+        // frequency ticks.
         g.setColour (Brand::text().withAlpha (0.55f));
         g.setFont (Brand::figMed (10.0f));
-        g.drawFittedText ("(distance-\ncompensated)",
+        g.drawFittedText ("Absolute, subs only\n-6 dB per 2x distance",
                           juce::Rectangle<float> (plot.getRight() + figf (12.0f),
                                                   (float) getHeight() - figf (34.0f),
                                                   figf (120.0f), figf (28.0f)).toNearestInt(),
@@ -103,9 +112,11 @@ public:
 
         // Frequencies along the bottom.
         g.setFont (Brand::figSemi (14.0f));
+        // The curve is the subs only, 20 Hz to 400 Hz, so the axis spans the
+        // sub range rather than the full audio band it would sit in a third of.
         const struct { double hz; const char* text; } ticks[] = {
-            { 20, "20" }, { 50, "50" }, { 100, "100" }, { 200, "200" }, { 500, "500" },
-            { 1000, "1K" }, { 2000, "2K" }, { 5000, "5K" }, { 10000, "10K" }, { 20000, "20K" } };
+            { 20, "20" }, { 30, "30" }, { 40, "40" }, { 50, "50" }, { 60, "60" }, { 80, "80" },
+            { 100, "100" }, { 200, "200" }, { 300, "300" }, { 400, "400" }, { 500, "500" } };
         for (const auto& t : ticks)
         {
             const float x = xFor (t.hz, plot);
@@ -119,7 +130,7 @@ public:
     }
 
 private:
-    static constexpr double kLoHz = 20.0, kHiHz = 20000.0;
+    static constexpr double kLoHz = 20.0, kHiHz = 500.0;   // sub range
 
     juce::Rectangle<float> plotArea() const
     {
@@ -132,17 +143,20 @@ private:
                  juce::jmax (40.0f, (float) getHeight() - figf (15.0f) - figf (39.0f)) };
     }
 
-    /** 20 Hz sits on the left edge; 20 kHz 92% across, as the Figma sets it. */
+    /** 20 Hz just inside the left edge, 500 Hz just inside the right. */
     static float xFor (double hz, juce::Rectangle<float> plot)
     {
         const double t = std::log10 (juce::jmax (1.0, hz) / kLoHz) / std::log10 (kHiHz / kLoHz);
-        return plot.getX() + plot.getWidth() * (0.004f + 0.913f * (float) t);
+        return plot.getX() + plot.getWidth() * (0.02f + 0.96f * (float) t);
     }
 
-    /** 0 dB 13% down, -36 dB 84% down - the Figma's margins. */
+    /** @p db is relative to the axis top: 0 sits 13% down, -kSpanDb 84%. */
+    static constexpr float kSpanDb = 48.0f;
+    float axisTop_ = 0.0f;
+
     static float yFor (float db, juce::Rectangle<float> plot)
     {
-        const float t = juce::jlimit (-36.0f, 0.0f, db) / -36.0f;
+        const float t = juce::jlimit (-kSpanDb, 0.0f, db) / -kSpanDb;
         return plot.getY() + plot.getHeight() * (0.133f + 0.708f * t);
     }
 
@@ -164,7 +178,7 @@ private:
             return;
         }
 
-        const int n = juce::jmin (kNumSupportedFrequencies, (int) (curves_.empty() ? 0 : curves_[0].size()));
+        const int n = juce::jmin (kNumQ21SFrequencies, (int) (curves_.empty() ? 0 : curves_[0].size()));
         juce::Graphics::ScopedSaveState clip (g);
         g.reduceClipRegion (plot.toNearestInt());
         for (int mi = 0; mi < (int) curves_.size(); ++mi)
@@ -175,8 +189,8 @@ private:
             for (int hi = 0; hi < n && hi < (int) cv.size(); ++hi)
             {
                 if (! valid (cv[(size_t) hi])) { started = false; continue; }
-                const float x = xFor (kSupportedFrequencies[hi], plot);
-                const float y = yFor (cv[(size_t) hi] - peak, plot);
+                const float x = xFor (kQ21SFrequencies[hi], plot);
+                const float y = yFor (cv[(size_t) hi] - axisTop_, plot);
                 if (! started) { p.startNewSubPath (x, y); started = true; }
                 else p.lineTo (x, y);
             }

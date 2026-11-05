@@ -3,6 +3,7 @@
 #include <complex>
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // SpeakerFilter - a crossover section on one cabinet.
@@ -191,6 +192,9 @@ struct Speaker
     /** Array symmetry: an edit to one cabinet is mirrored onto its partner
         counted from the other end (1 <-> N, 2 <-> N-1, ...). */
     bool  symmetric          = false;
+    /** The user's name for the SOURCE this cabinet belongs to (every box of
+        an array carries the same one). Empty = the default "Q212P-1". */
+    std::string name;
 };
 
 namespace Mount
@@ -219,6 +223,13 @@ inline std::vector<int> arrayMembers (const std::vector<Speaker>& sp, int index)
     for (int i = 0; i < (int) sp.size(); ++i)
         if (sp[(size_t) i].arrayId == id) out.push_back (i);
     return out;
+}
+
+/** The custom name of the source that owns @p index, or empty. */
+inline std::string customSourceName (const std::vector<Speaker>& sp, int index)
+{
+    const auto m = arrayMembers (sp, index);
+    return m.empty() ? std::string() : sp[(size_t) m.front()].name;
 }
 
 /** The first cabinet of every array, in scene order - one entry per SOURCE.
@@ -470,6 +481,15 @@ inline int sourceMount (const std::vector<Speaker>& sp, int index)
         if (arrayHangs (sp, members))
             return sp[(size_t) members.back()].baseHeightM <= 0.01f ? Mount::Stacked : Mount::Flown;
         return head.baseHeightM > 0.01f ? Mount::Flown : Mount::Stacked;
+    }
+    // A sub (Q21S) is only ever on the ground or stacked - never flown. One
+    // recorded or read as flown is built up from the deck instead.
+    if (isSubwooferModel (head.model))
+    {
+        if (head.mount == Mount::Ground || head.mount == Mount::Stacked) return head.mount;
+        if (head.mount == Mount::Flown) return Mount::Stacked;
+        if (members.size() > 1 && ! arrayHangs (sp, members)) return Mount::Ground;
+        return members.size() > 1 ? Mount::Stacked : Mount::Ground;
     }
     if (head.mount >= Mount::Ground && head.mount <= Mount::Flown) return head.mount;
     // One column: stood on the deck it is a stack, clear of it a hang.

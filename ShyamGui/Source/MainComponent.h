@@ -312,6 +312,11 @@ private:
     void showStatsPopup();
     void showProjectMenu();
     void launchNewProjectInstance();
+public:
+    /** File > New project: the app swaps THIS window back to the Project
+        Dashboard (set by the window that owns this component). */
+    std::function<void()> onNewProjectRequested;
+private:
     void openProjectInNewWindow();
     void openProjectInCurrentWindow();
     void loadProjectFile (const juce::File& f);

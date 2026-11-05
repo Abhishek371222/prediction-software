@@ -1,4 +1,5 @@
 #include "RadiationPatternComponent.h"
+#include <map>
 #include "ColourMaps.h"
 #include "BrandTheme.h"
 #include "AppSettings.h"
@@ -9,6 +10,23 @@
 #include <cmath>
 #include <algorithm>
 #include <limits>
+
+// A cabinet's label on the plans: its source's own name when the user has
+// renamed it (with the box's number inside a multi-box array), else the
+// default "Q212P_1".
+static juce::String unitTag (const std::vector<Speaker>& sp, int i)
+{
+    const auto custom = customSourceName (sp, i);
+    if (custom.empty())
+        return juce::String (speakerModelTag (sp[(size_t) i].model)) + "_"
+             + juce::String (speakerModelOrdinal (sp, i));
+    const auto m = arrayMembers (sp, i);
+    juce::String t (custom);
+    if (m.size() > 1)
+        for (size_t k = 0; k < m.size(); ++k)
+            if (m[k] == i) { t << " " << (int) (k + 1); break; }
+    return t;
+}
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -1960,6 +1978,8 @@ void RadiationPatternComponent::eraseNear (juce::Point<float> annotPt, float rad
         [&] (const Annotation& a)
         {
             if (a.space != currentAnnotSpace()) return false;
+            // A Venue element's plane is the Venue tab's to delete, not the eraser's.
+            if (a.venueIndex >= 0) return false;
 
             if (a.kind == Annotation::Kind::Rectangle
                 || a.kind == Annotation::Kind::Square
@@ -2003,6 +2023,9 @@ int RadiationPatternComponent::annotationBorderHitTest (juce::Point<float> annot
     {
         const auto& a = annotations_[(size_t) i];
         if (a.space != space) continue;
+        // Venue elements are the Venue tab's: nothing on the Sources or
+        // Mapping plan can pick one up, move, reshape or delete it.
+        if (a.venueIndex >= 0) continue;
 
         if (a.kind == Annotation::Kind::TextBox)
         {
@@ -2044,6 +2067,7 @@ int RadiationPatternComponent::annotationFillHitTest (juce::Point<float> annotPt
     {
         const auto& a = annotations_[(size_t) i];
         if (a.space != space) continue;
+        if (a.venueIndex >= 0) continue;   // the Venue tab's - see above
 
         if (a.kind == Annotation::Kind::TextBox)
         {
@@ -2469,6 +2493,7 @@ void RadiationPatternComponent::applyMarqueeSelection (bool addToExisting)
     {
         const auto& a = annotations_[(size_t) i];
         if (a.space != space) continue;
+        if (a.venueIndex >= 0) continue;   // a Venue element is not selectable here
         if (box.intersects (annotationScreenBounds (a)) && ! isAnnotationSelected (i))
             selectedAnnots_.push_back (i);
     }
@@ -4236,6 +4261,136 @@ bool RadiationPatternComponent::pasteClipboard()
     return true;
 }
 
+bool RadiationPatternComponent::duplicateMirrored (int plane)
+{
+    if (! hasCopyableSelection()) return false;
+
+    // Ride on copy + paste, so the copies are added exactly as pasted ones
+    // are (fresh source ids, selected, one undo step), with the user's own
+    // clipboard put back afterwards.
+    const auto keepClip = clipboard_;
+    const int  keepGen  = pasteGeneration_;
+    copySelection();
+
+    // Venue-projected planes belong to the Venue tab; polar-sheet drawings
+    // have no x/y/z to mirror.
+    clipboard_.annots.erase (std::remove_if (clipboard_.annots.begin(), clipboard_.annots.end(),
+                                 [] (const Annotation& a)
+                                 { return a.venueIndex >= 0 || a.space != AnnotSpace::World; }),
+                             clipboard_.annots.end());
+
+    // The copy is the SAME thing - same aim, same tilt, same shape - put at
+    // the mirror image of where the original stands, across the middle of
+    // the PLANE it belongs to (the nearest one: the plane it stands in or
+    // beside). A box on one corner lands on the opposite corner, and one
+    // standing a few metres off an edge lands the same few metres off the
+    // opposite edge. "X axis" swaps front/back along x, "Y axis" left/right.
+    std::vector<juce::Rectangle<float>> planes;
+    {
+        // From the points' min / max. (Not by uniting zero-size rectangles:
+        // JUCE treats those as EMPTY, so the "union" collapsed every plane to
+        // one corner and the copy was mirrored about that corner.)
+        auto boxOf = [] (const std::vector<juce::Point<float>>& pts)
+        {
+            float x0 = pts.front().x, x1 = x0, y0 = pts.front().y, y1 = y0;
+            for (const auto& q : pts)
+            {
+                x0 = juce::jmin (x0, q.x); x1 = juce::jmax (x1, q.x);
+                y0 = juce::jmin (y0, q.y); y1 = juce::jmax (y1, q.y);
+            }
+            return juce::Rectangle<float>::leftTopRightBottom (x0, y0, x1, y1);
+        };
+        for (const auto& a : annotations_)
+            if (a.venueIndex >= 0 && a.space == AnnotSpace::World && a.pts.size() >= 3)
+                planes.push_back (boxOf (a.pts));
+        for (const auto& v : venueShapes_)
+            if (v.pts.size() >= 3) planes.push_back (boxOf (v.pts));
+        // No venue: any closed shape drawn on the plan counts as a plane.
+        if (planes.empty())
+            for (const auto& a : annotations_)
+                if (a.space == AnnotSpace::World && a.closed && a.pts.size() >= 3)
+                    planes.push_back (boxOf (a.pts));
+    }
+    auto centreFor = [&] (juce::Point<float> at) -> juce::Point<float>
+    {
+        if (planes.empty()) return {};          // nothing drawn: the origin
+        const juce::Rectangle<float>* best = nullptr;
+        float bestD = 0.0f;
+        for (const auto& r : planes)
+        {
+            const float d = r.getConstrainedPoint (at).getDistanceFrom (at);
+            if (best == nullptr || d < bestD - 1.0e-4f
+                || (std::abs (d - bestD) <= 1.0e-4f && r.getWidth() * r.getHeight()
+                                                      < best->getWidth() * best->getHeight()))
+            { best = &r; bestD = d; }
+        }
+        return best->getCentre();
+    };
+    // A true MIRROR: positions reflect across the axis line through the
+    // middle of the plane the item belongs to, and so do directions - the
+    // copy is the original's mirror image, not a shifted copy.
+    //   X axis: x -> 2cx - x, a heading h becomes 180 - h (left/right swap)
+    //   Y axis: y -> 2cy - y, a heading h becomes -h      (up/down swap)
+    // Tilt is a vertical angle, so a horizontal mirror leaves it as it is.
+    auto reflectAbout = [&] (juce::Point<float> q, juce::Point<float> c)
+    {
+        if (plane == 1) q.x = 2.0f * c.x - q.x;   // X axis
+        if (plane == 2) q.y = 2.0f * c.y - q.y;   // Y axis
+        return q;
+    };
+    auto wrap360 = [] (float d) { d = std::fmod (d, 360.0f); return d < 0.0f ? d + 360.0f : d; };
+
+    // Speakers: one mirror line per SOURCE (from the plane nearest its
+    // centre), so every box of an array is reflected about the same line and
+    // the array comes out as the mirror image of itself.
+    {
+        std::map<int, std::vector<size_t>> groups;   // arrayId (or -1-k) -> boxes
+        int solo = -1;
+        for (size_t k = 0; k < clipboard_.speakers.size(); ++k)
+        {
+            const int id = clipboard_.speakers[k].arrayId;
+            groups[id >= 0 ? id : solo--].push_back (k);
+        }
+        for (auto& [id, ks] : groups)
+        {
+            juce::Point<float> ctr;
+            for (size_t k : ks) ctr += { clipboard_.speakers[k].x, clipboard_.speakers[k].y };
+            ctr /= (float) ks.size();
+            const auto c = centreFor (ctr);
+            for (size_t k : ks)
+            {
+                auto& sp = clipboard_.speakers[k];
+                const auto q = reflectAbout ({ sp.x, sp.y }, c);
+                sp.x = q.x;
+                sp.y = q.y;
+                sp.rotationDeg = wrap360 (plane == 1 ? 180.0f - sp.rotationDeg
+                                                     : -sp.rotationDeg);
+            }
+        }
+    }
+    for (auto& m : clipboard_.mics)
+    {
+        const auto q = reflectAbout ({ m.x, m.y }, centreFor ({ m.x, m.y }));
+        m.x = q.x;
+        m.y = q.y;
+    }
+    for (auto& a : clipboard_.annots)
+    {
+        if (a.pts.empty()) continue;
+        juce::Point<float> ctr;
+        for (const auto& q : a.pts) ctr += q;
+        ctr /= (float) a.pts.size();
+        const auto c = centreFor (ctr);
+        for (auto& q : a.pts) q = reflectAbout (q, c);   // the shape flips too
+    }
+
+    pasteGeneration_ = -1;    // paste nudges by (generation + 1): no nudge
+    const bool ok = ! clipboard_.empty() && pasteClipboard();
+    clipboard_ = keepClip;
+    pasteGeneration_ = keepGen;
+    return ok;
+}
+
 void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> screenPos)
 {
     showSelectionContextMenu (screenPos, -1);
@@ -4312,6 +4467,16 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
     m.addItem (1, "Copy",   canEdit);
     m.addItem (5, "Cut",    canEdit);
     m.addItem (2, "Paste",  hasClipboardContent()); // off when clipboard empty
+    {
+        // Mirrored copies of the whole selection across a plane through the
+        // origin; the originals stay where they are.
+        juce::PopupMenu dup;
+        dup.addItem (22, "X axis");
+        dup.addItem (23, "Y axis");
+        const int n = (int) (selectedSpeakers_.size() + selectedMics_.size() + selectedAnnots_.size());
+        m.addSubMenu (n > 1 ? "Mirror " + juce::String (n) + " items" : juce::String ("Mirror"),
+                      dup, canEdit);
+    }
     m.addSeparator();
     m.addItem (3, "Delete", canEdit);
     // Its own group, well away from Copy: that one copies the SELECTION,
@@ -4377,6 +4542,11 @@ void RadiationPatternComponent::showSelectionContextMenu (juce::Point<int> scree
                              }
                              return;
                          }
+                         if (result >= 21 && result <= 23)
+                         {
+                             safe->duplicateMirrored (result == 21 ? 0 : result == 22 ? 1 : 2);
+                             return;
+                         }
                          if (result == 1)
                              safe->copySelection();
                          else if (result == 5)
@@ -4426,7 +4596,10 @@ bool RadiationPatternComponent::deleteSelection()
         std::vector<int> order = selectedAnnots_;
         std::sort (order.begin(), order.end(), std::greater<int>());
         for (int idx : order)
-            if (idx >= 0 && idx < (int) annotations_.size())
+            if (idx >= 0 && idx < (int) annotations_.size()
+                // Venue elements are deleted on the Venue tab only - here
+                // they stay, whatever else in the selection goes.
+                && annotations_[(size_t) idx].venueIndex < 0)
                 annotations_.erase (annotations_.begin() + idx);
         selectedAnnots_.clear();
         selectedAnnot_ = -1;
@@ -5560,6 +5733,49 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         hs[i] = std::sin (hd);
     }
 
+    // Drawn ALONG ITS AIM: each box shows its depth along the firing axis
+    // (the width across it no longer widens it), and a box standing with a
+    // bigger one - a top on a sub, overlapping in the plan - is slid along
+    // its OWN front line to where that line meets the bigger box's front.
+    // So two front faces lined up in the Top View line up here as well; a
+    // box standing on its own is drawn exactly where it is.
+    std::vector<float> shiftX (speakers_.size(), 0.0f);
+    {
+        auto frontOf = [&] (size_t i)
+        {
+            const auto& s = speakers_[i];
+            const auto cab = cabinetFor (s.model);
+            const float d = fwd[i] + 0.5f * cab.depthM;
+            return juce::Point<float> (s.x + d * hc[i], s.y + d * hs[i]);
+        };
+        auto reach = [&] (size_t i)
+        {
+            const auto cab = cabinetFor (speakers_[i].model);
+            return 0.5f * std::hypot (cab.depthM, cab.widthM);
+        };
+        for (size_t i = 0; i < speakers_.size(); ++i)
+        {
+            if (std::abs (hc[i]) < 0.3f) continue;     // side-on: nothing to slide along
+            const auto& si = speakers_[i];
+            const auto ci = cabinetFor (si.model);
+            // The biggest box this one overlaps in the plan, itself included.
+            size_t anchor = i;
+            float best = ci.depthM * ci.widthM;
+            for (size_t j = 0; j < speakers_.size(); ++j)
+            {
+                if (j == i || ! speakers_[j].enabled) continue;
+                const auto& sj = speakers_[j];
+                if (std::hypot (sj.x - si.x, sj.y - si.y) > reach (i) + reach (j)) continue;
+                const auto cj = cabinetFor (sj.model);
+                const float area = cj.depthM * cj.widthM;
+                if (area > best + 1.0e-4f) { best = area; anchor = j; }
+            }
+            if (anchor == i) continue;
+            const auto fi = frontOf (i), fa = frontOf (anchor);
+            shiftX[i] = (fi.y - fa.y) * hs[i] / hc[i];
+        }
+    }
+
     // The plan's aim line, seen from the side: out of each top's front face
     // along its tilt, under Show Rays like the plan's. Drawn before the boxes
     // so a hang's lines run behind the boxes below.
@@ -5574,7 +5790,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             const auto cab = cabinetFor (s.model);
             const float cx = hc[(size_t) i];
             // Same centre as the rigid box drawn below.
-            const juce::Point<float> c { hx (s.x) + fwd[(size_t) i] * cx * scV,
+            const juce::Point<float> c { hx (s.x + fwd[(size_t) i] * cx + shiftX[(size_t) i]),
                                          vy (s.baseHeightM + 0.5f * cab.heightM) };
             const float th = juce::degreesToRadians (s.tiltDeg);
             const juce::Point<float> axis { std::cos (th) * cx, std::sin (th) * kV };
@@ -5591,7 +5807,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
             // Down to the deck, where the plan's line ends too.
             const float land = aimLandingM (speakers_, i);
             juce::Point<float> end = front + dir * reach;
-            if (land >= 0.0f) end = { hx (s.x + land * cx), vy (0.0f) };
+            if (land >= 0.0f) end = { hx (s.x + land * cx + shiftX[(size_t) i]), vy (0.0f) };
             g.drawDashedLine ({ front, end }, aimDash, 2, live ? 1.6f : 1.0f);
             if (land >= 0.0f)
             {
@@ -5620,11 +5836,11 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
         // sits exactly on the height rules). It used to be drawn on the plan's
         // scale and then stretched by the vertical zoom - zooming out, or
         // V+/V-, squashed and sheared every box into a sliver.
-        const float cx = hc[(size_t) i], sx = hs[(size_t) i];
-        const float w = (cab.depthM * std::abs (cx) + cab.widthM * std::abs (sx)) * scV;
+        const float cx = hc[(size_t) i];
+        const float w = juce::jmax (3.0f, cab.depthM * std::abs (cx) * scV);   // along the aim
         const float h = cab.heightM * scV;
         const float cy = vy (s.baseHeightM + 0.5f * cab.heightM);
-        const juce::Rectangle<float> box (hx (s.x) + fwd[(size_t) i] * cx * scV - 0.5f * w,
+        const juce::Rectangle<float> box (hx (s.x + fwd[(size_t) i] * cx + shiftX[(size_t) i]) - 0.5f * w,
                                           cy - 0.5f * h, w, h);
         const bool sel = i == selected_;
         const float thR = juce::degreesToRadians (s.tiltDeg);
@@ -5652,8 +5868,7 @@ void RadiationPatternComponent::drawFramedElevation (juce::Graphics& g)
 
         // Its name beside it, unless that would land on one already drawn -
         // a flown array is a column of boxes and their names would pile up.
-        const juce::String tag = juce::String (speakerModelTag (s.model)) + "_"
-                               + juce::String (speakerModelOrdinal (speakers_, i));
+        const juce::String tag = unitTag (speakers_, i);
         const float tw = (float) g.getCurrentFont().getStringWidth (tag) + 4.0f;
         const float th = g.getCurrentFont().getHeight();
         const juce::Rectangle<float> tr (box.getRight() + 3.0f, cy - th * 0.5f, tw, th);
@@ -5905,8 +6120,7 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
         const auto cab = cabinetFor (s.model);
         const float c  = front ? s.y : s.x;
         const float ty = vy (s.baseHeightM + cab.heightM) - 15.0f;
-        juce::String tag = juce::String (speakerModelTag (s.model))
-                         + "_" + juce::String (speakerModelOrdinal (speakers_, i));
+        juce::String tag = unitTag (speakers_, i);
         if (! front && std::abs (s.tiltDeg) > 0.01f)
             tag += "  " + juce::String (s.tiltDeg, 1) + " deg";
         g.setColour (Brand::text());
@@ -7270,8 +7484,7 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
         g.setColour (Brand::white().withAlpha (alpha));
         g.setFont (Brand::tech (isSel ? Brand::Type::speakerIdSelected
                                       : Brand::Type::speakerId, true));
-        g.drawText (juce::String (speakerModelTag (spk.model))
-                        + "_" + juce::String (speakerModelOrdinal (speakers_, i)),
+        g.drawText (unitTag (speakers_, i),
                     (int) (c.x - 40), (int) (box.getY() - 16.0f), 80, 14,
                     juce::Justification::centred);
 
@@ -8173,6 +8386,65 @@ int RadiationPatternComponent::speakerHitTest (juce::Point<float> p) const
     return -1;
 }
 
+// ---------------------------------------------------------------------------
+// One rule on every plane: a plain left-drag PANS (hand cursor); Ctrl + left
+// selects and moves (the red selection). Only in the Select tool - a drawing
+// tool keeps its plain click for drawing.
+static juce::MouseEvent withoutCtrl (const juce::MouseEvent& e)
+{
+    // Ctrl+Shift keeps Ctrl, so "add to the selection" still has a gesture.
+    if (e.mods.isShiftDown()) return e;
+    const auto mods = e.mods.withoutFlags (juce::ModifierKeys::ctrlModifier
+                                         | juce::ModifierKeys::commandModifier);
+    return juce::MouseEvent (e.source, e.position, mods, e.pressure, e.orientation,
+                             e.rotation, e.tiltX, e.tiltY, e.eventComponent,
+                             e.originalComponent, e.eventTime, e.mouseDownPosition,
+                             e.mouseDownTime, e.getNumberOfClicks(),
+                             e.mouseWasDraggedSinceMouseDown());
+}
+
+bool RadiationPatternComponent::isPanMode (juce::ModifierKeys m) const
+{
+    // A left-drag on an OBJECT moves it; on empty space it pans. This says
+    // only whether the empty-space drag pans here (the Select tool on a plan).
+    juce::ignoreUnused (m);
+    if (framedElevation()) return true;
+    return tool_ == Tool::Select && ! addMicArmed_ && ! addSpeakerArmed_
+        && currentAnnotSpace() != AnnotSpace::PolarPlot
+        && params_.viewMode != ViewMode::MeasuredPolar
+        && params_.viewMode != ViewMode::Directivity;
+}
+
+bool RadiationPatternComponent::objectUnderScreen (juce::Point<float> p)
+{
+    if (currentAnnotSpace() != AnnotSpace::World) return false;
+    if (speakerHitTest (p) >= 0 || micHitTestScreen (p) >= 0) return true;
+    const auto annot = screenToAnnot (p.x, p.y);
+    const float radius = 10.0f / juce::jmax (1.0f, worldScale());
+    auto isObject = [this] (int i)
+    { return i >= 0 && i < (int) annotations_.size() && annotations_[(size_t) i].venueIndex < 0; };
+    return isObject (annotationBorderHitTest (annot, radius))
+        || isObject (annotationFillHitTest (annot, radius));
+}
+
+void RadiationPatternComponent::refreshHandCursor (juce::ModifierKeys m)
+{
+    if (drag_ == Drag::Pan) return;   // mid-pan keeps the grabbing hand
+    if (framedElevation()) return;    // the elevation sets its own, by what is under it
+    // Hand over empty space (a drag pans); the arrow over something a drag
+    // would pick up and move.
+    if (isPanMode (m) && ! objectUnderScreen (lastHover_))
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+    else
+        updateMouseCursorForTool();
+}
+
+void RadiationPatternComponent::modifierKeysChanged (const juce::ModifierKeys& m)
+{
+    // Pressing or releasing Ctrl over the plot swaps hand <-> arrow at once.
+    if (isMouseOver (true)) refreshHandCursor (m);
+}
+
 void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 {
     if (framedElevation())
@@ -8233,20 +8505,35 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Ctrl + left-drag pans the view from any tool. A Ctrl+click that does
-    // not move is replayed on mouse-up as the normal Ctrl+click, so adding
-    // to the selection with Ctrl still works.
+    // Left-drag in the Select tool: ON an object (a cabinet, a mic, a drawn
+    // shape, or a handle of the selection) it does what it always did -
+    // select, move, rotate, resize. On EMPTY space it pans the plan. A venue
+    // plane is background here, so dragging inside one pans too.
     if (! replayingCtrlClick_
-        && e.mods.isLeftButtonDown()
-        && (e.mods.isCtrlDown() || e.mods.isCommandDown())
-        && currentAnnotSpace() != AnnotSpace::PolarPlot
+        && e.mods.isLeftButtonDown() && ! e.mods.isPopupMenu()
+        && isPanMode (e.mods)
         && plotArea().contains (e.getPosition()))
     {
-        drag_ = Drag::Pan;
-        ctrlPanPending_ = true;
-        ctrlPanMoved_ = false;
-        lastMouse_ = e.position;
-        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        // Ctrl (+Shift) keeps its old meanings: Ctrl+Shift adds to the
+        // selection, Ctrl+drag on empty space draws a selection box.
+        const bool ctrl = e.mods.isCtrlDown() || e.mods.isCommandDown();
+        ctrlGesture_ = ctrl;
+        const bool onObject = objectUnderScreen (e.position);
+
+        replayingCtrlClick_ = true;
+        mouseDown (ctrl ? withoutCtrl (e) : e);   // the normal click logic
+        replayingCtrlClick_ = false;
+
+        const bool missed     = drag_ == Drag::Marquee;            // nothing under it
+        const bool onlyVenue  = ! onObject && drag_ == Drag::SelectionMove;  // grabbed a venue plane
+        if (! ctrl && (missed || onlyVenue))
+        {
+            if (onlyVenue) clearPlotSelection();
+            drag_ = Drag::Pan;
+            lastMouse_ = e.position;
+            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+            repaint();
+        }
         return;
     }
 
@@ -8826,6 +9113,13 @@ void RadiationPatternComponent::mouseDown (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 {
+    if (ctrlGesture_ && ! replayingCtrlClick_ && ! framedElevation())
+    {
+        replayingCtrlClick_ = true;
+        mouseDrag (withoutCtrl (e));
+        replayingCtrlClick_ = false;
+        return;
+    }
     if (framedElevation())
     {
         // A box picked up moves its array, across along the plan's x and up
@@ -9163,13 +9457,6 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
-    if (drag_ == Drag::Pan && ctrlPanPending_ && ! ctrlPanMoved_)
-    {
-        // A few pixels of slack so a shaky Ctrl+click is still a click.
-        if (e.getDistanceFromDragStart() < 4)
-            return;
-        ctrlPanMoved_ = true;
-    }
 
     if (drag_ == Drag::Pan)
     {
@@ -9261,6 +9548,15 @@ void RadiationPatternComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
 {
+    if (ctrlGesture_ && ! replayingCtrlClick_ && ! framedElevation())
+    {
+        replayingCtrlClick_ = true;
+        mouseUp (withoutCtrl (e));
+        replayingCtrlClick_ = false;
+        ctrlGesture_ = false;
+        refreshHandCursor (e.mods);
+        return;
+    }
     if (framedElevation())
     {
         if ((elevDragIdx_ >= 0 || elevRayIdx_ >= 0) && elevDragMoved_ && onEditCommitted)
@@ -9274,18 +9570,7 @@ void RadiationPatternComponent::mouseUp (const juce::MouseEvent& e)
     if (drag_ == Drag::Pan)
     {
         drag_ = Drag::None;
-        updateMouseCursorForTool();
-        const bool replay = ctrlPanPending_ && ! ctrlPanMoved_;
-        ctrlPanPending_ = false;
-        ctrlPanMoved_ = false;
-        if (replay)
-        {
-            // It was a Ctrl+click, not a pan: run it as one.
-            replayingCtrlClick_ = true;
-            mouseDown (e);
-            mouseUp (e);
-            replayingCtrlClick_ = false;
-        }
+        refreshHandCursor (e.mods);
         repaint();
         return;
     }
@@ -9519,9 +9804,9 @@ void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
     {
         bool over = false;
         for (const auto& h : elevHits_) if (h.second.contains (e.position)) { over = true; break; }
-        setMouseCursor (over ? juce::MouseCursor::DraggingHandCursor
+        setMouseCursor (over ? juce::MouseCursor::NormalCursor
                              : elevRayAt (e.position) != nullptr ? juce::MouseCursor::UpDownResizeCursor
-                                                                 : juce::MouseCursor::NormalCursor);
+                                                                 : juce::MouseCursor::DraggingHandCursor);
         // With Snap on, mark where the cursor would land.
         if (elevSnap_ && elevScale_ > 1.0e-6f && elevScaleH_ > 1.0e-6f)
         {
@@ -9550,6 +9835,9 @@ void RadiationPatternComponent::mouseMove (const juce::MouseEvent& e)
             repaint();
         }
     }
+
+    lastHover_ = e.position;
+    refreshHandCursor (e.mods);
 
     const bool tracking = (tool_ == Tool::Ruler && pendingAnchor_)
                        || (tool_ == Tool::Shape && sessionActive_ && ! sessionPts_.empty());

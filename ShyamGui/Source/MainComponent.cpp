@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "WindowMode.h"
 #include "PreferencesComponent.h"
 #include "InfoDialogComponent.h"
 #include "ReportExport.h"
@@ -104,7 +105,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.5.1", juce::dontSendNotification);
+    versionLabel_.setText ("v1.5.2", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -372,6 +373,7 @@ MainComponent::MainComponent (ProjectData project)
     };
     sourcePanel_.onInterdistance = [this] (int i, float m)     { controlPanel_.setSourceSpacing (i, m); };
     sourcePanel_.onSymmetric = [this] (int i, bool on)         { controlPanel_.setSourceSymmetric (i, on); };
+    sourcePanel_.onRenameSource = [this] (int i, const juce::String& n) { controlPanel_.setSourceName (i, n); };
     sourcePanel_.onSourceEnabled = [this] (int i, bool on)     { controlPanel_.setSourceEnabled (i, on); };
     // A Rigging Angles row edits one cabinet; under Array Symmetry its
     // partner from the other end of the array takes the same change.
@@ -483,7 +485,12 @@ MainComponent::MainComponent (ProjectData project)
         elevSnapBtn_.onClick    = [this] { elevationComp_.setElevationSnap (elevSnapBtn_.getToggleState()); };
         elevZoomOutBtn_.onClick = [this] { elevationComp_.zoomElevationVertical (1.0f / 1.25f); };
         elevZoomInBtn_.onClick  = [this] { elevationComp_.zoomElevationVertical (1.25f); };
-        elevHeader_.setTools ({ &elevSnapBtn_, &elevZoomOutBtn_, &elevZoomInBtn_ });
+        // Snap / V- / V+ are withheld from the Elevation bar: snapping is
+        // switched from the Top View bar's magnet, which drives both panes.
+        // (Shift + wheel still zooms the elevation; double-click resets.)
+        elevSnapBtn_.setVisible (false);
+        elevZoomOutBtn_.setVisible (false);
+        elevZoomInBtn_.setVisible (false);
     }
     elevHeader_.onFold = [this] (bool) { resized(); };
     splHeader_.onFold  = [this] (bool) { resized(); };
@@ -515,20 +522,91 @@ MainComponent::MainComponent (ProjectData project)
     venuePanel_.onAddElement = [this] { addVenueElement (VenueElement::Type::Listening); };
     venuePanel_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venuePanel_.onDelete = [this] (int i) { deleteVenueElement (i); };
+    venuePanel_.onLock   = [this] (int i, bool on)
+    {
+        if (i < 0 || i >= (int) venue_.size()) return;
+        willEdit();
+        venue_[(size_t) i].locked = on;
+        refreshVenuePanel();
+        commitEdit();
+    };
     venuePanel_.onLayoutChanged = [this] { resized(); };
     venueView_.onSelect = [this] (int i) { venueSel_ = i; refreshVenuePanel(); };
     venueView_.onElementChanged = [this] (int i, VenueElement e) { setVenueElement (i, e); };
     venueView_.onEditStart = [this] { willEdit(); };
     venueView_.onAction = [this] (int i, int a) { venueAction (i, a); };
+    // Several elements at once: mirrored duplicates, or delete.
+    venueView_.onActionMany = [this] (std::vector<int> idxs, int a)
+    {
+        idxs.erase (std::remove_if (idxs.begin(), idxs.end(),
+                        [this] (int i) { return i < 0 || i >= (int) venue_.size(); }),
+                    idxs.end());
+        std::sort (idxs.begin(), idxs.end());
+        idxs.erase (std::unique (idxs.begin(), idxs.end()), idxs.end());
+        if (idxs.empty()) return;
+
+        if (a == VenueTopPlot::ActDelete)
+        {
+            for (auto it = idxs.rbegin(); it != idxs.rend(); ++it)
+                venue_.erase (venue_.begin() + *it);
+            venueSel_ = juce::jmin (idxs.front(), (int) venue_.size() - 1);
+        }
+        else if (a == VenueTopPlot::ActDupXY || a == VenueTopPlot::ActDupYZ
+                 || a == VenueTopPlot::ActDupXZ)
+        {
+            // A MIRRORED copy across the plane through the origin:
+            // YZ flips x, XZ flips y, XY flips z. The originals stay.
+            for (int i : idxs)
+            {
+                auto copy = venue_[(size_t) i];
+                for (auto& p : copy.pts)
+                {
+                    if (a == VenueTopPlot::ActDupYZ) p.x = -p.x;
+                    if (a == VenueTopPlot::ActDupXZ) p.y = -p.y;
+                    if (a == VenueTopPlot::ActDupXY) p.z = -p.z;
+                }
+                copy.name  += " copy";
+                copy.locked = false;
+                venue_.push_back (copy);
+            }
+            venueSel_ = (int) venue_.size() - 1;
+        }
+        else return;
+
+        refreshVenuePanel();
+        syncVenueToPlanes();
+        willEdit();
+        commitEdit();
+    };
     venuePanel_.onType   = [this] (int i, VenueElement::Type t)
     { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].type = t;
         refreshVenuePanel(); syncVenueToPlanes(); willEdit(); commitEdit(); } };
     venuePanel_.onName   = [this] (int i, const juce::String& n)
     { if (i >= 0 && i < (int) venue_.size() && n.isNotEmpty())
-      { venue_[(size_t) i].name = n; refreshVenuePanel(); willEdit(); commitEdit(); } };
+      { willEdit(); venue_[(size_t) i].name = n; refreshVenuePanel();
+        syncVenueToPlanes();   // the new name everywhere the element is drawn
+        commitEdit(); } };
     venuePanel_.onAudHeight = [this] (int i, VenueElement::AudHeight h)
     { if (i >= 0 && i < (int) venue_.size()) { venue_[(size_t) i].height = h;
         refreshVenuePanel(); syncVenueToPlanes(); willEdit(); commitEdit(); } };
+    // A column's sync icon: POINT 1's value on that axis, copied to 2-4.
+    venuePanel_.onSyncAxis = [this] (int i, int a)
+    {
+        if (i < 0 || i >= (int) venue_.size() || a < 0 || a > 2) return;
+        auto& el = venue_[(size_t) i];
+        if (el.locked) return;
+        const auto& p0 = el.pts[0];
+        const float v = a == 0 ? p0.x : a == 1 ? p0.y : p0.z;
+        for (int c = 1; c < 4; ++c)
+        {
+            auto& p = el.pts[c];
+            if (a == 0) p.x = v; else if (a == 1) p.y = v; else p.z = v;
+        }
+        refreshVenuePanel();
+        syncVenueToPlanes();
+        willEdit();
+        commitEdit();
+    };
     venuePanel_.onPoint = [this] (int i, int c, int a, float m)
     {
         if (i < 0 || i >= (int) venue_.size() || c < 0 || c > 3) return;
@@ -683,6 +761,16 @@ MainComponent::MainComponent (ProjectData project)
     // The plot drives the simulated region: zooming changes how many metres
     // are solved for, not how much of a fixed box is visible, so the field
     // always covers the canvas and the reachable range is unbounded.
+    viewBar_.btnSnap_.setToggleState (plotHeader_.btnSnap_.getToggleState(), juce::dontSendNotification);
+    viewBar_.btnSnap_.onClick = [this]
+    {
+        const bool on = viewBar_.btnSnap_.getToggleState();
+        plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
+        patternComp_.setDrawGridSnap (on);
+        elevSnapBtn_.setToggleState (on, juce::dontSendNotification);
+        elevationComp_.setElevationSnap (on);
+        reportStatus (on ? "Snap on" : "Snap off", true);
+    };
     plotHeader_.btnSnap_.onClick = [this]
     {
         patternComp_.setDrawGridSnap (plotHeader_.btnSnap_.getToggleState());
@@ -899,6 +987,10 @@ MainComponent::MainComponent (ProjectData project)
     {
         commitEdit();
         refreshSourcePanel();
+        // The mic response probes the scene directly, so it follows every
+        // change at once - a mute, a gain, a move - even on the Mapping tab
+        // with Auto-Calculate off, where the map waits for Calculate.
+        refreshFrequencyResponse();
         // Always push the live speaker list (delete / enable / layout) so markers
         // and active counts update immediately, then recompute field views.
         syncRenderer();
@@ -1611,6 +1703,8 @@ bool MainComponent::handleEditShortcut (const juce::KeyPress& key)
         const bool on = ! plotHeader_.btnSnap_.getToggleState();
         plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
         patternComp_.setDrawGridSnap (on);
+        viewBar_.btnSnap_.setToggleState (on, juce::dontSendNotification);
+        elevationComp_.setElevationSnap (on);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         reportStatus (on ? "Snap on" : "Snap off", true);
         return true;
@@ -2098,6 +2192,8 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
         const bool on = toggleFlag (plotHeader_.btnSnap_.getToggleState());
         plotHeader_.btnSnap_.setToggleState (on, juce::dontSendNotification);
         patternComp_.setDrawGridSnap (on);
+        viewBar_.btnSnap_.setToggleState (on, juce::dontSendNotification);
+        elevationComp_.setElevationSnap (on);
         plotHeader_.setDrawPrompt (patternComp_.getDrawPrompt());
         return TerminalResult::ok (on ? "Snap on." : "Snap off.");
     }
@@ -2254,11 +2350,13 @@ MainComponent::TerminalResult MainComponent::handleTerminalCommand (const juce::
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
+    if (WindowMode::isToggleKey (key)) { WindowMode::toggle (this); return true; }
     return handleEditShortcut (key);
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
 {
+    if (WindowMode::isToggleKey (key)) { WindowMode::toggle (this); return true; }
     return handleEditShortcut (key);
 }
 
@@ -2408,6 +2506,10 @@ void MainComponent::lookAndFeelChanged()
     refreshHeaderIcons(); // also restyles Stats for light/dark mockup
     syncSidebarToggleChrome();
     logo_ = Brand::createLogo (Brand::text());
+    // The top strip draws the wordmark through a raw pointer to logo_, so it
+    // must be handed the NEW one - left on the old (now deleted) drawable,
+    // the ATOMIK logo vanished from the menu bar after any theme refresh.
+    topMenu_.setLogo (logo_.get());
     repaint();
 }
 
@@ -2518,6 +2620,9 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             m.addSeparator();
             m.addItem (103, "Save");
             m.addItem (104, "Save as...");
+            m.addSeparator();
+            // Full screen has no title bar, so its close button lives here.
+            m.addItem (106, "Exit	Alt+F4");
             break;
 
         case TopMenuBar::Venue:
@@ -2553,6 +2658,8 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
 
         case TopMenuBar::Settings:
             m.addItem (601, "Preferences...");
+            m.addSeparator();
+            m.addItem (602, "Full Screen	F11", true, WindowMode::isFullScreen (getTopLevelComponent()));
             break;
     }
 
@@ -2568,6 +2675,7 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
             case 103: fire (plotHeader_.onFileSave);   break;
             case 104: fire (plotHeader_.onFileSaveAs); break;
             case 105: applyLayout();                   break;
+            case 106: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case 501: fire (plotHeader_.onFileExport); break;
             case 502: saveViewImage (ImageView::Top);       break;
             case 503: saveViewImage (ImageView::Elevation); break;
@@ -2591,6 +2699,7 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
                       break;
 
             case 601: openPreferences(); break;
+            case 602: WindowMode::toggle (this); break;
 
             default: break;
         }
@@ -3754,12 +3863,12 @@ void MainComponent::deletePlane (int planeIndex)
     // so deleting it here has to delete what produced it. Erasing only the
     // projection would leave the element alive on the Venue tab and the next
     // sync would put the plane straight back - the row would refuse to go.
+    // A plane that came from the Venue tab is a Venue ELEMENT, and elements
+    // are deleted on the Venue tab only - never from Sources or Mapping.
     const int vi = all[(size_t) ai].venueIndex;
-    if (vi >= 0 && vi < (int) venue_.size())
+    if (vi >= 0)
     {
-        deleteVenueElement (vi);      // re-projects, which removes the plane
-        selectedPlane_ = juce::jmin (planeIndex, planeNames().size() - 1);
-        refreshSourcePanel();
+        reportStatus ("Venue elements are deleted on the Venue tab.", false);
         return;
     }
 
@@ -3904,6 +4013,7 @@ void MainComponent::venueAction (int index, int action)
     if (index < 0 || index >= (int) venue_.size()) return;
 
     if (action == VenueTopPlot::ActDelete) { deleteVenueElement (index); return; }
+    if (action == VenueTopPlot::ActRename) { venuePanel_.beginRename (index); return; }
 
     if (action == VenueTopPlot::ActDuplicate)
     {
@@ -4479,11 +4589,29 @@ void MainComponent::refreshFrequencyResponse()
         base.surfaces          = surfaces_;
     }
 
-    // The sweep walks the currently-browsed model's own catalogue only; that
-    // model's speakers must be probed at each swept Hz, so its own resolved
-    // frequency field is updated alongside p.frequency - the OTHER model's
-    // field (and therefore its speakers' rendered pattern) stays untouched.
-    const int browsedModel = controlPanel_.getBrowsedModel();
+    // The mic response shows the SUBS only: tops (Q212P, BEM) are left out of
+    // the probe entirely, so the curve is what the low end does at each mic.
+    bool anySub = false;
+    for (auto& s : base.speakers)
+    {
+        if (s.model != 0) s.enabled = false;   // 0 = Q21S
+        anySub = anySub || s.enabled;
+    }
+    if (! anySub)
+    {
+        // Nothing to draw: no enabled subs in the scene.
+        std::vector<std::vector<float>> none (mics.size(),
+            std::vector<float> ((size_t) kNumQ21SFrequencies, -120.0f));
+        frPlot_.setCurves (mics, none);
+        if (frWindow_ != nullptr)
+            frWindow_->content.setCurves (mics, none, frRefMic_,
+                                          patternComp_.resultHasAbsoluteSpl());
+        return;
+    }
+
+    // The sweep moves the SUBS' own frequency (they are all that is probed),
+    // whatever model the measurement browser happens to be showing.
+    const int browsedModel = 0;   // Q21S
 
     // The distance each mic is compensated by: to the NEAREST enabled
     // cabinet, not to the centre of the rig. A centroid is the average of
@@ -4525,22 +4653,33 @@ void MainComponent::refreshFrequencyResponse()
         // the distance taken out and the axis read as relative dB, the plot
         // still answers the alignment question without publishing the numbers
         // behind it.
-        const float comp = compensationDb (mics[mi]);
+        // NOT applied any more. The sub curve is ABSOLUTE dB SPL at the mic,
+        // straight from the Q21S BEM data (Q212S Absolute: |p| re 20 uPa,
+        // matched to the 2 m arc), so a mic twice as far from the sub reads
+        // 6 dB lower - the inverse-square law the user checks the plot by.
+        // Compensating the distance away hid exactly that difference.
+        const float comp = 0.0f;
+        juce::ignoreUnused (compensationDb);
 
-        curves[mi].resize ((size_t) kNumSupportedFrequencies, 0.0f);
-        for (int hi = 0; hi < kNumSupportedFrequencies; ++hi)
+        curves[mi].resize ((size_t) kNumQ21SFrequencies, 0.0f);
+        for (int hi = 0; hi < kNumQ21SFrequencies; ++hi)
         {
+            // "401 Hz" is the 400 Hz BEM solve again (its Freq column reads
+            // 400.00), so it is not a reading of its own: left out of the
+            // curve rather than plotted as a second, identical last point.
+            if (hi > 0 && kQ21SFrequencies[hi] - kQ21SFrequencies[hi - 1] < 2.0)
+            {
+                curves[mi][(size_t) hi] = -120.0f;
+                continue;
+            }
             SimParams p = base;
-            p.frequency = kSupportedFrequencies[hi];
+            p.frequency = kQ21SFrequencies[hi];
             setModelFrequency (p, browsedModel, p.frequency);
-            // The level at this mic. absDb is calibrated dB SPL where the
-            // device carries a sensitivity, and falls back to the relative
-            // figure where it does not. It is NOT plotted as it stands - see
-            // the compensation above and the datum below.
+            // The level at this mic: dB SPL off the sub's absolute BEM data.
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
                                                    intensityDb, absDb))
-                curves[mi][(size_t) hi] = absDb + comp - kResponseDatumDbSpl;
+                curves[mi][(size_t) hi] = absDb + comp;   // dB SPL
             else
                 curves[mi][(size_t) hi] = -120.0f;
         }
@@ -4845,6 +4984,41 @@ bool MainComponent::launchAppInstance (const juce::String& args)
 
 void MainComponent::launchNewProjectInstance()
 {
+    // In THIS window: back to the Project Dashboard, where New Project /
+    // Open / Recent start the next one. A second app window is no longer
+    // spawned (that is still on offer as "Open project in new window").
+    if (onNewProjectRequested)
+    {
+        auto go = [cb = onNewProjectRequested]
+        {
+            // Deferred: it destroys this component's window.
+            juce::MessageManager::callAsync ([cb] { cb(); });
+        };
+        if (! projectDirty_) { go(); return; }
+
+        juce::AlertWindow::showYesNoCancelBox (
+            juce::AlertWindow::QuestionIcon, "New Project",
+            "Save changes to the current project first?",
+            "Save", "Don't Save", "Cancel", this,
+            juce::ModalCallbackFunction::create (
+                [safe = juce::Component::SafePointer<MainComponent> (this), go] (int r)
+                {
+                    if (safe == nullptr || r == 0) return;          // Cancel
+                    if (r == 1)                                      // Save
+                    {
+                        if (safe->project_.file == juce::File())
+                        {
+                            // Never saved: pick a file first; New again after.
+                            safe->saveProjectAs();
+                            return;
+                        }
+                        safe->saveProject();
+                    }
+                    go();
+                }));
+        return;
+    }
+
     if (! launchAppInstance ({}))
     {
         juce::AlertWindow::showMessageBoxAsync (
@@ -5484,7 +5658,7 @@ void MainComponent::exportCSV()
             if (nQ212P > 0)    product << (product.isEmpty() ? "" : "+") << "Q212P(" << nQ212P << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.5.1");
+            line ("# Atomik Integral v1.5.2");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));

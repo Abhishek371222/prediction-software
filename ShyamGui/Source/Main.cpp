@@ -2,12 +2,13 @@
 #include "MainComponent.h"
 #include "DashboardComponent.h"
 #include "BrandTheme.h"
+#include "WindowMode.h"
 
 class TwoSpeakerApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName()    override { return "Atomik Integral"; }
-    const juce::String getApplicationVersion() override { return "1.5.1"; }
+    const juce::String getApplicationVersion() override { return "1.5.2"; }
     bool moreThanOneInstanceAllowed()          override { return true; }
 
     void initialise (const juce::String& /*commandLine*/) override
@@ -116,6 +117,20 @@ public:
             setVisible (true);
             setIcon (Brand::createIcon (256));
             if (auto* peer = getPeer()) peer->setIcon (Brand::createIcon (256));
+            // Full screen by default (F11 toggles; the choice is remembered).
+            fullScreen_.start();
+        }
+
+        void activeWindowStatusChanged() override
+        {
+            DocumentWindow::activeWindowStatusChanged();
+            fullScreen_.activeChanged();
+        }
+
+        bool keyPressed (const juce::KeyPress& k) override
+        {
+            if (WindowMode::isToggleKey (k)) { WindowMode::toggle (this); return true; }
+            return DocumentWindow::keyPressed (k);
         }
 
         void closeButtonPressed() override
@@ -124,6 +139,7 @@ public:
         }
 
     private:
+        WindowMode::Keeper fullScreen_ { *this };
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DashboardWindow)
     };
 
@@ -138,7 +154,15 @@ public:
                               Brand::base(), DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent (project), true);
+            auto* mc = new MainComponent (project);
+            // File > New project: this same window goes back to the Project
+            // Dashboard instead of a second copy of the app being started.
+            mc->onNewProjectRequested = []
+            {
+                if (auto* app = dynamic_cast<TwoSpeakerApp*> (juce::JUCEApplication::getInstance()))
+                    app->showDashboard();
+            };
+            setContentOwned (mc, true);
             setResizable (true, true);
 
             // Free resize, no fixed aspect ratio: MainComponent::resized() lays
@@ -156,6 +180,20 @@ public:
             setVisible (true);
             setIcon (Brand::createIcon (256));
             if (auto* peer = getPeer()) peer->setIcon (Brand::createIcon (256));
+            // Full screen by default (F11 toggles; the choice is remembered).
+            fullScreen_.start();
+        }
+
+        void activeWindowStatusChanged() override
+        {
+            DocumentWindow::activeWindowStatusChanged();
+            fullScreen_.activeChanged();
+        }
+
+        bool keyPressed (const juce::KeyPress& k) override
+        {
+            if (WindowMode::isToggleKey (k)) { WindowMode::toggle (this); return true; }
+            return DocumentWindow::keyPressed (k);
         }
 
         void closeButtonPressed() override
@@ -164,6 +202,7 @@ public:
         }
 
     private:
+        WindowMode::Keeper fullScreen_ { *this };
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 
