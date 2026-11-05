@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <vector>
 
 // ===========================================================================
 // AppSettings - persistent user preferences (theme + unit system), shared
@@ -138,6 +139,24 @@ public:
         if (props_ == nullptr) return;
         props_->setValue ("startBorderlessFullScreen", b);
         props_->saveIfNeeded();
+    }
+
+    // Grid resolution - the spacing of the drawing grid, in the DISPLAY unit
+    // (feet in Imperial, metres in SI); 0 = Auto (the grid picks its own step
+    // from the zoom). One value per unit system, so switching units does not
+    // turn 0.5 ft into 0.5 m.
+    double gridResolution (bool imperialUnits) const
+    {
+        return props_ != nullptr ? props_->getDoubleValue (imperialUnits ? "gridResFt" : "gridResM", 0.0) : 0.0;
+    }
+
+    void setGridResolution (bool imperialUnits, double v)
+    {
+        if (props_ == nullptr) return;
+        if (std::abs (gridResolution (imperialUnits) - v) < 1.0e-9) return;
+        props_->setValue (imperialUnits ? "gridResFt" : "gridResM", v);
+        props_->saveIfNeeded();
+        sendChangeMessage();
     }
 
     void addRecentProject (const juce::File& f)
@@ -308,13 +327,42 @@ namespace Units
     }
     inline juce::String waveNumberUnit() { return juce::String ("rad/") + lengthUnit(); }
 
-    // ---- Snap increment (metres) - SI: 100 mm; Imperial: 1 ft ---------------
+    // ---- Grid resolution ---------------------------------------------------
+    // The choices offered, in display units (ft / m). 0 = Auto.
+    inline std::vector<double> gridResolutionChoices()
+    {
+        if (imperial()) return { 0.0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0 };
+        return { 0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0 };
+    }
+    /** The user's grid spacing in METRES, or 0 for Auto. */
+    inline double gridResolutionM()
+    {
+        const double d = AppSettings::get().gridResolution (imperial());
+        return d > 0.0 ? displayToMetres (d) : 0.0;
+    }
+    inline juce::String gridResolutionLabel (double displayVal)
+    {
+        if (displayVal <= 0.0) return "Auto";
+        if (imperial() && displayVal < 1.0)
+            return juce::String (displayVal, 2).trimCharactersAtEnd ("0") + " ft  ("
+                 + juce::String ((int) std::lround (displayVal * 12.0)) + " in)";
+        const int dp = std::abs (displayVal - std::round (displayVal)) < 1.0e-9 ? 0
+                     : (std::abs (displayVal * 10.0 - std::round (displayVal * 10.0)) < 1.0e-9 ? 1 : 2);
+        return juce::String (displayVal, dp) + " " + lengthUnit();
+    }
+
+    // ---- Snap increment (metres) --------------------------------------------
+    // Snap follows the grid, as in CAD: with a grid resolution set, objects
+    // land on its lines. On Auto: SI 100 mm, Imperial 1 ft.
     inline double snapStepMetres()
     {
+        if (const double g = gridResolutionM(); g > 0.0) return g;
         return imperial() ? 0.3048 : 0.1;   // international foot / 0.1 m
     }
     inline juce::String snapStepLabel()
     {
+        const double g = AppSettings::get().gridResolution (imperial());
+        if (g > 0.0) return gridResolutionLabel (g);
         return imperial() ? "1 ft" : "100 mm";
     }
 }

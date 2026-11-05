@@ -332,6 +332,14 @@ protected:
     // rules land on whole feet and the numbers beside them are round - a
     // 2 m grid labelled in feet reads 6.6 ft, 13.1 ft, 19.7 ft.
     static double stepM() { return FigPlot::baseStepM(); }
+    // The rule spacing actually drawn: the fixed base step on Auto, or the
+    // grid resolution from Settings (thinned when zoomed out).
+    double gridM (juce::Rectangle<int> f) const
+    {
+        if (Units::gridResolutionM() > 0.0)
+            return FigPlot::gridStepM (pxPerMetre (f), UiConfig::Scale::figf (30.0f));
+        return stepM();
+    }
 
     // The field's inset from the pane, in Figma px: room for the tick labels
     // along the top and down the left. Each pane sets its own.
@@ -352,6 +360,10 @@ protected:
     // sparse numbers is how a drawing is normally dimensioned.
     static double labelStep (double pxPerM, double wantPx)
     {
+        // Grid resolution set: number the drawn grid lines (see labelStepM).
+        if (Units::gridResolutionM() > 0.0)
+            return FigPlot::labelStepM (FigPlot::gridStepM (pxPerM, UiConfig::Scale::figf (30.0f)),
+                                        pxPerM, wantPx);
         return FigPlot::gridStepM (pxPerM, wantPx);
     }
 
@@ -409,8 +421,10 @@ protected:
                               double stepDisplay = 1.0)
     {
         if (std::abs (m) < 1.0e-9) return juce::String ("0(") + axis + ")";
-        const int dp = stepDisplay >= 1.0 ? 0 : (stepDisplay >= 0.1 ? 1 : 2);
-        return juce::String (Units::metresToDisplay (m), dp) + Units::lengthUnit();
+        const int dp = FigPlot::decimalsFor (stepDisplay);
+        const double v = Units::metresToDisplay (m);
+        return (dp > 0 ? juce::String (v, dp) : juce::String ((int) std::lround (v)))
+               + Units::lengthUnit();
     }
 
     /** Hold the opening scale until the user zooms: the pane knows its own
@@ -448,8 +462,9 @@ protected:
         // Snapped to the step, so an Imperial grid lands on whole feet rather
         // than wherever -24 m happens to fall between them.
         const double lo = visXMin (f), hi = visXMax (f);
-        for (double m = std::ceil (lo / stepM()) * stepM();
-             m <= hi + 1.0e-6; m += stepM())
+        const double gs = gridM (f);
+        for (double m = std::ceil (lo / gs) * gs;
+             m <= hi + 1.0e-6; m += gs)
         {
             const int x = juce::roundToInt (xToScreen (m, f));
             if (x > f.getX() && x < f.getRight())
@@ -478,7 +493,7 @@ protected:
             // is, so a rule just inside the frame drew its number half
             // outside it - the row of figures ran wider than the drawing it
             // belongs to. A label is skipped unless the text itself fits.
-            const auto txt = tick (m, "x");
+            const auto txt = tick (m, "x", Units::metresToDisplay (st));
             const int  tw  = font.getStringWidth (txt);
             if (x - tw / 2 < f.getX() || x + tw / 2 > f.getRight()) continue;
 
@@ -769,7 +784,8 @@ public:
         // with zero, leaving the top of the field blank and unlabelled.
         g.setColour (gridCol());
         const double yLo = visYMin (f), yHi = visYMax (f);
-        for (double m = std::ceil (yLo / stepM()) * stepM(); m <= yHi + 1.0e-6; m += stepM())
+        const double gs = gridM (f);
+        for (double m = std::ceil (yLo / gs) * gs; m <= yHi + 1.0e-6; m += gs)
         {
             const int y = juce::roundToInt (yToScreen (m, f));
             if (y >= f.getY() && y <= f.getBottom())
@@ -789,7 +805,7 @@ public:
             {
                 const int y = juce::roundToInt (yToScreen (m, f));
                 if (y <= f.getY() + 4 || y >= f.getBottom() - 4) continue;
-                drawYLabel (g, f, y, tick (m), 24.0f);
+                drawYLabel (g, f, y, tick (m, "y", Units::metresToDisplay (st)), 24.0f);
             }
         }
 
@@ -1052,7 +1068,7 @@ public:
         const double zLo  = camZBase();
         const double zHi  = zLo + f.getHeight() / ppm;
         g.setColour (gridCol());
-        FigPlot::forSteps (zLo, zHi, stepM(), [&] (double m)
+        FigPlot::forSteps (zLo, zHi, gridM (f), [&] (double m)
         {
             const int y = juce::roundToInt (zToScreen (m, f));
             if (y >= f.getY() && y <= f.getBottom())
@@ -1077,7 +1093,7 @@ public:
             {
                 const bool ground = std::abs (m) < st * 1.0e-6;
                 const int y = juce::roundToInt (zToScreen (m, f));
-                drawYLabel (g, f, y, tick (ground ? 0.0 : m), 24.0f, true,
+                drawYLabel (g, f, y, tick (ground ? 0.0 : m, "y", Units::metresToDisplay (st)), 24.0f, true,
                             ground ? 0.0f : (float) (st * ppm));
             });
         }

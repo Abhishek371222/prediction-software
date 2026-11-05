@@ -26,8 +26,10 @@ private:
     void refreshSelection();
     void applyScaledChrome();
 
-    juce::Label title_, appearanceHdr_, unitsHdr_;
-    juce::Label themeLabel_, unitsLabel_, unitsNote_;
+    juce::Label title_, appearanceHdr_, unitsHdr_, gridHdr_;
+    juce::Label themeLabel_, unitsLabel_, unitsNote_, gridLabel_, gridNote_;
+    juce::ComboBox gridRes_;
+    void refreshGridChoices();
 
     juce::TextButton themeDarkBtn_  { "DARK" },  themeLightBtn_ { "LIGHT" };
     juce::TextButton unitsSiBtn_    { "SI" },    unitsImpBtn_   { "IMPERIAL" };

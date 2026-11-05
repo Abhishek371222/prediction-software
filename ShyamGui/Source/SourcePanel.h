@@ -1385,8 +1385,8 @@ public:
                 y += fig (76.0f);
                 rowRules_.push_back (y - 1);
             };
-            pass ("Low Pass",  *fltLpFreq_, *fltLpSlope_);
-            pass ("High Pass", *fltHpFreq_, *fltHpSlope_);
+            pass ("High Pass", *fltLpFreq_, *fltLpSlope_);
+            pass ("Low Pass",  *fltHpFreq_, *fltHpSlope_);
         }
 
         // ------------------------------------------------- Rigging Points

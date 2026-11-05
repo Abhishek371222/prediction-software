@@ -201,6 +201,7 @@ private:
     // A tab, not a mode of the plan: it draws the room rather than the rig,
     // and brings its own left panel with it.
     bool                      venueMode_ = false;
+    bool                      planFolded_ = false;   // Top View collapsed
     std::vector<VenueElement> venue_;
     int                       venueSel_ = -1;
     VenueView                 venueView_;
@@ -252,6 +253,7 @@ private:
     static constexpr float kSubSpacingM       = 1.2f;
     static constexpr int   kAddArrayCabinets  = 4;
     static constexpr int   kAddSubCabinets    = 4;
+    static constexpr int   kAddQ212PCabinets  = 2;   // default Q212P array
     // The menus drive the ribbon's own callbacks, so the app behaves
     // exactly as before. The ribbon's buttons held the on/off state;
     // with it hidden, these carry it so the ticks can be right.

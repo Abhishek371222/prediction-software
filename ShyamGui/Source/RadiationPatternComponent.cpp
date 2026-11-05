@@ -1099,7 +1099,7 @@ void RadiationPatternComponent::updateDrawPrompt()
     if (addSpeakerArmed_)
         p = "Click the plot to place the unit (Esc cancels)";
     else if (addMicArmed_)
-        p = "MIC: click to place (Esc cancels). Snaps to 1 / 2 / 4 / 8 m rings.";
+        p = "MIC: click to place (Esc cancels). Snaps to the range rings you have added.";
     else if (tool_ == Tool::Ruler)
         p = pendingAnchor_ ? "RULER: specify end point" : "RULER: specify start point";
     else if (tool_ == Tool::Shape)
@@ -6001,7 +6001,13 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
     // --- grid + height scale ----------------------------------------------
     const juce::String u = Units::lengthUnit();
     g.setColour (Brand::plotGrid().withAlpha (0.35f));
-    const float stepM = spanV > 12.0f ? 5.0f : (spanV > 6.0f ? 2.0f : 1.0f);
+    // Steps in the unit on screen: whole feet in Imperial (10 / 5 / 2 ft),
+    // so a 1 m rule no longer reads "3.3 ft".
+    const float toDisp = (float) Units::metresToDisplay (1.0);
+    const float spanD  = spanV * toDisp;
+    const float stepD  = Units::imperial() ? (spanD > 40.0f ? 10.0f : (spanD > 20.0f ? 5.0f : 2.0f))
+                                           : (spanV > 12.0f ? 5.0f : (spanV > 6.0f ? 2.0f : 1.0f));
+    const float stepM  = stepD / toDisp;
     for (float m = stepM; m <= spanV; m += stepM)
     {
         const float yy = vy (m);
@@ -6016,7 +6022,7 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
     {
         const float yy = vy (m);
         if (yy < pb.getY()) break;
-        g.drawText (juce::String (Units::metresToDisplay (m), 1) + " " + u,
+        g.drawText (juce::String ((int) std::lround (Units::metresToDisplay (m))) + " " + u,
                     pb.getX() - 4, juce::roundToInt (yy) - 8, 60, 16,
                     juce::Justification::centredRight);
     }
@@ -6042,14 +6048,21 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
         {
             const float wantPx = 84.0f;
             const float mult[3] = { 1.0f, 2.0f, 5.0f };
-            for (int dec = -1; dec <= 4 && stepH * scX < wantPx; ++dec)
+            // Walked in DISPLAY units (px per foot in Imperial), then turned
+            // back into metres, so the labels are round feet, not 3.28 ft
+            // printed as "3 ft".
+            const float scD = scX / toDisp;
+            float stepD2 = 1.0f;
+            for (int dec = -1; dec <= 4 && stepD2 * scD < wantPx; ++dec)
                 for (int k = 0; k < 3; ++k)
                 {
                     const float cand = mult[k] * std::pow (10.0f, (float) dec);
-                    if (cand * scX >= wantPx) { stepH = cand; break; }
-                    stepH = cand;
+                    if (cand * scD >= wantPx) { stepD2 = cand; break; }
+                    stepD2 = cand;
                 }
+            stepH = stepD2 / toDisp;
         }
+        const int hdp = FigPlot::decimalsFor (stepH * toDisp);
         const float first = std::ceil ((cH - halfSpan) / stepH) * stepH;
         g.setFont (Brand::tech (juce::jmax (10.0f, 12.0f * Brand::UI::scale)));
         for (float m = first; m <= cH + halfSpan; m += stepH)
@@ -6059,7 +6072,7 @@ void RadiationPatternComponent::drawElevation (juce::Graphics& g, juce::Rectangl
             g.setColour (Brand::plotGrid().withAlpha (0.25f));
             g.drawVerticalLine (juce::roundToInt (xx), (float) pb.getY(), groundY);
             g.setColour (Brand::ash());
-            g.drawText (juce::String (Units::metresToDisplay (m), 0) + " " + u,
+            g.drawText (juce::String (Units::metresToDisplay (m), hdp) + " " + u,
                         juce::roundToInt (xx) - 30, juce::roundToInt (groundY) + 4, 60, 14,
                         juce::Justification::centred);
         }
@@ -6544,6 +6557,15 @@ RadiationPatternComponent::GridMetrics RadiationPatternComponent::currentGridMet
     GridMetrics m;
     if (pxPerM <= 1.0e-6)
         return m;
+
+    // A grid resolution from Settings: minor rules at it (thinned when
+    // zoomed out), majors five of them apart.
+    if (Units::gridResolutionM() > 0.0)
+    {
+        m.minor = FigPlot::gridStepM (pxPerM, 20.0);
+        m.major = FigPlot::labelStepM (m.minor, pxPerM, 90.0);
+        return m;
+    }
 
     const bool imperial = Units::imperial();
     constexpr double kFtPerM = 3.280839895;
@@ -10015,7 +10037,7 @@ bool RadiationPatternComponent::keyPressed (const juce::KeyPress& key)
             // One step is the unit system's own small step - 100 mm, or a foot
             // in Imperial - so a nudge lands on the same grid the snaps use.
             // Shift takes ten of them for crossing the field.
-            const float base = Units::imperial() ? 0.3048f : 0.1f;
+            const float base = (float) Units::snapStepMetres();   // the grid resolution when set
             const float stepM = base * (key.getModifiers().isShiftDown() ? 10.0f : 1.0f);
 
             // World Y runs up the plan, screen Y runs down it: Up means away

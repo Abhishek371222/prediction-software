@@ -78,8 +78,10 @@ namespace ReportBuilder
         inline juce::String regionText (const AcousticAnalysis::FieldStats& s)
         {
             if (! s.valid) return "-";
-            return juce::String (s.audience ? "Audience areas, " : "Field beyond 2 m of cabinets, ")
-                 + num (s.areaM2, 0) + " sq m";
+            const bool imp = Units::imperial();
+            return juce::String (s.audience ? "Audience areas, "
+                                            : "Field beyond " + Units::metres (2.0, imp ? 1 : 0) + " of cabinets, ")
+                 + num (imp ? s.areaM2 * 10.7639104 : s.areaM2, 0) + (imp ? " sq ft" : " sq m");
         }
     }
 
@@ -304,7 +306,8 @@ namespace ReportBuilder
                                : "Levels are relative dB (not every unit is calibrated for absolute SPL). ")
                 + (st.audience ? "Statistics cover the drawn audience areas only, at seated ear height. "
                                : "No audience area is drawn, so statistics cover the whole field except the "
-                                 "2 m around each cabinet, where the level is dominated by the box itself. ")
+                                 + Units::metres (2.0, Units::imperial() ? 1 : 0)
+                                 + " around each cabinet, where the level is dominated by the box itself. ")
                 + "Coverage is the share of that region within 3 dB / 6 dB of its loudest point; "
                   "the standard deviation is the spread of level across it (lower = more even).",
                 sub, false);

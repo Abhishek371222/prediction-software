@@ -850,11 +850,11 @@ public:
         addAndMakeVisible (lblRange_);
 
         planeBtn (btnPlaneSeated_,
-                  "Ears at 1.2 m. Records the listening height on this plane - "
+                  "Ears at 3.5 ft (1.07 m). Records the listening height on this plane - "
                   "the engine has no vertical directivity, so it does not "
                   "change the predicted levels.");
         planeBtn (btnPlaneStanding_,
-                  "Ears at 1.7 m. Records the listening height on this plane - "
+                  "Ears at 5 ft (1.52 m). Records the listening height on this plane - "
                   "the engine has no vertical directivity, so it does not "
                   "change the predicted levels.");
 
@@ -1009,7 +1009,7 @@ public:
                          juce::Slider::thumbColourId })
             orthoGapSlider_.setColour (id, juce::Colours::transparentBlack);
         orthoGapSlider_.setNumDecimalPlacesToDisplay (1);
-        orthoGapSlider_.setTextValueSuffix (" m");
+        orthoGapSlider_.setTextValueSuffix (" " + juce::String (Units::lengthUnit()));
         orthoGapSlider_.textFromValueFunction =
             [] (double metres) { return juce::String (Units::metresToDisplay (metres), 1); };
         orthoGapSlider_.valueFromTextFunction =
@@ -1114,7 +1114,7 @@ public:
 
         rangeBtn_.setButtonText ("Range");
         rangeBtn_.setComponentID ("plotRange");
-        rangeBtn_.setTooltip ("Show or hide 1 m, 2 m, 4 m, and 8 m range markers");
+        rangeBtn_.setTooltip ("Show or hide the range rings");
         rangeBtn_.setClickingTogglesState (true);
         rangeBtn_.setToggleState (false, juce::dontSendNotification);
         rangeBtn_.setColour (juce::TextButton::buttonColourId,   Brand::plotToolbar());

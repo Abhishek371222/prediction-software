@@ -420,6 +420,16 @@ MainComponent::MainComponent (ProjectData project)
             resized();
         }
     };
+    // The chevron at the right of the Top View strip folds the plan away and
+    // gives its height to the pane under it (Elevation / Frequency Response).
+    viewBar_.btnViewOptions_.setTooltip ("Collapse / expand the Top View");
+    viewBar_.btnViewOptions_.onClick = [this]
+    {
+        planFolded_ = ! planFolded_;
+        viewBar_.btnViewOptions_.setFolded (planFolded_);
+        resized();
+        repaint();
+    };
     // Fill it once at startup; after this the scene's own change hooks drive it.
     refreshSourcePanel();
 
@@ -2659,6 +2669,18 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
         case TopMenuBar::Settings:
             m.addItem (601, "Preferences...");
             m.addSeparator();
+            {
+                // Grid Resolution: the drawing grid's spacing, in the unit in
+                // use. Auto lets the grid pick from the zoom; a value fixes
+                // it, and snap and the arrow-key nudge follow it.
+                juce::PopupMenu gm;
+                const auto choices = Units::gridResolutionChoices();
+                const double cur = AppSettings::get().gridResolution (Units::imperial());
+                for (size_t i = 0; i < choices.size(); ++i)
+                    gm.addItem (610 + (int) i, Units::gridResolutionLabel (choices[i]), true,
+                                std::abs (choices[i] - cur) < 1.0e-9);
+                m.addSubMenu ("Grid Resolution", gm);
+            }
             m.addItem (602, "Full Screen	F11", true, WindowMode::isFullScreen (getTopLevelComponent()));
             break;
     }
@@ -2700,6 +2722,16 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
 
             case 601: openPreferences(); break;
             case 602: WindowMode::toggle (this); break;
+
+            case 610: case 611: case 612: case 613: case 614: case 615: case 616:
+            case 617: case 618: case 619:
+            {
+                const auto choices = Units::gridResolutionChoices();
+                const size_t i = (size_t) (r - 610);
+                if (i < choices.size())
+                    AppSettings::get().setGridResolution (Units::imperial(), choices[i]);
+                break;
+            }
 
             default: break;
         }
@@ -2940,8 +2972,9 @@ void MainComponent::resized()
         const int hdrH  = juce::jmax (16, UiConfig::Scale::fig (27.0f));
         const int avail = juce::jmax (0, bodyH - hdrH);
         const int frH   = frHeader_.isFolded() ? 0
+                        : planFolded_ ? avail
                         : juce::jmax (120, (int) (avail * (363.0f / 965.0f)));
-        const int planH = juce::jmax (120, avail - frH);
+        const int planH = planFolded_ ? 0 : juce::jmax (120, avail - frH);
 
         int yy = bodyTop2;
         patternComp_.setBounds (plotX, yy, centreW, planH); yy += planH;
@@ -2963,9 +2996,11 @@ void MainComponent::resized()
         const bool elevOpen = ! elevHeader_.isFolded();
         const bool splOpen  = kShowSplPane && ! splHeader_.isFolded();
         const float total = 560.0f + (elevOpen ? 360.0f : 0.0f) + (splOpen ? 360.0f : 0.0f);
-        const int elevH  = elevOpen ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
         const int splH   = splOpen  ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
-        const int planH  = juce::jmax (120, avail - elevH - splH);
+        const int elevH  = ! elevOpen ? 0
+                         : planFolded_ ? juce::jmax (0, avail - splH)
+                         : juce::jmax (80, (int) (avail * (360.0f / total)));
+        const int planH  = planFolded_ ? 0 : juce::jmax (120, avail - elevH - splH);
 
         int yy = bodyTop2;
         patternComp_.setBounds (plotX, yy, centreW, planH);           yy += planH;
@@ -2998,7 +3033,9 @@ void MainComponent::resized()
     }
 
     if (! venueMode_)
-        patternComp_.setVisible (true);
+        patternComp_.setVisible (! planFolded_);
+    // The fold belongs to the plan; the Venue tab draws its own panes.
+    viewBar_.btnViewOptions_.setVisible (! venueMode_);
 
     // Top-right of the field, inset clear of the colour bar on the far right.
     if (UiConfig::showViewSwitcher)
@@ -3560,6 +3597,10 @@ void MainComponent::addSourceAtOrigin (AddSource kind, int count)
 
     const bool  isSub = (kind == AddSource::SubArray);
     const int   model = isSub ? 0 : controlPanel_.getBrowsedModel();
+
+    // A Q212P array opens as two boxes, not the four other arrays get.
+    if (kind == AddSource::Array && model == 3)
+        count = kAddQ212PCabinets;
 
     willEdit();
 

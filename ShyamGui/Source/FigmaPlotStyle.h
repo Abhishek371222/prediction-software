@@ -65,12 +65,46 @@ namespace FigPlot
         steps so rules stay at least @p wantPx apart without going sparse. */
     inline double gridStepM (double pxPerM, double wantPx)
     {
-        static constexpr double mult[] = { 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
-                                           10.0, 25.0, 50.0, 100.0, 250.0 };
-        for (double k : mult)
-            if (baseStepM() * k * pxPerM >= wantPx)
-                return baseStepM() * k;
-        return baseStepM() * 250.0;
+        // A grid resolution set in Settings: draw exactly that spacing while
+        // its lines are at least ~8 px apart; zoomed further out, draw every
+        // 2nd / 5th / 10th... line instead (CAD "adaptive grid"), always a
+        // whole multiple so every rule still sits on the chosen spacing.
+        if (const double userM = Units::gridResolutionM(); userM > 0.0)
+        {
+            const double minPx = juce::jmin (wantPx, (double) UiConfig::Scale::figf (8.0f));
+            for (double k : { 1.0, 2.0, 4.0, 5.0, 10.0, 20.0, 40.0, 50.0, 100.0, 200.0, 500.0, 1000.0 })
+            {
+                const double st = userM * k;
+                // 4x / 40x only where they stay round (0.5 ft x 4 = 2 ft).
+                const double disp = Units::metresToDisplay (st);
+                if ((k == 4.0 || k == 40.0) && std::abs (disp - std::round (disp)) > 1.0e-6) continue;
+                if (st * pxPerM >= minPx) return st;
+            }
+            return userM * 1000.0;
+        }
+        // Metric: 0.1 .. 500 m off the 2 m base. Imperial: 3 in, 6 in, 1, 2,
+        // 5, 10, 20, 50 ... ft off the 5 ft base - never 1.25 ft or 12.5 ft,
+        // which no tape reads and which rounded to the wrong whole foot.
+        static constexpr double multSI[] = { 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+                                             10.0, 25.0, 50.0, 100.0, 250.0 };
+        static constexpr double multFt[] = { 0.05, 0.1, 0.2, 0.4, 1.0, 2.0, 4.0,
+                                             10.0, 20.0, 40.0, 100.0, 200.0 };
+        const bool imp = Units::imperial();
+        const double* mult = imp ? multFt : multSI;
+        for (int i = 0; i < 12; ++i)
+            if (baseStepM() * mult[i] * pxPerM >= wantPx)
+                return baseStepM() * mult[i];
+        return baseStepM() * mult[11];
+    }
+
+    /** Decimals that print every multiple of @p stepDisplay exactly: 0 for
+        whole steps, 1 for tenths, else 2 (a 0.25 ft rule). */
+    inline int decimalsFor (double stepDisplay)
+    {
+        auto whole = [] (double v) { return std::abs (v - std::round (v)) < 1.0e-6; };
+        if (whole (stepDisplay))          return 0;
+        if (whole (stepDisplay * 10.0))   return 1;
+        return 2;
     }
 
     /** The opening scale for a frame @p framePx wide: as near 48 px per 2 m as
@@ -89,9 +123,37 @@ namespace FigPlot
     /** Label step: a whole multiple of the grid step, so every number sits on a rule. */
     inline double labelStepM (double gridM, double pxPerM, double wantPx)
     {
+        // With a grid resolution set, the numbers follow the GRID: every
+        // line carries its figure as soon as the figures fit side by side
+        // (spacing = the width of a figure like "-88.5ft", not a fixed
+        // 40 px), else every 2nd / 5th / 10th line - always on a line.
+        if (Units::gridResolutionM() > 0.0 && pxPerM > 0.0)
+        {
+            const int dp = decimalsFor (Units::metresToDisplay (gridM));
+            const juce::String sample = juce::String (-88.0 - (dp > 0 ? 0.25 : 0.0), dp)
+                                      + Units::lengthUnit();
+            const double need = juce::jmin (wantPx,
+                (double) Brand::figSemi (12.0f).getStringWidth (sample) + UiConfig::Scale::figf (8.0f));
+            for (double k : { 1.0, 2.0, 4.0, 5.0, 10.0, 20.0, 40.0, 50.0, 100.0, 200.0, 500.0, 1000.0 })
+            {
+                const double st = gridM * k;
+                const double disp = Units::metresToDisplay (st);
+                const bool round = std::abs (disp - std::round (disp)) < 1.0e-6;
+                if (k > 1.0 && disp >= 1.0 && ! round) continue;          // never 2.5 ft
+                if ((k == 4.0 || k == 40.0) && ! round) continue;
+                if (st * pxPerM >= need) return st;
+            }
+            return gridM * 1000.0;
+        }
         for (double n : { 1.0, 2.0, 5.0, 10.0, 20.0 })
+        {
+            // Past one whole unit, number only whole ones: a 0.5 ft grid is
+            // labelled 0.5, 1, 5, 10 ft - never 2.5 ft.
+            const double disp = Units::metresToDisplay (gridM * n);
+            if (n > 1.0 && disp >= 1.0 && std::abs (disp - std::round (disp)) > 1.0e-6) continue;
             if (gridM * n * pxPerM >= wantPx)
                 return gridM * n;
+        }
         return gridM * 50.0;
     }
 
@@ -100,8 +162,8 @@ namespace FigPlot
     {
         if (std::abs (m) < stepM * 1.0e-3) return juce::String ("0(") + axis + ")";
         const double v = Units::metresToDisplay (m);
-        const bool frac = Units::metresToDisplay (stepM) < 0.999;
-        return (frac ? juce::String (v, 1) : juce::String ((int) std::lround (v)))
+        const int dp = decimalsFor (Units::metresToDisplay (stepM));
+        return (dp > 0 ? juce::String (v, dp) : juce::String ((int) std::lround (v)))
              + Units::lengthUnit();
     }
 

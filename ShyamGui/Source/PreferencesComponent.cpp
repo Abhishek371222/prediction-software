@@ -18,10 +18,24 @@ PreferencesComponent::PreferencesComponent()
     configHdr (unitsHdr_,      "UNITS",       Brand::Type::prefsSectionHdr, true);
     configHdr (themeLabel_,    "Theme",       Brand::Type::prefsLabel,      false);
     configHdr (unitsLabel_,    "Unit system", Brand::Type::prefsLabel,      false);
+    configHdr (gridHdr_,       "GRID",        Brand::Type::prefsSectionHdr, true);
+    configHdr (gridLabel_,     "Grid resolution", Brand::Type::prefsLabel,  false);
+    configHdr (gridNote_,      "Spacing of the drawing grid. Auto follows the zoom; a fixed\n"
+                               "value is drawn exactly, and snap / arrow nudges use it.",
+               Brand::Type::prefsNote, false);
+    gridNote_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::prefsNote)));
+    addAndMakeVisible (gridRes_);
+    gridRes_.onChange = [this]
+    {
+        const auto choices = Units::gridResolutionChoices();
+        const int i = gridRes_.getSelectedId() - 1;
+        if (i >= 0 && i < (int) choices.size())
+            AppSettings::get().setGridResolution (Units::imperial(), choices[(size_t) i]);
+    };
 
     unitsNote_.setText ("SI: m / mm / kg / " + Units::degree() + "C        "
                         "Imperial: ft / in / lbs / " + Units::degree() + "F\n"
-                        "Snap step: SI = 100 mm (0.1 m)    Imperial = 1 ft",
+                        "Snap step follows the grid resolution (Auto: 100 mm / 1 ft)",
                         juce::dontSendNotification);
     unitsNote_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::prefsNote)));
     unitsNote_.setColour (juce::Label::textColourId, Brand::ash());
@@ -38,6 +52,7 @@ PreferencesComponent::PreferencesComponent()
     themeLightBtn_.onClick = [this] { AppSettings::get().setTheme (ThemeMode::Light); refreshSelection(); };
     unitsSiBtn_.onClick    = [this] { AppSettings::get().setUnits (UnitSystem::SI);       refreshSelection(); };
     unitsImpBtn_.onClick   = [this] { AppSettings::get().setUnits (UnitSystem::Imperial); refreshSelection(); };
+    refreshGridChoices();
     closeBtn_.onClick      = [this] { if (onClose) onClose(); };
 
     refreshSelection();
@@ -54,6 +69,22 @@ void PreferencesComponent::styleSeg (juce::TextButton& b, const juce::String& tx
     addAndMakeVisible (b);
 }
 
+// The list is in the unit in use (ft or m), so it is rebuilt whenever the
+// unit system flips.
+void PreferencesComponent::refreshGridChoices()
+{
+    gridRes_.clear (juce::dontSendNotification);
+    const auto choices = Units::gridResolutionChoices();
+    const double cur = AppSettings::get().gridResolution (Units::imperial());
+    int sel = 1;
+    for (size_t i = 0; i < choices.size(); ++i)
+    {
+        gridRes_.addItem (Units::gridResolutionLabel (choices[i]), (int) i + 1);
+        if (std::abs (choices[i] - cur) < 1.0e-9) sel = (int) i + 1;
+    }
+    gridRes_.setSelectedId (sel, juce::dontSendNotification);
+}
+
 void PreferencesComponent::applyScaledChrome()
 {
     title_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::prefsTitle), true));
@@ -61,6 +92,9 @@ void PreferencesComponent::applyScaledChrome()
     unitsHdr_.setFont (appearanceHdr_.getFont());
     themeLabel_.setFont (Brand::tech (Brand::UI::scaledFont (Brand::Type::prefsLabel)));
     unitsLabel_.setFont (themeLabel_.getFont());
+    gridHdr_.setFont (appearanceHdr_.getFont());
+    gridLabel_.setFont (themeLabel_.getFont());
+    gridNote_.setFont (unitsNote_.getFont());
     unitsNote_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::prefsNote)));
 }
 
@@ -79,6 +113,7 @@ void PreferencesComponent::refreshSelection()
     unitsSiBtn_.setColour    (juce::TextButton::textColourOffId, ! imperial ? Brand::white() : Brand::onBtnIn());
     unitsImpBtn_.setColour   (juce::TextButton::textColourOffId, imperial  ? Brand::white() : Brand::onBtnIn());
 
+    refreshGridChoices();
     repaint();
 }
 
@@ -90,6 +125,9 @@ void PreferencesComponent::applyColours()
     themeLabel_.setColour    (juce::Label::textColourId, Brand::ash());
     unitsLabel_.setColour    (juce::Label::textColourId, Brand::ash());
     unitsNote_.setColour     (juce::Label::textColourId, Brand::ash());
+    gridHdr_.setColour       (juce::Label::textColourId, Brand::heading());
+    gridLabel_.setColour     (juce::Label::textColourId, Brand::ash());
+    gridNote_.setColour      (juce::Label::textColourId, Brand::ash());
     closeBtn_.setColour      (juce::TextButton::textColourOffId, Brand::onBtnIn());
     refreshSelection();
 }
@@ -152,7 +190,14 @@ void PreferencesComponent::resized()
     unitsImpBtn_.setBounds (pad + labelW + labelGap + segW + segGap, y, segW, rowH);
     y += UiConfig::Scale::px (42);
     unitsNote_.setBounds (pad, y, W, noteH);
+    y += UiConfig::Scale::px (54);
+
+    gridHdr_.setBounds (pad, y, W, secHdrH);
+    y += UiConfig::Scale::px (28);
+    gridLabel_.setBounds (pad, y, labelW, rowH);
+    gridRes_.setBounds (pad + labelW + labelGap, y, segW * 2 + segGap, rowH);
     y += UiConfig::Scale::px (42);
+    gridNote_.setBounds (pad, y, W, noteH);
 
     closeBtn_.setBounds (getWidth() - pad - closeW, getHeight() - UiConfig::Scale::px (46),
                          closeW, closeH);
