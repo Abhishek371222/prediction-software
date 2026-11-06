@@ -508,7 +508,6 @@ MainComponent::MainComponent (ProjectData project)
     // --- the Mapping tab -----------------------------------------------
     addChildComponent (frHeader_);
     addChildComponent (frPlot_);
-    addChildComponent (mapTopView_);
     addChildComponent (mapFooter_);
     frHeader_.onFold = [this] (bool) { resized(); };
     sourcePanel_.onFilter = [this] (int i, const SpeakerFilter& f) { controlPanel_.setSpeakerFilter (i, f); };
@@ -724,7 +723,6 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onMicsChanged = [this]
     {
-        mapTopView_.setMics (patternComp_.getMics());
         syncMicSelectionToPanel();
         refreshFrequencyResponse();
         // Moving the mic is meant to be something you HEAR. Re-predicting on
@@ -3025,13 +3023,6 @@ void MainComponent::resized()
 
     if (! venueMode_)
         patternComp_.setVisible (! planFolded_);
-    // Mapping tab: the new Top View stands where the plan was.
-    mapTopView_.setVisible (mappingStack && ! planFolded_);
-    if (mappingStack)
-    {
-        mapTopView_.setBounds (patternComp_.getBounds());
-        patternComp_.setVisible (false);
-    }
     // The fold belongs to the plan; the Venue tab draws its own panes.
     viewBar_.btnViewOptions_.setVisible (! venueMode_);
 
@@ -3215,9 +3206,6 @@ void MainComponent::run()
 void MainComponent::applyResult (const SimResult& r)
 {
     patternComp_.updateData (r, lastParams_);
-    mapTopView_.setResult (r, lastParams_);
-    mapTopView_.setSpeakers (controlPanel_.getSpeakers());
-    mapTopView_.setMics (patternComp_.getMics());
     syncElevation();
     syncRenderer();
     updateSettingsBar();
@@ -3246,7 +3234,6 @@ void MainComponent::syncRenderer()
 {
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
-    mapTopView_.setSpeakers (controlPanel_.getSpeakers());
 }
 
 void MainComponent::updatePlotChrome()

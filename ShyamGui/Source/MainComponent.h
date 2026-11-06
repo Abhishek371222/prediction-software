@@ -23,7 +23,6 @@
 #include "CommandTerminal.h"
 #include "DistanceSplPlot.h"
 #include "MappingPane.h"
-#include "TopViewMap.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent - owns all sub-panels, runs AcousticEngine::compute on a
@@ -239,8 +238,6 @@ private:
     int                 mappingPrevMenu_ = 0;   // menuMapping_ to restore on leaving
     PaneHeaderBar       frHeader_ { "Frequency Response" };
     MappingResponsePlot frPlot_;
-    // The Mapping tab's own Top View: grid + SPL map, no venue boxes.
-    TopViewMapComponent mapTopView_;
     MappingFooter       mapFooter_;
     // Auto - Calculate off holds edits back until Calculate is pressed.
     bool                autoCalc_ = true, calcPending_ = false, forceRun_ = false;
