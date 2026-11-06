@@ -35,7 +35,7 @@ PreferencesComponent::PreferencesComponent()
 
     unitsNote_.setText ("SI: m / mm / kg / " + Units::degree() + "C        "
                         "Imperial: ft / in / lbs / " + Units::degree() + "F\n"
-                        "Snap step follows the grid resolution (Auto: 100 mm / 1 ft)",
+                        "Snap step: 100 mm / 1 ft",
                         juce::dontSendNotification);
     unitsNote_.setFont (Brand::mono (Brand::UI::scaledFont (Brand::Type::prefsNote)));
     unitsNote_.setColour (juce::Label::textColourId, Brand::ash());
@@ -198,6 +198,10 @@ void PreferencesComponent::resized()
     gridRes_.setBounds (pad + labelW + labelGap, y, segW * 2 + segGap, rowH);
     y += UiConfig::Scale::px (42);
     gridNote_.setBounds (pad, y, W, noteH);
+    // Grid resolution hidden: the grid follows the zoom on its own.
+    for (juce::Component* c : { (juce::Component*) &gridHdr_, (juce::Component*) &gridLabel_,
+                                (juce::Component*) &gridRes_, (juce::Component*) &gridNote_ })
+        c->setVisible (false);
 
     closeBtn_.setBounds (getWidth() - pad - closeW, getHeight() - UiConfig::Scale::px (46),
                          closeW, closeH);

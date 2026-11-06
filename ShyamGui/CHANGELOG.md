@@ -36,11 +36,22 @@ This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 | **1.5.0** | 2026-10-28 | Venue tab: the room as its own screen, wired to the solver; one plot style across every tab |
 | **1.5.1** | 2026-11-03 | Sources and Mapping to the Figma; one source holds many cabinets (mounting, ground stacks, interdistance, symmetry, rigging lever angles); audiences heard at ear height; elevation snap and vertical zoom; Apply Layout |
 | **1.5.2** | 2026-11-04 | Real SPL report plots and statistics; sub FR from absolute BEM data (5 m reference); rename / lock / sync / mirror for sources and venue elements; drag-to-move, drag-to-pan everywhere; maximised window with optional F11 full screen |
+| **1.5.3** | 2026-11-06 | Grid resolution setting (0.5 ft etc.) with numbered axes and snap; Top View folds away; Q212P arrays of 2; Imperial unit fixes |
 
 Dates follow the work that shipped in source history and the Windows/mac builds of
 this tree (including 2026-08-21 Q21S physics, Windows data-path / portable pack, and version-archive updates).
 
 ---
+
+## [1.5.3] - 2026-11-06
+
+**Atomik Integral v1.5.3**
+
+- **Grid resolution:** Settings > Grid Resolution and Preferences > GRID - Auto or a fixed spacing (Imperial 0.25 / 0.5 / 1 / 2 / 5 / 10 ft, SI 0.1 - 5 m), kept per unit system. The grid thins when zoomed out, the X / Y numbers follow it, and snap / arrow nudges use it.
+- **Top View fold:** the chevron on the Top View bar collapses the plan; Elevation (Sources) or Frequency Response (Mapping) takes its height.
+- **Q212P:** "Add array" makes two cabinets.
+- **Filters:** Low Pass and High Pass titles swapped.
+- **Imperial:** grid steps on whole / half feet, correct axis decimals, listening heights 3.5 ft / 5 ft in the tooltips, report area in sq ft, stale range-ring hints removed.
 
 ## [1.5.2] - 2026-11-04
 

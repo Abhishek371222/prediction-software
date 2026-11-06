@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <memory>
 
 // ---------------------------------------------------------------------------
 // SpeakerFilter - a crossover section on one cabinet.
@@ -134,7 +135,7 @@ struct Speaker
 {
     float x          = 50.0f;   // metres, world X
     float y          = 50.0f;   // metres, world Y
-    float gainDB     = 0.0f;    // <= 0 dB, 1 dB steps
+    float gainDB     = 0.0f;    // -40 .. +6 dB, 1 dB steps
     float delayMs    = 0.0f;    // milliseconds
     bool  polarityInverted   = false;   // Normal / Reverse
     bool  reverseOrientation = false;   // Forward (+x) / Reverse (-x)
@@ -738,6 +739,52 @@ struct BemFieldPattern
     bool               ok = false;
 };
 
+// Q21S complex BEM pressure on the horizontal mid-plane (Q212S Absolute
+// xlsx: X1 lateral, X3 forward, |p| in Pa re 20 uPa), resampled onto a
+// regular n x n grid over [lo, hi] m in both axes. Row = X3 (forward), col =
+// X1 (to the RIGHT of the firing axis, as MATLAB's plan plot has it). The
+// phase runs as exp(-ikr), the engine's own convention, so cabinets sum
+// coherently straight off it. NaN inside the cabinet.
+struct BemComplexField
+{
+    double hz = 0.0;
+    int    n  = 0;
+    float  lo = -5.0f, hi = 5.0f;
+    std::vector<float> re, im;
+
+    bool inside (double lat, double fwd) const
+    {
+        return lat >= lo && lat <= hi && fwd >= lo && fwd <= hi;
+    }
+
+    /** Bilinear complex pressure (Pa) at (lat, fwd). False off the grid or
+        on a cabinet cell. */
+    bool sample (double lat, double fwd, std::complex<double>& out) const
+    {
+        if (n < 2 || ! inside (lat, fwd)) return false;
+        const double st = (double) (hi - lo) / (n - 1);
+        const double fx = (lat - lo) / st, fz = (fwd - lo) / st;
+        const int i0 = std::min (n - 2, std::max (0, (int) std::floor (fx)));
+        const int j0 = std::min (n - 2, std::max (0, (int) std::floor (fz)));
+        const double tx = fx - i0, tz = fz - j0;
+        std::complex<double> acc (0.0, 0.0);
+        double wsum = 0.0;
+        for (int dj = 0; dj < 2; ++dj)
+            for (int di = 0; di < 2; ++di)
+            {
+                const size_t k = (size_t) (j0 + dj) * (size_t) n + (size_t) (i0 + di);
+                const double w = (di ? tx : 1.0 - tx) * (dj ? tz : 1.0 - tz);
+                if (! std::isfinite (re[k]) || ! std::isfinite (im[k])) continue;
+                acc += w * std::complex<double> (re[k], im[k]);
+                wsum += w;
+            }
+        if (wsum < 0.5) return false;
+        out = acc / wsum;
+        return true;
+    }
+};
+using BemComplexFieldSet = std::shared_ptr<const std::vector<BemComplexField>>;
+
 // Per-model frequency catalogues - native BEM xlsx bands only (no interpolated
 // extras). Q21S and BEM2inch are two completely separate devices: each keeps
 // its own array below and the two are never merged or shared.
@@ -866,6 +913,10 @@ struct SimParams
     // the live SPL heatmap uses measured polar directivity across the full world
     // (not a stamped ±5 m island).
     std::vector<BemFieldPattern> bemFields;
+    // Q21S measured complex field (shared, never copied per solve). When set,
+    // the point probe (mic / Frequency Response) reads a sub's level and
+    // phase straight off it inside +-5 m, and continues it at 1/r beyond.
+    BemComplexFieldSet q21sComplex;
     bool useMeasuredDirectivity = true;
 
     // The audience: where the level is predicted at ear height. Empty is the

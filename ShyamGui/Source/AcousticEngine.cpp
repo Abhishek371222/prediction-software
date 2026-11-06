@@ -747,8 +747,55 @@ bool AcousticEngine::sampleIntensityAt (const SimParams& p, float x, float y,
             sm[(size_t) s.group] += std::polar (amp, phase);
             if (hasAbs)
             {
-                const double ampAbs = amp * s.calAbs * s.refDistM;
-                smAbs[(size_t) s.group] += std::polar (ampAbs, phase);
+                // A Q21S at one of its solved frequencies: the measured
+                // complex pressure itself, read where the mic is in the
+                // cabinet's own frame (X3 forward, X1 to its right), the way
+                // the MATLAB check reads the same xlsx. Off the +-5 m grid it
+                // carries on from the grid's edge along the same line at 1/r
+                // with the travel phase. Anything else - other models, a
+                // smoothing sub-band between solves, a point inside the box -
+                // stays on the calibrated directivity model below.
+                std::complex<double> pField;
+                bool useField = false;
+                if (s.model == 0 && p.q21sComplex != nullptr)
+                {
+                    const BemComplexField* fld = nullptr;
+                    for (const auto& f : *p.q21sComplex)
+                        if (std::abs (f.hz - fmOwn) <= 0.01 * fmOwn) { fld = &f; break; }
+                    if (fld != nullptr)
+                    {
+                        const double dx = X - s.x, dy = Y - s.y;
+                        const double cf = std::cos (s.facing), sf = std::sin (s.facing);
+                        const double fwd = dx * cf + dy * sf;
+                        const double lat = dx * sf - dy * cf;      // right of the axis
+                        if (fld->inside (lat, fwd))
+                            useField = fld->sample (lat, fwd, pField);
+                        else
+                        {
+                            const double edge = 0.999 * (double) fld->hi
+                                              / std::max (std::abs (fwd), std::abs (lat));
+                            std::complex<double> pe;
+                            if (fld->sample (lat * edge, fwd * edge, pe))
+                            {
+                                const double r  = std::sqrt (dx * dx + dy * dy);
+                                const double re = r * edge;
+                                pField = pe * (re / r) * std::polar (1.0, -km * (r - re));
+                                useField = true;
+                            }
+                        }
+                    }
+                }
+                if (useField)
+                {
+                    const double ph = -wm * s.delaySec + s.polPhase + std::arg (H);
+                    smAbs[(size_t) s.group] += (pField / 20.0e-6) * (s.gainLin * hm)
+                                             * std::polar (1.0, ph);
+                }
+                else
+                {
+                    const double ampAbs = amp * s.calAbs * s.refDistM;
+                    smAbs[(size_t) s.group] += std::polar (ampAbs, phase);
+                }
             }
         }
         for (int g = 0; g < gCount; ++g)

@@ -335,11 +335,9 @@ namespace Units
         return { 0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0 };
     }
     /** The user's grid spacing in METRES, or 0 for Auto. */
-    inline double gridResolutionM()
-    {
-        const double d = AppSettings::get().gridResolution (imperial());
-        return d > 0.0 ? displayToMetres (d) : 0.0;
-    }
+    // The fixed-resolution option is hidden: the grid always follows the zoom
+    // (5 -> 2 -> 1 -> 0.5 m / ft), so this reports Auto.
+    inline double gridResolutionM() { return 0.0; }
     inline juce::String gridResolutionLabel (double displayVal)
     {
         if (displayVal <= 0.0) return "Auto";
@@ -361,8 +359,6 @@ namespace Units
     }
     inline juce::String snapStepLabel()
     {
-        const double g = AppSettings::get().gridResolution (imperial());
-        if (g > 0.0) return gridResolutionLabel (g);
         return imperial() ? "1 ft" : "100 mm";
     }
 }

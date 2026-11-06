@@ -23,6 +23,7 @@
 #include "CommandTerminal.h"
 #include "DistanceSplPlot.h"
 #include "MappingPane.h"
+#include "TopViewMap.h"
 
 // ---------------------------------------------------------------------------
 // MainComponent - owns all sub-panels, runs AcousticEngine::compute on a
@@ -238,6 +239,8 @@ private:
     int                 mappingPrevMenu_ = 0;   // menuMapping_ to restore on leaving
     PaneHeaderBar       frHeader_ { "Frequency Response" };
     MappingResponsePlot frPlot_;
+    // The Mapping tab's own Top View: grid + SPL map, no venue boxes.
+    TopViewMapComponent mapTopView_;
     MappingFooter       mapFooter_;
     // Auto - Calculate off holds edits back until Calculate is pressed.
     bool                autoCalc_ = true, calcPending_ = false, forceRun_ = false;
@@ -383,6 +386,7 @@ private:
     std::vector<DirectivityPattern> directivityQ212PTables_;
     std::vector<BemFieldPattern>    bemFieldTablesQ21S_, bemFieldTablesBEM2inch_;
     std::vector<BemFieldPattern>    bemFieldTablesQ212P_;
+    BemComplexFieldSet              q21sComplex_;   // Q21S measured complex field
     juce::CriticalSection           measLock_;
 
     // Lightweight second timer for polling the measurement files (the class's

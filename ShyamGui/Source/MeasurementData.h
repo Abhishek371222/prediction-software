@@ -1301,6 +1301,38 @@ namespace MeasurementData
         return out;
     }
 
+    // Q21S complex mid-plane fields: Q21S_CField_<Hz>Hz.q21c, magic "Q21C",
+    // written from the Q212S Absolute xlsx (see BemComplexField).
+    inline BemComplexFieldSet loadQ21SComplexFields()
+    {
+        auto out = std::make_shared<std::vector<BemComplexField>>();
+        const juce::File packDir = packDataFolder();
+        if (! packDir.isDirectory()) return out;
+        for (const auto& f : packDir.findChildFiles (juce::File::findFiles, false, "Q21S_CField_*Hz.q21c"))
+        {
+            juce::FileInputStream in (f);
+            if (! in.openedOk()) continue;
+            char mag[4] = {};
+            if (in.read (mag, 4) != 4 || std::memcmp (mag, "Q21C", 4) != 0) continue;
+            const int ver = in.readInt();
+            juce::ignoreUnused (in.readInt());          // nominal Hz
+            const int n   = in.readInt();
+            const float hz = in.readFloat();            // the solve's own frequency
+            const float lo = in.readFloat(), hi = in.readFloat();
+            if (ver != 1 || n < 2 || n > 4096) continue;
+            BemComplexField fld;
+            fld.hz = hz; fld.n = n; fld.lo = lo; fld.hi = hi;
+            const size_t cnt = (size_t) n * (size_t) n;
+            fld.re.resize (cnt); fld.im.resize (cnt);
+            if (in.read (fld.re.data(), (int) (cnt * sizeof (float))) != (int) (cnt * sizeof (float))) continue;
+            if (in.read (fld.im.data(), (int) (cnt * sizeof (float))) != (int) (cnt * sizeof (float))) continue;
+            out->push_back (std::move (fld));
+        }
+        std::sort (out->begin(), out->end(),
+                   [] (const BemComplexField& a, const BemComplexField& b) { return a.hz < b.hz; });
+        return out;
+    }
+
     inline std::vector<BemFieldPattern> loadBemFieldTables (const MeasuredSet& set)
     {
         std::vector<BemFieldPattern> out;
@@ -1403,7 +1435,7 @@ namespace MeasurementData
         };
 
         line ("SourceDesc=Atomik_Data_Text");
-        line ("Version='v1.5.2'");
+        line ("Version='v1.5.3'");
         line ("Author='Atomik Integral'");
         line ("");
         line ("Frequency_Hz=" + juce::String (hz));

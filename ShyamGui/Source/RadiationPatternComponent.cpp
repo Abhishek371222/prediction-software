@@ -6560,7 +6560,6 @@ RadiationPatternComponent::GridMetrics RadiationPatternComponent::currentGridMet
 
     // A grid resolution from Settings: minor rules at it (thinned when
     // zoomed out), majors five of them apart.
-    if (Units::gridResolutionM() > 0.0)
     {
         m.minor = FigPlot::gridStepM (pxPerM, 20.0);
         m.major = FigPlot::labelStepM (m.minor, pxPerM, 90.0);

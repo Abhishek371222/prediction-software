@@ -336,9 +336,7 @@ protected:
     // grid resolution from Settings (thinned when zoomed out).
     double gridM (juce::Rectangle<int> f) const
     {
-        if (Units::gridResolutionM() > 0.0)
-            return FigPlot::gridStepM (pxPerMetre (f), UiConfig::Scale::figf (30.0f));
-        return stepM();
+        return FigPlot::gridStepM (pxPerMetre (f), UiConfig::Scale::figf (30.0f));
     }
 
     // The field's inset from the pane, in Figma px: room for the tick labels
@@ -361,10 +359,8 @@ protected:
     static double labelStep (double pxPerM, double wantPx)
     {
         // Grid resolution set: number the drawn grid lines (see labelStepM).
-        if (Units::gridResolutionM() > 0.0)
-            return FigPlot::labelStepM (FigPlot::gridStepM (pxPerM, UiConfig::Scale::figf (30.0f)),
-                                        pxPerM, wantPx);
-        return FigPlot::gridStepM (pxPerM, wantPx);
+        return FigPlot::labelStepM (FigPlot::gridStepM (pxPerM, UiConfig::Scale::figf (30.0f)),
+                                    pxPerM, wantPx);
     }
 
     VenueCamera* cam_ = nullptr;

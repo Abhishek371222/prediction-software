@@ -207,7 +207,7 @@ ControlPanel::ControlPanel()
     // changes; these are just the initial values.
     styleSlider (xSlider_,     0.0, 100.0, 0.1, 50.0);
     styleSlider (ySlider_,     0.0, 100.0, 0.1, 50.0);
-    styleSlider (gainSlider_, -40.0, 0.0, 1.0,  0.0);
+    styleSlider (gainSlider_, -40.0, 6.0, 1.0,  0.0);   // cut to -40, boost to +6 dB
     styleSlider (delaySlider_, 0.0, 10.0, 0.1,  0.0);
     // Heading in degrees, 0 = +x, counter-clockwise, matching what the plot
     // stores and what the ray / stalk read out. One-degree steps: the drag

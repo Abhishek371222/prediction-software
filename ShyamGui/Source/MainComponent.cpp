@@ -105,7 +105,7 @@ MainComponent::MainComponent (ProjectData project)
     titleLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (titleLabel_);
 
-    versionLabel_.setText ("v1.5.2", juce::dontSendNotification);
+    versionLabel_.setText ("v1.5.3", juce::dontSendNotification);
     versionLabel_.setMinimumHorizontalScale (1.0f);
     versionLabel_.setBorderSize ({});
     versionLabel_.setFont (Brand::techSemi (UiConfig::FontSize::appVersion));
@@ -508,6 +508,7 @@ MainComponent::MainComponent (ProjectData project)
     // --- the Mapping tab -----------------------------------------------
     addChildComponent (frHeader_);
     addChildComponent (frPlot_);
+    addChildComponent (mapTopView_);
     addChildComponent (mapFooter_);
     frHeader_.onFold = [this] (bool) { resized(); };
     sourcePanel_.onFilter = [this] (int i, const SpeakerFilter& f) { controlPanel_.setSpeakerFilter (i, f); };
@@ -723,6 +724,7 @@ MainComponent::MainComponent (ProjectData project)
     };
     patternComp_.onMicsChanged = [this]
     {
+        mapTopView_.setMics (patternComp_.getMics());
         syncMicSelectionToPanel();
         refreshFrequencyResponse();
         // Moving the mic is meant to be something you HEAR. Re-predicting on
@@ -2669,18 +2671,7 @@ void MainComponent::showTopMenu (int which, juce::Component* under)
         case TopMenuBar::Settings:
             m.addItem (601, "Preferences...");
             m.addSeparator();
-            {
-                // Grid Resolution: the drawing grid's spacing, in the unit in
-                // use. Auto lets the grid pick from the zoom; a value fixes
-                // it, and snap and the arrow-key nudge follow it.
-                juce::PopupMenu gm;
-                const auto choices = Units::gridResolutionChoices();
-                const double cur = AppSettings::get().gridResolution (Units::imperial());
-                for (size_t i = 0; i < choices.size(); ++i)
-                    gm.addItem (610 + (int) i, Units::gridResolutionLabel (choices[i]), true,
-                                std::abs (choices[i] - cur) < 1.0e-9);
-                m.addSubMenu ("Grid Resolution", gm);
-            }
+            // Grid Resolution is hidden: the grid follows the zoom (5 -> 0.5).
             m.addItem (602, "Full Screen	F11", true, WindowMode::isFullScreen (getTopLevelComponent()));
             break;
     }
@@ -3034,6 +3025,13 @@ void MainComponent::resized()
 
     if (! venueMode_)
         patternComp_.setVisible (! planFolded_);
+    // Mapping tab: the new Top View stands where the plan was.
+    mapTopView_.setVisible (mappingStack && ! planFolded_);
+    if (mappingStack)
+    {
+        mapTopView_.setBounds (patternComp_.getBounds());
+        patternComp_.setVisible (false);
+    }
     // The fold belongs to the plan; the Venue tab draws its own panes.
     viewBar_.btnViewOptions_.setVisible (! venueMode_);
 
@@ -3188,6 +3186,7 @@ void MainComponent::run()
         p.directivityBEM2inch = directivityBEM2inchTables_;
         p.directivityQ212P  = directivityQ212PTables_;
         p.bemFields         = bemFieldTablesQ21S_;
+        p.q21sComplex = q21sComplex_;
         p.surfaces          = surfaces_;
     }
 
@@ -3216,6 +3215,9 @@ void MainComponent::run()
 void MainComponent::applyResult (const SimResult& r)
 {
     patternComp_.updateData (r, lastParams_);
+    mapTopView_.setResult (r, lastParams_);
+    mapTopView_.setSpeakers (controlPanel_.getSpeakers());
+    mapTopView_.setMics (patternComp_.getMics());
     syncElevation();
     syncRenderer();
     updateSettingsBar();
@@ -3244,6 +3246,7 @@ void MainComponent::syncRenderer()
 {
     patternComp_.setSpeakers (controlPanel_.getSpeakers(),
                               controlPanel_.getSelectedIndex());
+    mapTopView_.setSpeakers (controlPanel_.getSpeakers());
 }
 
 void MainComponent::updatePlotChrome()
@@ -4627,6 +4630,7 @@ void MainComponent::refreshFrequencyResponse()
         base.directivityBEM2inch = directivityBEM2inchTables_;
         base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields         = bemFieldTablesQ21S_;
+        base.q21sComplex = q21sComplex_;
         base.surfaces          = surfaces_;
     }
 
@@ -4716,6 +4720,10 @@ void MainComponent::refreshFrequencyResponse()
             SimParams p = base;
             p.frequency = kQ21SFrequencies[hi];
             setModelFrequency (p, browsedModel, p.frequency);
+            // Each point is that ONE solve, as the BEM data and a MATLAB read
+            // of it have it - no 1/3-octave average across 309 / 352 / 400,
+            // which smeared the top of the sub's range together.
+            p.octaveSmoothing = false;
             // The level at this mic: dB SPL off the sub's absolute BEM data.
             float intensityDb = 0.0f, absDb = 0.0f;
             if (AcousticEngine::sampleIntensityAt (p, mics[mi].x, mics[mi].y,
@@ -4757,6 +4765,7 @@ bool MainComponent::buildMicCurve (int micIndex,
         base.directivityBEM2inch = directivityBEM2inchTables_;
         base.directivityQ212P    = directivityQ212PTables_;
         base.bemFields           = bemFieldTablesQ21S_;
+        base.q21sComplex = q21sComplex_;
         base.surfaces            = surfaces_;
     }
     const int browsedModel = controlPanel_.getBrowsedModel();
@@ -5431,6 +5440,7 @@ void MainComponent::buildAndWriteReport (const juce::File& f)
       base.directivityQ212P = directivityQ212PTables_;
         base.directivityQ212P    = directivityQ212PTables_;
       base.bemFields = bemFieldTablesQ21S_;
+      base.q21sComplex = q21sComplex_;
       base.surfaces  = surfaces_; }
     { juce::ScopedLock sl (resultLock_); in.result = lastResult_; }
     base.viewMode = ViewMode::SPL;
@@ -5699,7 +5709,7 @@ void MainComponent::exportCSV()
             if (nQ212P > 0)    product << (product.isEmpty() ? "" : "+") << "Q212P(" << nQ212P << ")";
             if (product.isEmpty()) product = "Q21S";
 
-            line ("# Atomik Integral v1.5.2");
+            line ("# Atomik Integral v1.5.3");
             line ("# Product," + product);
             line ("# www.atomikaudio.com");
             line ("# Generated," + now.formatted ("%d %b %Y") + "," + now.formatted ("%H:%M:%S"));
@@ -5785,6 +5795,7 @@ void MainComponent::reloadAllMeasurements()
     auto bemBEM2inch = MeasurementData::loadBemFieldTables (mBEM2inch);
     auto dirQ212P  = MeasurementData::buildDirectivityTables (mQ212P, distQ212P);
     auto bemQ212P  = MeasurementData::loadBemFieldTables (mQ212P);
+    auto cfieldQ21S = MeasurementData::loadQ21SComplexFields();
 
     {
         juce::ScopedLock sl (measLock_);
@@ -5797,6 +5808,7 @@ void MainComponent::reloadAllMeasurements()
         measuredQ212P_             = std::move (mQ212P);
         directivityQ212PTables_    = std::move (dirQ212P);
         bemFieldTablesQ212P_       = std::move (bemQ212P);
+        q21sComplex_               = std::move (cfieldQ21S);
 
         measured_ = referenceSetFor (measSource_);
     }

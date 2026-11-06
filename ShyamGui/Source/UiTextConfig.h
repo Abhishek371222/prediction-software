@@ -402,7 +402,7 @@ namespace UiConfig
 
         // Preferences overlay (centred modal)
         constexpr int prefsPanelWidth         = 440;
-        constexpr int prefsPanelHeight        = 470;
+        constexpr int prefsPanelHeight        = 350;
         constexpr int prefsPadding            = 22;
         constexpr int prefsTitleRowH          = 32;
         constexpr int prefsSectionHeaderH     = 22;
