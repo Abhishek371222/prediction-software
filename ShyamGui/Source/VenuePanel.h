@@ -95,8 +95,8 @@ public:
     }
 
 private:
-    // The same grey the value boxes use.
-    const juce::Colour kList { 0xffd9d9d9 };
+    // The same light-blue tint the value boxes use.
+    const juce::Colour kList { 0xffe9eff4 };
     juce::Font itemFont_ { Brand::tech (13.0f) };
 };
 

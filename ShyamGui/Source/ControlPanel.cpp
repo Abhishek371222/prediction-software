@@ -18,7 +18,7 @@ void ControlPanel::styleSlider (juce::Slider& s, double lo, double hi, double st
     s.setColour (juce::Slider::thumbColourId,      juce::Colour (0xffd81f1f));
     s.setColour (juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
     s.setColour (juce::Slider::textBoxTextColourId, Brand::onBtnIn());
-    s.setColour (juce::Slider::textBoxBackgroundColourId, Brand::btnIn());
+    s.setColour (juce::Slider::textBoxBackgroundColourId, Brand::valueBox());
     s.setColour (juce::Slider::textBoxOutlineColourId, Brand::controlBorder());
     addAndMakeVisible (s);
 }
@@ -88,7 +88,7 @@ ControlPanel::ControlPanel()
             if (kSupportedFrequencies[i] == 52) { defId = i + 1; break; }
         freqBox_.setSelectedId (defId, juce::dontSendNotification);   // 52 Hz
     }
-    freqBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    freqBox_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
     freqBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     freqBox_.onChange = [this]
     {
@@ -127,7 +127,7 @@ ControlPanel::ControlPanel()
     speakerModelBox_.addItem ("Q212P", 4);       // source 3
     speakerModelBox_.setSelectedId (1, juce::dontSendNotification);
     speakerModelBox_.setComponentID ("ctrlCombo");
-    speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    speakerModelBox_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
     speakerModelBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     speakerModelBox_.onChange = [this]
     {
@@ -149,7 +149,7 @@ ControlPanel::ControlPanel()
     addAndMakeVisible (speakerModelBox_);
 
     speakerBox_.setComponentID ("ctrlCombo");
-    speakerBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    speakerBox_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
     speakerBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     speakerBox_.onChange = [this]
     {
@@ -259,7 +259,7 @@ ControlPanel::ControlPanel()
     {
         c.setComponentID ("ctrlCombo");
         c.setTooltip (tip);
-        c.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+        c.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
         c.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
         c.onChange = [this] { if (! updatingUI_) { willEdit(); pushSharedEdit(); } };
         addAndMakeVisible (c);
@@ -347,7 +347,7 @@ ControlPanel::ControlPanel()
 
     configTxt (measDistLabel_, "Distance");
     measDistBox_.setComponentID ("ctrlCombo");
-    measDistBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    measDistBox_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
     measDistBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     measDistBox_.onChange = [this]
     {
@@ -403,7 +403,7 @@ ControlPanel::ControlPanel()
     // --- Array presets -----------------------------------------------------
     addSection (presetHdr_, secPresetOpen_);
     presetBox_.setComponentID ("ctrlCombo");
-    presetBox_.setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+    presetBox_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
     presetBox_.setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
     presetBox_.addItem ("Cardioid - 2 sub", 1);
     presetBox_.addItem ("Cardioid - 3 sub", 2);
@@ -1859,7 +1859,7 @@ void ControlPanel::applyColours()
 
     for (auto* b : { &freqBox_, &speakerModelBox_, &speakerBox_, &presetBox_, &measDistBox_ })
     {
-        b->setColour (juce::ComboBox::backgroundColourId, kBtnIn());
+        b->setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
         b->setColour (juce::ComboBox::textColourId,       Brand::onBtnIn());
         b->setColour (juce::ComboBox::outlineColourId,    Brand::controlBorder());
         b->setColour (juce::ComboBox::arrowColourId,      Brand::onBtnIn());
@@ -1889,7 +1889,7 @@ void ControlPanel::applyColours()
         s->setColour (juce::Slider::thumbColourId,           juce::Colour (0xffd81f1f));
         s->setColour (juce::Slider::backgroundColourId,      juce::Colours::transparentBlack);
         s->setColour (juce::Slider::textBoxTextColourId,       Brand::onBtnIn());
-        s->setColour (juce::Slider::textBoxBackgroundColourId, Brand::btnIn());
+        s->setColour (juce::Slider::textBoxBackgroundColourId, Brand::valueBox());
         s->setColour (juce::Slider::textBoxOutlineColourId,    Brand::controlBorder());
         // Force rebuilt text boxes to pick up dark-ink-on-light-fill editing colours.
         s->lookAndFeelChanged();

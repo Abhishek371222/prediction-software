@@ -63,9 +63,10 @@ public:
     // of grey - this one had its own #DBDBDB / #BEBEBE / #E8E8E8 set, a few
     // levels off Venue's at every step, which is exactly the kind of mismatch
     // that reads as sloppiness rather than as a deliberate difference.
-    static juce::Colour fieldFill()  { return juce::Colour (0xffd9d9d9); }   // value boxes
-    static juce::Colour headFill()   { return juce::Colour (0xffdfdede); }   // section headers
-    static juce::Colour headRule()   { return juce::Colour (0xffc8c8c8); }
+    static juce::Colour fieldFill()  { return Brand::valueBox(); }            // value boxes
+    static juce::Colour headFill()   { return Brand::sectionBar(); }          // section headers
+    static juce::Colour headInk()    { return Brand::sectionBarText(); }      // ink on the band
+    static juce::Colour headRule()   { return Brand::sectionBar().darker (0.25f); }
     static juce::Colour stripeFill() { return juce::Colour (0xfff0f0f0); }   // list rows
     static juce::Colour listRule()   { return juce::Colour (0xffc8c8c8); }
     static juce::Colour rowRule()    { return juce::Colour (0xffc8c8c8); }
@@ -171,7 +172,10 @@ public:
             const auto fill = box.isColourSpecified (juce::ComboBox::backgroundColourId)
                                 ? box.findColour (juce::ComboBox::backgroundColourId)
                                 : fieldFill();
-            g.setColour (box.isEnabled() ? fill : fill.withAlpha (0.55f));
+            // Keep the light-blue fill at full strength when the box is
+            // disabled too: the tint is chrome, not a state. The faded arrow
+            // and text below still say the box is not editable.
+            g.setColour (fill);
             g.fillRect (0, 0, w, h);
             if (box.isColourSpecified (juce::ComboBox::outlineColourId))
             {
@@ -321,7 +325,7 @@ public:
             g.setColour (headRule());
             g.drawHorizontalLine (0, 0.0f, (float) getWidth());
             g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
-            g.setColour (Brand::text());
+            g.setColour (headInk());
             g.setFont (Brand::figMed (16.0f));
             g.drawText (title_, getLocalBounds().withTrimmedLeft (fig (14.0f))
                                                 .withTrimmedRight (fig (92.0f)),
@@ -349,7 +353,7 @@ public:
                 const float pw = figf (6.0f), ph = figf (11.0f), gap = figf (2.5f);
                 const juce::Rectangle<float> lhs (cx - gap - pw, cy - ph * 0.5f, pw, ph);
                 const juce::Rectangle<float> rhs (cx + gap,      cy - ph * 0.5f, pw, ph);
-                g.setColour (Brand::text().withAlpha (toggleOn_ ? 1.0f : 0.55f));
+                g.setColour (headInk().withAlpha (toggleOn_ ? 1.0f : 0.55f));
                 if (toggleOn_) { g.fillRect (lhs); g.fillRect (rhs); }
                 else           { g.drawRect (lhs, 1.0f); g.drawRect (rhs, 1.0f); }
                 g.fillRect (cx - 0.5f, cy - ph * 0.65f, 1.0f, ph * 1.3f);
@@ -666,7 +670,10 @@ public:
 
         void paint (juce::Graphics& g) override
         {
-            g.setColour (isEnabled() ? fill_ : fill_.withAlpha (0.55f));
+            // Same rule as the sidebar combos: the tint is chrome, so it keeps
+            // its full light blue even when the box is not editable. Only the
+            // ink fades.
+            g.setColour (fill_);
             g.fillRect (getLocalBounds());
             // The arrows stay while typing, so a half-typed value can be
             // stepped too.
@@ -2181,7 +2188,7 @@ private:
             else
                 a->angle->setAllowedValues ({});
             for (auto* f : { a->gain.get(), a->delay.get(), a->angle.get() })
-                f->setFill (juce::Colour (0xffe8e8e8));
+                f->setFill (Brand::valueBox());
             a->gain->setInlineUnit  (true, false);
             a->delay->setInlineUnit (true, false);
             a->angle->setInlineUnit (true, false);

@@ -45,6 +45,9 @@ namespace Brand
         juce::Colour axisLabel;     // 0 m / 10 m ticks
         juce::Colour activeLabel;   // on-accent / active chrome text
         juce::Colour scrollThumb;   // thin scrollbar pill
+        juce::Colour sectionBar;    // navy section-header band
+        juce::Colour sectionBarText;// ink on the section-header band
+        juce::Colour valueBox;      // input / dropdown fill (light-blue tint)
     };
 
     inline Palette darkPalette()
@@ -76,6 +79,9 @@ namespace Brand
         p.axisLabel     = juce::Colour (0xffffffff);
         p.activeLabel   = juce::Colour (0xfffffafa);
         p.scrollThumb   = juce::Colour (0xffefe9e9);   // light pill on dark
+        p.sectionBar    = juce::Colour (0xff201f1f);   // dark band (unchanged)
+        p.sectionBarText= juce::Colour (0xffffffff);
+        p.valueBox      = juce::Colour (0xffffffff);
         return p;
     }
 
@@ -112,6 +118,9 @@ namespace Brand
         p.axisLabel     = juce::Colour (0xff000000);
         p.activeLabel   = juce::Colour (0xfffffafa);
         p.scrollThumb   = juce::Colour (0xff313131);   // dark pill on light
+        p.sectionBar    = juce::Colour (0xff0a4d73);   // navy section-header band
+        p.sectionBarText= juce::Colour (0xffffffff);
+        p.valueBox      = juce::Colour (0xffe9eff4);   // light-blue input fill
         return p;
     }
 
@@ -164,6 +173,9 @@ namespace Brand
     inline juce::Colour axisLabel()     { return palette().axisLabel; }
     inline juce::Colour activeLabel()   { return palette().activeLabel; }
     inline juce::Colour scrollThumb()   { return palette().scrollThumb; }
+    inline juce::Colour sectionBar()    { return palette().sectionBar; }
+    inline juce::Colour sectionBarText(){ return palette().sectionBarText; }
+    inline juce::Colour valueBox()      { return palette().valueBox; }
     inline juce::Colour textDim()       { return ash(); }
     inline juce::Colour card()          { return btnIn(); }
     inline juce::Colour disabled()      { return muted(); }
@@ -815,18 +827,18 @@ namespace Brand
             setColour (juce::ToggleButton::tickDisabledColourId,   accent().withAlpha (0.55f));
             setColour (juce::TextButton::textColourOffId,          onBtnIn());
             setColour (juce::TextButton::textColourOnId,           onAccent());
-            setColour (juce::ComboBox::backgroundColourId,         btnIn());
+            setColour (juce::ComboBox::backgroundColourId,         valueBox());
             setColour (juce::ComboBox::textColourId,               onBtnIn());
             setColour (juce::ComboBox::outlineColourId,            controlBorder());
             setColour (juce::ComboBox::arrowColourId,              onBtnIn());
 
             // Slider / control value boxes are light fills - ink must stay dark while typing.
             setColour (juce::Slider::textBoxTextColourId,          onBtnIn());
-            setColour (juce::Slider::textBoxBackgroundColourId,    btnIn());
+            setColour (juce::Slider::textBoxBackgroundColourId,    valueBox());
             setColour (juce::Slider::textBoxOutlineColourId,       controlBorder());
             setColour (juce::Label::textWhenEditingColourId,       onBtnIn());
             setColour (juce::TextEditor::textColourId,             onBtnIn());
-            setColour (juce::TextEditor::backgroundColourId,       btnIn());
+            setColour (juce::TextEditor::backgroundColourId,       valueBox());
             setColour (juce::TextEditor::outlineColourId,          controlBorder());
             setColour (juce::TextEditor::focusedOutlineColourId,   controlBorder());
             setColour (juce::TextEditor::highlightColourId,        accent());
@@ -1172,14 +1184,14 @@ namespace Brand
             auto* l = LookAndFeel_V4::createSliderTextBox (slider);
             l->setFont (sliderNumber (UI::scaledFont (isSidebarControl (slider) ? Type::sidebarMainValue : Type::input)));
             l->setJustificationType (juce::Justification::centred);
-            l->setColour (juce::Label::backgroundColourId,          btnIn());
+            l->setColour (juce::Label::backgroundColourId,          valueBox());
             l->setColour (juce::Label::outlineColourId,             controlBorder());
             l->setColour (juce::Label::textColourId,                onBtnIn());
             // Active editor inherits these - without them, dark-theme defaultText (white)
             // paints white-on-white inside the value box.
             l->setColour (juce::Label::textWhenEditingColourId,     onBtnIn());
             l->setColour (juce::TextEditor::textColourId,           onBtnIn());
-            l->setColour (juce::TextEditor::backgroundColourId,     btnIn());
+            l->setColour (juce::TextEditor::backgroundColourId,     valueBox());
             l->setColour (juce::TextEditor::highlightColourId,      accent());
             l->setColour (juce::TextEditor::highlightedTextColourId,onAccent());
             l->setColour (juce::CaretComponent::caretColourId,      onBtnIn());

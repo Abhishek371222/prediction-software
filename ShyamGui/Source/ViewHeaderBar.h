@@ -38,10 +38,14 @@ public:
     void setFolded (bool f) { if (folded_ != f) { folded_ = f; repaint(); } }
     bool isFolded() const noexcept { return folded_; }
 
+    /** Override the ink so the glyph reads on a dark band. */
+    void setInkColour (juce::Colour c) { ink_ = c; hasInk_ = true; repaint(); }
+
     void paintButton (juce::Graphics& g, bool hl, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (getWidth() * 0.26f);
-        const auto ink = Brand::text().withMultipliedAlpha (
+        const auto base = hasInk_ ? ink_ : Brand::text();
+        const auto ink = base.withMultipliedAlpha (
                              isEnabled() ? (down ? 0.6f : (hl ? 0.85f : 1.0f)) : 0.4f);
         g.setColour (ink);
 
@@ -73,6 +77,8 @@ public:
 private:
     Glyph glyph_;
     bool  folded_ = false;
+    juce::Colour ink_;
+    bool  hasInk_ = false;
 };
 
 // A small outlined text button for a pane header's own tools; a toggle fills
@@ -117,6 +123,7 @@ public:
     explicit PaneHeaderBar (const juce::String& title) : title_ (title)
     {
         addAndMakeVisible (fold_);
+        fold_.setInkColour (Brand::sectionBarText());
         fold_.onClick = [this]
         {
             folded_ = ! folded_;
@@ -139,8 +146,8 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xffdfdede));
-        g.setColour (Brand::text());
+        g.fillAll (Brand::sectionBar());
+        g.setColour (Brand::sectionBarText());
         // Medium, not Bold: the reference sets these headers lighter than
         // the values under them, and larger. Weight carries the hierarchy
         // here, so making them heavier AND bigger shouted twice.
@@ -186,12 +193,15 @@ public:
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
     }
 
+    void setInkColour (juce::Colour c) { ink_ = c; hasInk_ = true; repaint(); }
+
     void paintButton (juce::Graphics& g, bool over, bool) override
     {
         const auto r  = getLocalBounds().toFloat().reduced (getWidth() * 0.16f);
         const bool on = getToggleState();
+        const auto base = hasInk_ ? ink_ : Brand::text();
         const auto ink = on ? Brand::accent()
-                            : Brand::text().withAlpha (over ? 0.85f : 0.6f);
+                            : base.withAlpha (over ? 0.85f : 0.6f);
         const float w  = r.getWidth();
         const float t  = juce::jmax (2.0f, w * 0.22f);          // limb thickness
         const float cx = r.getCentreX();
@@ -217,6 +227,10 @@ public:
         g.fillRect (cx - rad - t * 0.5f + 1.0f, top, t - 2.0f, tipH);
         g.fillRect (cx + rad - t * 0.5f + 1.0f, top, t - 2.0f, tipH);
     }
+
+private:
+    juce::Colour ink_;
+    bool  hasInk_ = false;
 };
 
 class ViewHeaderBar : public juce::Component
@@ -245,9 +259,17 @@ public:
         {
             l->setJustificationType (juce::Justification::centredLeft);
             l->setInterceptsMouseClicks (false, false);
-            l->setColour (juce::Label::textColourId, Brand::text());
+            l->setColour (juce::Label::textColourId, Brand::sectionBarText());
             addAndMakeVisible (*l);
         }
+
+        // The strip is a navy band now, so every mark on it has to be light.
+        for (auto* b : { &btnAddSource_, &btnSourcesFold_, &btnViewOptions_ })
+            b->setInkColour (Brand::sectionBarText());
+        btnRays_.setInkColour (Brand::sectionBarText());
+        btnMic_.setInkColour (Brand::sectionBarText());
+        btnLocate_.setInkColour (Brand::sectionBarText());
+        btnSnap_.setInkColour (Brand::sectionBarText());
     }
 
     void setSidebarWidth (int w) { sideW_ = juce::jmax (0, w); resized(); repaint(); }
@@ -307,7 +329,7 @@ public:
         // strip read as two bars that happened to meet. It is the same grey
         // the panel's section headers use, because that is what the left half
         // IS: the Sources header.
-        g.setColour (juce::Colour (0xffdfdede));
+        g.setColour (Brand::sectionBar());
         g.fillRect (r);
 
         // This strip is BOUNDED in black: a line along its top, one along its

@@ -215,6 +215,9 @@ public:
     public:
         Locate() : juce::Button ("Back to the action") {}
 
+        /** Force the glyph ink, e.g. white on the navy view strip. */
+        void setInkColour (juce::Colour c) { ink_ = c; repaint(); }
+
         void paintButton (juce::Graphics& g, bool over, bool down) override
         {
             using UiConfig::Scale::figf;
@@ -229,7 +232,7 @@ public:
             const auto c  = box.getCentre();
             const float r = s * 0.30f;
             const float th = juce::jmax (1.2f, figf (2.0f));
-            g.setColour (kInk);
+            g.setColour (ink_);
             g.drawEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c), th);
             const float in = r - s * 0.08f, out = s * 0.5f;
             juce::Path ticks;
@@ -242,6 +245,9 @@ public:
             const float d = s * 0.16f;
             g.fillEllipse (juce::Rectangle<float> (d, d).withCentre (c));
         }
+
+    private:
+        juce::Colour ink_ { juce::Colour (0xff000000) };
     };
 
 private:

@@ -321,6 +321,9 @@ public:
         return getButtonText() + "\n" + tip;
     }
 
+    /** Force the tint ink, e.g. white on the navy view strip. */
+    void setInkColour (juce::Colour c) { ink_ = c; hasInk_ = true; repaint(); }
+
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         auto r = getLocalBounds().toFloat();
@@ -337,8 +340,9 @@ public:
         const bool  momentary = ! glyphOnly_ && ! getClickingTogglesState();
         const bool  active = isEnabled() && (getToggleState() || (momentary && down));
         const float alpha  = isEnabled() ? 1.0f : 0.5f;
-        const auto  ink = AppSettings::get().isDark() ? juce::Colours::white
-                                                      : juce::Colours::black;
+        const auto  ink = hasInk_ ? ink_
+                                  : (AppSettings::get().isDark() ? juce::Colours::white
+                                                                 : juce::Colours::black);
         // The slot IS the Figma frame: ribbonIconSize is the 24 px frame
         // on the ribbon's grid, so no inset.
         const float side = juce::jmin (r.getWidth(), r.getHeight());
@@ -452,6 +456,8 @@ private:
 
     std::vector<Loaded> layers_;
     bool glyphOnly_ = false;
+    juce::Colour ink_;
+    bool hasInk_ = false;
 };
 
 /** A ribbon number box that names its axis inside the field ("X 00.0"), as

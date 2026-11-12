@@ -245,7 +245,7 @@ public:
     MappingFooter()
     {
         freq_.setLookAndFeel (&lnf_);
-        freq_.setColour (juce::ComboBox::backgroundColourId, juce::Colours::white.withAlpha (0.4f));
+        freq_.setColour (juce::ComboBox::backgroundColourId, Brand::valueBox());
         freq_.onChange = [this] { if (! building_ && onFrequency) onFrequency (freq_.getSelectedItemIndex()); };
         addAndMakeVisible (freq_);
 
@@ -299,11 +299,11 @@ public:
         g.fillRect (body);
 
         const auto strip = body.withHeight (fig (44.0f));
-        g.setColour (MappingSkin::blue());
-        g.fillRect (strip);
-        g.setColour (juce::Colours::black);
-        g.drawRect (strip, 1);
         g.setColour (Brand::white());
+        g.fillRect (strip);
+        g.setColour (Brand::sidebarBorder());
+        g.drawRect (strip, 1);
+        g.setColour (Brand::text());
         g.setFont (Brand::figMed (12.0f));
         g.drawText ("Frequency to mapping", strip.withTrimmedLeft (fig (14.0f)),
                     juce::Justification::centredLeft, true);
@@ -331,7 +331,7 @@ private:
             const float cx = (float) w - UiConfig::Scale::figf (17.4f), cy = (float) h * 0.5f;
             juce::Path t;
             t.addTriangle (cx - hw, cy - hh, cx + hw, cy - hh, cx, cy + hh);
-            g.setColour (Brand::white());
+            g.setColour (Brand::text());
             g.fillPath (t);
         }
 
@@ -340,7 +340,7 @@ private:
             SourcePanel::PanelLnF::positionComboBoxText (box, l);
             l.setBounds (UiConfig::Scale::fig (9.0f), 0,
                          box.getWidth() - UiConfig::Scale::fig (37.0f), box.getHeight());
-            l.setColour (juce::Label::textColourId, Brand::white());
+            l.setColour (juce::Label::textColourId, Brand::text());
         }
     };
 
@@ -355,7 +355,7 @@ private:
             const auto r = getLocalBounds().toFloat().reduced (0.5f);
             const float rad = UiConfig::Scale::figf (2.0f);
             const bool solid = ! getClickingTogglesState() || getToggleState();
-            auto fill = MappingSkin::blue();
+            auto fill = Brand::sectionBar();
             if (down) fill = fill.darker (0.2f);
             else if (over) fill = fill.brighter (0.1f);
             if (solid)

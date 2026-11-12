@@ -15,7 +15,7 @@ namespace
 
     juce::Colour cardFill()  { return juce::Colour (0xfff6f6f6); }
     juce::Colour cardEdge()  { return juce::Colour (0xffcfcfcf); }
-    juce::Colour fieldFill() { return juce::Colour (0xffe8e8e8); }
+    juce::Colour fieldFill() { return juce::Colour (0xffe9eff4); }
 
     void stylePrimary (juce::TextButton& b)
     {
