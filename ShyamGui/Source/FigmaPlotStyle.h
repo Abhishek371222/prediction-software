@@ -35,8 +35,8 @@ namespace FigPlot
     /** Dark Figma Top View: venue boxes are solid #656566; speaker tiles #C2D7FF. */
     inline juce::Colour solidGrey() { return juce::Colour (0xff656566); }
     inline juce::Colour tick()      { return dk() ? juce::Colour (0xfffefdfb) : juce::Colour (0xff000000); }
-    inline juce::Colour mark()      { return juce::Colour (0xffed2227); }
-    inline juce::Colour freq1()     { return juce::Colour (0xffed2227); }
+    inline juce::Colour mark()      { return dk() ? juce::Colour (0xffe62429) : juce::Colour (0xffed2227); }
+    inline juce::Colour freq1()     { return dk() ? juce::Colour (0xffe62429) : juce::Colour (0xffed2227); }
     inline juce::Colour freq2()     { return juce::Colour (0xff145fea); }
     /** The x = 0 rule: blue, drawn down the sheet. */
     inline juce::Colour originAxis() { return juce::Colour (0xff145fea).withAlpha (0.75f); }
@@ -44,7 +44,7 @@ namespace FigPlot
         lines answer different questions - one is 'where is the stage', the
         other 'where is the centre line' - and a single colour for both
         leaves you counting rules to tell which is which. */
-    inline juce::Colour originAxisY() { return juce::Colour (0xffed2227).withAlpha (0.75f); }
+    inline juce::Colour originAxisY() { return (dk() ? juce::Colour (0xffe62429) : juce::Colour (0xffed2227)).withAlpha (0.75f); }
     inline juce::Colour cabinet()   { return dk() ? juce::Colour (0xffc2d7ff) : juce::Colour (0x80d3def1); }   // rgba(211,222,241,0.5)
 
     /** Figma px per metre at the default framing: 48 px per 2 m. */

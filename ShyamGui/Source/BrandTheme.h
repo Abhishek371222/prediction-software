@@ -153,7 +153,9 @@ namespace Brand
 
     inline juce::Colour charcoal()  { return juce::Colour (0xff231f20); }
     inline juce::Colour white()     { return juce::Colour (0xffffffff); }
-    inline juce::Colour red()       { return juce::Colour (0xffed2227); }
+    // Dark Figma uses ONE red for the tab underline, the mute marks and the
+    // plan/elevation marks: #E62429. Light keeps the brand #ED2227.
+    inline juce::Colour red()       { return palette().dark ? juce::Colour (0xffe62429) : juce::Colour (0xffed2227); }
     inline juce::Colour accent()    { return red(); }
     inline juce::Colour onAccent()  { return juce::Colour (0xfffffafa); }
     /** Figma: the one "this is the one" fill - selected rows, menu hover. Black text on it. */

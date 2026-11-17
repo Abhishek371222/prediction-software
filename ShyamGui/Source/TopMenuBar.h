@@ -269,7 +269,7 @@ private:
     static juce::Colour kWhite()  { return Brand::isDarkUi() ? Brand::base() : juce::Colour (0xffffffff); }
     static juce::Colour kInk()    { return Brand::isDarkUi() ? Brand::text() : juce::Colour (0xff000000); }
     static juce::Colour kRule()   { return Brand::isDarkUi() ? juce::Colour (0xff1d1d20) : juce::Colour (0xff000000); }
-    static juce::Colour kAccent() { return Brand::isDarkUi() ? Brand::actionRed() : juce::Colour (0xffed2227); }
+    static juce::Colour kAccent() { return Brand::isDarkUi() ? juce::Colour (0xffe62429) : juce::Colour (0xffed2227); }
     static juce::Colour kHover()  { return Brand::isDarkUi() ? juce::Colour (0xff5a5a5c) : juce::Colour (0xffd5d3d3); }
 
 public:
