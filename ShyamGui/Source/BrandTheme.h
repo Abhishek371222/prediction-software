@@ -48,40 +48,55 @@ namespace Brand
         juce::Colour sectionBar;    // navy section-header band
         juce::Colour sectionBarText;// ink on the section-header band
         juce::Colour valueBox;      // input / dropdown fill (light-blue tint)
+        juce::Colour sheet  { 0xffffffff };   // side-panel sheet behind the rows
+        juce::Colour stripe { 0xfff0f0f0 };   // banded list rows
+        juce::Colour rule   { 0xffc8c8c8 };   // row / list rules
+        juce::Colour listSelect { 0xffd4e3fe };// selected list row
+        juce::Colour muteOff    { 0xffffffff };// unset: panels use their value box
+        bool dark = false;
     };
 
     inline Palette darkPalette()
     {
+        // Figma dark frame "MAPPING_V2_MAPPING OFF" (vLUiytDkvtyHqkQGIaEiLk):
+        // one #222225 ground everywhere, #373A3E section bands and value
+        // boxes (no outlines), #FEFDFB ink, #EE2026 for the red actions.
         Palette p;
-        p.base          = juce::Colour (0xff1c1c1c);
-        p.panel         = juce::Colour (0xff1c1c1c);
-        p.panelDark     = juce::Colour (0xff201f1f);
-        p.sidebarBg     = juce::Colour (0xff1c1c1c);
-        p.btnIn         = juce::Colour (0xffffffff);
-        p.exportPill    = juce::Colour (0xffdfdede);
-        p.idleViewPill  = juce::Colour (0xffefe9e9);
-        p.statsBtn      = juce::Colour (0xffffffff);
-        p.statsText     = juce::Colour (0xff000000);
-        p.plotToolbar   = juce::Colour (0xff201f1f);
-        p.border        = juce::Colour (0xffe6e6e6);   // soft edge on white controls
-        p.sidebarBorder = juce::Colour (0x4dffffff);   // #FFFFFF @ 30%
-        p.plotBorder    = juce::Colour (0x80ffffff);   // #FFFFFF @ 50%
-        p.toolbarBorder = juce::Colour (0xff1f1e1e);   // #1F1E1E
-        p.fitViewBorder = juce::Colour (0xff383636);   // #383636
-        p.text          = juce::Colour (0xffffffff);
-        p.heading       = juce::Colour (0xffffffff);
-        p.ash           = juce::Colour (0xfffafafa);
+        p.base          = juce::Colour (0xff222225);
+        p.panel         = juce::Colour (0xff222225);
+        p.panelDark     = juce::Colour (0xff222225);
+        p.sidebarBg     = juce::Colour (0xff222225);
+        p.btnIn         = juce::Colour (0xff373a3e);
+        p.exportPill    = juce::Colour (0xff373a3e);
+        p.idleViewPill  = juce::Colour (0xff373a3e);
+        p.statsBtn      = juce::Colour (0xff373a3e);
+        p.statsText     = juce::Colour (0xfffefdfb);
+        p.plotToolbar   = juce::Colour (0xff373a3e);
+        p.border        = juce::Colour (0xff373a3e);   // controls carry no visible edge
+        p.sidebarBorder = juce::Colour (0xff39393c);   // row rules
+        p.plotBorder    = juce::Colour (0xff5a5a5c);   // plot frame
+        p.toolbarBorder = juce::Colour (0xff39393c);
+        p.fitViewBorder = juce::Colour (0xff39393c);
+        p.text          = juce::Colour (0xfffefdfb);
+        p.heading       = juce::Colour (0xfffefdfb);
+        p.ash           = juce::Colour (0xfffefdfb);
         p.muted         = juce::Colour (0xffb8b8bc);
-        p.onBtn         = juce::Colour (0xff000000);
-        p.plotBg        = juce::Colour (0xff1c1c1c);
-        p.plotGrid      = juce::Colour (0x1affffff);   // #FFFFFF @ ~10% - softer on dark heatmap
-        p.plotTitle     = juce::Colour (0xfffafafa);
-        p.axisLabel     = juce::Colour (0xffffffff);
-        p.activeLabel   = juce::Colour (0xfffffafa);
-        p.scrollThumb   = juce::Colour (0xffefe9e9);   // light pill on dark
-        p.sectionBar    = juce::Colour (0xff201f1f);   // dark band (unchanged)
-        p.sectionBarText= juce::Colour (0xffffffff);
-        p.valueBox      = juce::Colour (0xffffffff);
+        p.onBtn         = juce::Colour (0xfffefdfb);
+        p.plotBg        = juce::Colour (0xff222225);
+        p.plotGrid      = juce::Colour (0xff3a3a3e);   // dashed grid on #222225
+        p.plotTitle     = juce::Colour (0xfffefdfb);
+        p.axisLabel     = juce::Colour (0xfffefdfb);
+        p.activeLabel   = juce::Colour (0xfffefdfb);
+        p.scrollThumb   = juce::Colour (0xff5a5a5c);
+        p.sectionBar    = juce::Colour (0xff373a3e);   // Figma section band
+        p.sectionBarText= juce::Colour (0xfffefdfb);
+        p.valueBox      = juce::Colour (0xff373a3e);   // Figma value box
+        p.sheet         = juce::Colour (0xff222225);
+        p.stripe        = juce::Colour (0xff222225);   // no banding in the dark frame
+        p.rule          = juce::Colour (0xff39393c);
+        p.listSelect    = juce::Colour (0xff222225);   // selected row: red underline only
+        p.muteOff       = juce::Colour (0xff66798c);   // Sources list "M", off
+        p.dark          = true;
         return p;
     }
 
@@ -121,6 +136,7 @@ namespace Brand
         p.sectionBar    = juce::Colour (0xff0a4d73);   // navy section-header band
         p.sectionBarText= juce::Colour (0xffffffff);
         p.valueBox      = juce::Colour (0xffe9eff4);   // light-blue input fill
+        p.muteOff       = p.valueBox;
         return p;
     }
 
@@ -176,6 +192,14 @@ namespace Brand
     inline juce::Colour sectionBar()    { return palette().sectionBar; }
     inline juce::Colour sectionBarText(){ return palette().sectionBarText; }
     inline juce::Colour valueBox()      { return palette().valueBox; }
+    inline juce::Colour sheet()         { return palette().sheet; }
+    inline juce::Colour stripe()        { return palette().stripe; }
+    inline juce::Colour rule()          { return palette().rule; }
+    inline juce::Colour listSelect()    { return palette().listSelect; }
+    inline juce::Colour muteOff()       { return palette().muteOff; }
+    inline bool         isDarkUi()      { return palette().dark; }
+    /** Figma dark frame's red actions (Calculate, reset). */
+    inline juce::Colour actionRed()     { return juce::Colour (0xffee2026); }
     inline juce::Colour textDim()       { return ash(); }
     inline juce::Colour card()          { return btnIn(); }
     inline juce::Colour disabled()      { return muted(); }
@@ -186,7 +210,8 @@ namespace Brand
     // than as fields. This one token drives all of them (see the ComboBox,
     // Slider textBox, TextEditor and Label outline colours, and the button
     // stroke), so the weight of the whole control set is set here.
-    inline juce::Colour controlBorder() { return juce::Colour (0xffafafaf); }
+    inline juce::Colour controlBorder() { return palette().dark ? juce::Colours::transparentBlack
+                                                                : juce::Colour (0xffafafaf); }
     constexpr float controlBorderPx   = 1.0f;
     constexpr float valueBoxCorner    = 3.0f;   // slider numeric boxes
     constexpr float controlCorner     = 2.0f;   // Figma redesign: flat 2px radius on combos / buttons
@@ -520,6 +545,7 @@ namespace Brand
     }
     inline juce::Font figMed  (float figmaPx) { return fig (figmaPx, techMed (12.0f)); }
     inline juce::Font figSemi (float figmaPx) { return fig (figmaPx, techSemi (12.0f)); }
+    inline juce::Font figBold (float figmaPx) { return fig (figmaPx, techBold (12.0f)); }
 
     // Top menu strip words - Montserrat Medium 16 in the Figma.
     inline juce::Font topMenu() { return figMed (16.0f); }
@@ -819,7 +845,7 @@ namespace Brand
 
             setColour (juce::PopupMenu::backgroundColourId,           panel());
             setColour (juce::PopupMenu::textColourId,                 text());
-            setColour (juce::PopupMenu::highlightedBackgroundColourId, selection());
+            setColour (juce::PopupMenu::highlightedBackgroundColourId, palette().dark ? juce::Colour (0xff373a3e) : selection());
             setColour (juce::PopupMenu::highlightedTextColourId,      text());
 
             setColour (juce::ToggleButton::textColourId,            text());

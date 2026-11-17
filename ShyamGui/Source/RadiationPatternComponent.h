@@ -1059,6 +1059,9 @@ private:
     std::vector<MicReceiver> mics_;
     int                      selectedMic_ = -1;           // primary
     int                      hoveredMic_  = -1;           // mic under the cursor: shows its full label
+    // The white level tag a mic carries once the map is painted (Figma).
+    struct MicTag { juce::String text; juce::Rectangle<float> box; };
+    MicTag micLevelTag (int micIndex) const;
     bool                     micsShown_ = false;          // only on the Mapping tab
     // Left-drag PANS; Ctrl + left selects and moves things (the red
     // selection). ctrlGesture_ marks a Ctrl press, so the select logic below

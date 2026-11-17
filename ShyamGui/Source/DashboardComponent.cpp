@@ -13,9 +13,10 @@ namespace
     // labels must stay readable rather than scaling all the way down with it.
     constexpr float kMinTextScale = 0.95f;
 
-    juce::Colour cardFill()  { return juce::Colour (0xfff6f6f6); }
-    juce::Colour cardEdge()  { return juce::Colour (0xffcfcfcf); }
-    juce::Colour fieldFill() { return juce::Colour (0xffe9eff4); }
+    juce::Colour cardFill()  { return Brand::isDarkUi() ? juce::Colour (0xff2a2b2e) : juce::Colour (0xfff6f6f6); }
+    juce::Colour cardEdge()  { return Brand::isDarkUi() ? Brand::rule() : juce::Colour (0xffcfcfcf); }
+    juce::Colour fieldFill() { return Brand::isDarkUi() ? Brand::valueBox() : juce::Colour (0xffe9eff4); }
+    juce::Colour boxFill()   { return Brand::isDarkUi() ? Brand::valueBox() : juce::Colour (0xffffffff); }
 
     void stylePrimary (juce::TextButton& b)
     {
@@ -27,8 +28,8 @@ namespace
 
     void styleSecondary (juce::TextButton& b)
     {
-        b.setColour (juce::TextButton::buttonColourId,   juce::Colours::white);
-        b.setColour (juce::TextButton::buttonOnColourId, juce::Colours::white);
+        b.setColour (juce::TextButton::buttonColourId,   boxFill());
+        b.setColour (juce::TextButton::buttonOnColourId, boxFill());
         b.setColour (juce::TextButton::textColourOffId,  Brand::text());
         b.setColour (juce::TextButton::textColourOnId,   Brand::text());
     }
@@ -86,7 +87,7 @@ DashboardComponent::DashboardComponent()
     recentBox_.setComponentID ("ctrlCombo");
     recentBox_.setTextWhenNothingSelected ("Recent Projects");
     recentBox_.setTextWhenNoChoicesAvailable ("Recent Projects");
-    recentBox_.setColour (juce::ComboBox::backgroundColourId, juce::Colours::white);
+    recentBox_.setColour (juce::ComboBox::backgroundColourId, boxFill());
     recentBox_.setColour (juce::ComboBox::textColourId,       Brand::text());
     recentBox_.onChange = [this]
     {
@@ -291,7 +292,7 @@ void DashboardComponent::applyColours()
     footer_.setColour (juce::Label::textColourId, Brand::ash().withAlpha (0.85f));
     stylePrimary (newBtn_);    styleSecondary (openBtn_);
     stylePrimary (createBtn_); styleSecondary (cancelBtn_);
-    recentBox_.setColour (juce::ComboBox::backgroundColourId, juce::Colours::white);
+    recentBox_.setColour (juce::ComboBox::backgroundColourId, boxFill());
     recentBox_.setColour (juce::ComboBox::textColourId,       Brand::text());
     for (auto* f : fields_)
     {
@@ -309,7 +310,7 @@ void DashboardComponent::lookAndFeelChanged()
 // ---------------------------------------------------------------------------
 void DashboardComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colours::white);
+    g.fillAll (Brand::isDarkUi() ? Brand::base() : juce::Colours::white);
 
     const auto card = cardBounds().toFloat();
     const float s = cardScale();

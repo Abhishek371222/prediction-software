@@ -82,8 +82,12 @@ namespace UiConfig
         // (a big monitor spends its room on the plot, not on huge labels).
         // The layout shares the 85 % floor, so rows and boxes never shrink
         // under the text they hold; above 130 % only the layout keeps growing.
-        constexpr float figmaMinFactor   = 0.85f;
-        constexpr float figTextMaxFactor = 1.30f;
+        // Fully proportional: the Figma frame is drawn for a 13.7" 1920 x 1080
+        // panel and every other screen shows the same picture scaled. 0.72
+        // lets a 1280 x 720 window hold the whole sidebar; text follows the
+        // layout all the way up, so a 1440p/4K screen keeps the same proportions.
+        constexpr float figmaMinFactor   = 0.72f;
+        constexpr float figTextMaxFactor = 2.70f;
         inline float figFactor     = 1.0f;
         inline float figTextFactor = 1.0f;
 

@@ -23,13 +23,18 @@
 // =============================================================================
 namespace FigPlot
 {
-    inline juce::Colour field()     { return juce::Colour (0xffffffff); }
+    // Light: Figma "Source screen - 1.3.1". Dark: the dark Mapping frame -
+    // #222225 field, fine dashed #3A3A3E grid, light-grey frame and venue edge.
+    inline bool dk() { return Brand::isDarkUi(); }
+    inline juce::Colour field()     { return dk() ? juce::Colour (0xff222225) : juce::Colour (0xffffffff); }
     /** Venue element body; drawn at 75%, so it lands on #E4E4E4 over the field. */
-    inline juce::Colour venueFill() { return juce::Colour (0xffdbdbdb); }
-    inline juce::Colour venueEdge() { return juce::Colour (0xffa0a0a0); }
-    inline juce::Colour grid()      { return juce::Colour (0xffd9d9d9); }
-    inline juce::Colour frame()     { return juce::Colour (0xff000000); }
-    inline juce::Colour tick()      { return juce::Colour (0xff000000); }
+    inline juce::Colour venueFill() { return dk() ? juce::Colour (0xff7b7b7c) : juce::Colour (0xffdbdbdb); }
+    inline juce::Colour venueEdge() { return dk() ? juce::Colour (0xff69696a) : juce::Colour (0xffa0a0a0); }
+    inline juce::Colour grid()      { return dk() ? juce::Colour (0xff4e4e51) : juce::Colour (0xffd9d9d9); }
+    inline juce::Colour frame()     { return dk() ? juce::Colour (0xffa7a7a8) : juce::Colour (0xff000000); }
+    /** Dark Figma Top View: venue boxes are solid #656566; speaker tiles #C2D7FF. */
+    inline juce::Colour solidGrey() { return juce::Colour (0xff656566); }
+    inline juce::Colour tick()      { return dk() ? juce::Colour (0xfffefdfb) : juce::Colour (0xff000000); }
     inline juce::Colour mark()      { return juce::Colour (0xffed2227); }
     inline juce::Colour freq1()     { return juce::Colour (0xffed2227); }
     inline juce::Colour freq2()     { return juce::Colour (0xff145fea); }
@@ -40,7 +45,7 @@ namespace FigPlot
         other 'where is the centre line' - and a single colour for both
         leaves you counting rules to tell which is which. */
     inline juce::Colour originAxisY() { return juce::Colour (0xffed2227).withAlpha (0.75f); }
-    inline juce::Colour cabinet()   { return juce::Colour (0x80d3def1); }   // rgba(211,222,241,0.5)
+    inline juce::Colour cabinet()   { return dk() ? juce::Colour (0xffc2d7ff) : juce::Colour (0x80d3def1); }   // rgba(211,222,241,0.5)
 
     /** Figma px per metre at the default framing: 48 px per 2 m. */
     constexpr float kDefaultPxPerM = 24.0f;
@@ -157,7 +162,15 @@ namespace FigPlot
         {
             const int x = juce::roundToInt (x0 + m * ppm);
             if (x > f.getX() && x < f.getRight())
-                g.drawVerticalLine (x, (float) f.getY(), (float) f.getBottom());
+            {
+                if (dk())
+                {
+                    const float dash[] = { 2.0f, 2.0f };
+                    g.drawDashedLine ({ (float) x, (float) f.getY(), (float) x, (float) f.getBottom() }, dash, 2, 1.0f);
+                }
+                else
+                    g.drawVerticalLine (x, (float) f.getY(), (float) f.getBottom());
+            }
         });
     }
 

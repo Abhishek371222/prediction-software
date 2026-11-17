@@ -67,11 +67,11 @@ public:
     static juce::Colour headFill()   { return Brand::sectionBar(); }          // section headers
     static juce::Colour headInk()    { return Brand::sectionBarText(); }      // ink on the band
     static juce::Colour headRule()   { return Brand::sectionBar().darker (0.25f); }
-    static juce::Colour stripeFill() { return juce::Colour (0xfff0f0f0); }   // list rows
-    static juce::Colour listRule()   { return juce::Colour (0xffc8c8c8); }
-    static juce::Colour rowRule()    { return juce::Colour (0xffc8c8c8); }
+    static juce::Colour stripeFill() { return Brand::stripe(); }   // list rows
+    static juce::Colour listRule()   { return Brand::rule(); }
+    static juce::Colour rowRule()    { return Brand::rule(); }
     /** The chosen row, as the Venue tab paints it. */
-    static juce::Colour rowSelect()  { return Brand::selection(); }
+    static juce::Colour rowSelect()  { return Brand::listSelect(); }
 
     /** 20 not 20.0, 2.5 as 2.5 - the Figma reads "20 ft" and "5 Deg". */
     static juce::String num (double v)
@@ -95,12 +95,12 @@ public:
     // Figma: a white list in a #CCCCCC hairline, a grey rule under every
     // item, the current choice in the selection blue and no tick; the item
     // under the pointer takes a paler blue. Shared with the Venue panel.
-    static juce::Colour listEdge() { return juce::Colour (0xffcccccc); }
-    static juce::Colour listSep()  { return juce::Colour (0xffc8c8c8); }
+    static juce::Colour listEdge() { return Brand::isDarkUi() ? Brand::rule() : juce::Colour (0xffcccccc); }
+    static juce::Colour listSep()  { return Brand::rule(); }
 
     static void drawListBackground (juce::Graphics& g, int w, int h)
     {
-        g.fillAll (Brand::white());
+        g.fillAll (Brand::isDarkUi() ? Brand::valueBox() : Brand::white());
         g.setColour (listEdge());
         g.drawRect (0, 0, w, h, 1);
     }
@@ -118,8 +118,12 @@ public:
         }
         if (isActive && (isTicked || isHighlighted))
         {
-            g.setColour (isTicked ? Brand::selection()
-                                  : Brand::selection().interpolatedWith (Brand::white(), 0.5f));
+            if (Brand::isDarkUi())
+                g.setColour (isTicked ? Brand::valueBox().brighter (0.25f)
+                                      : Brand::valueBox().brighter (0.12f));
+            else
+                g.setColour (isTicked ? Brand::selection()
+                                      : Brand::selection().interpolatedWith (Brand::white(), 0.5f));
             g.fillRect (area);
         }
         g.setColour (listSep());
@@ -322,11 +326,33 @@ public:
             using UiConfig::Scale::fig;
             using UiConfig::Scale::figf;
             g.fillAll (headFill());
-            g.setColour (headRule());
-            g.drawHorizontalLine (0, 0.0f, (float) getWidth());
-            g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+            if (Brand::isDarkUi())
+            {
+                // Figma dark: a 1 px #1C1C1C edge on top;
+                // no bottom rule (the soft shadow
+                // under the band is drawn by the panel).
+                g.setColour (juce::Colour (0xff1c1c1c));
+                g.drawHorizontalLine (0, 0.0f, (float) getWidth());
+                // Figma "Group 1041": a grab handle centred on the band's top
+                // edge - two 28 px rules, 2 px apart, #FEFDFB at 20 %. Not on
+                // Rigging Points, whose band carries none.
+                if (title_ != "Rigging Points")
+                {
+                    const float gw = figf (28.0f), gx = ((float) getWidth() - gw) * 0.5f;
+                    g.setColour (juce::Colour (0xfffefdfb).withAlpha (0.2f));
+                    g.fillRect (gx, figf (2.0f), gw, 1.0f);
+                    g.fillRect (gx, figf (4.0f), gw, 1.0f);
+                }
+            }
+            else
+            {
+                g.setColour (headRule());
+                g.drawHorizontalLine (0, 0.0f, (float) getWidth());
+                g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+            }
             g.setColour (headInk());
-            g.setFont (Brand::figMed (16.0f));
+            // Figma SOURCE_V2 / MAPPING_V2: section titles are Medium 15, 13 in.
+            g.setFont (Brand::figMed (15.0f));
             g.drawText (title_, getLocalBounds().withTrimmedLeft (fig (14.0f))
                                                 .withTrimmedRight (fig (92.0f)),
                         juce::Justification::centredLeft, true);
@@ -771,11 +797,15 @@ public:
             // Figma: a flat grey square like the value boxes; latched, red.
             const auto r = getLocalBounds().toFloat();
             const bool on = getToggleState();
-            const auto base = outlined_ ? Brand::white() : fieldFill();
+            // Dark Figma: the Rigging marks are flat #373A3E boxes, the
+            // Sources list's M a slate #66798C square.
+            const bool dark = Brand::isDarkUi();
+            const auto base = outlined_ ? (dark ? fieldFill() : Brand::white())
+                                        : (dark ? Brand::muteOff() : fieldFill());
             g.setColour (on ? Brand::accent()
                             : (hl ? base.darker (0.06f) : base));
             g.fillRect (r);
-            if (outlined_ && ! on)
+            if (outlined_ && ! on && ! dark)
             {
                 g.setColour (Brand::text().withMultipliedAlpha (isEnabled() ? 1.0f : 0.45f));
                 g.drawRect (getLocalBounds(), 1);
@@ -809,8 +839,10 @@ public:
         {
             const auto r = getLocalBounds().toFloat();
             const bool on = getToggleState();
-            g.setColour (on ? Brand::accent() : (hl ? Brand::white().darker (0.06f) : Brand::white()));
+            const auto off = Brand::isDarkUi() ? fieldFill() : Brand::white();
+            g.setColour (on ? Brand::accent() : (hl ? off.darker (0.06f) : off));
             g.fillRect (r);
+            if (! on && Brand::isDarkUi()) return;
             if (! on)
             {
                 g.setColour (Brand::text().withMultipliedAlpha (isEnabled() ? 1.0f : 0.45f));
@@ -855,7 +887,7 @@ public:
             // left, the share against the right end.
             using UiConfig::Scale::fig;
             g.setColour (Brand::white());
-            g.setFont (Brand::figMed (12.0f));
+            g.setFont (Brand::figSemi (12.0f));   // Figma: SemiBold 12
             const auto line = getLocalBounds().withTrimmedLeft (fig (14.0f))
                                               .withTrimmedRight (fig (14.0f));
             g.drawText (state_, line, juce::Justification::centredLeft, true);
@@ -1125,8 +1157,23 @@ public:
     {
         // Figma: a white sheet; the source list and alternate positioning
         // rows are banded #E8E8E8.
-        g.fillAll (Brand::white());
+        g.fillAll (Brand::sheet());
         g.setColour (stripeFill());
+        if (Brand::isDarkUi())
+        {
+            // Figma: each section band casts a DROP_SHADOW #000 @15%, blur 4.
+            const int sh = juce::jmax (2, UiConfig::Scale::fig (4.0f));
+            for (auto* h : { headSrc_.get(), headPos_.get(), headFlt_.get(), headRig_.get(), headAng_.get() })
+                if (h != nullptr && h->isVisible() && h->getHeight() > 0)
+                {
+                    const int y0 = h->getBottom();
+                    juce::ColourGradient cg (juce::Colours::black.withAlpha (0.15f), 0.0f, (float) y0,
+                                             juce::Colours::black.withAlpha (0.0f), 0.0f, (float) (y0 + sh), false);
+                    g.setGradientFill (cg);
+                    g.fillRect (0, y0, getWidth(), sh);
+                }
+            g.setColour (stripeFill());
+        }
         for (const auto& b : bands_)
             g.fillRect (0, b.getStart(), getWidth(), b.getLength());
 
@@ -1144,6 +1191,13 @@ public:
             // draws it. No red edge.
             g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
+            if (Brand::isDarkUi())
+            {
+                // Figma dark: a 1 px #E62429 rule under the chosen source, x 13..392.
+                g.setColour (juce::Colour (0xffe62429));
+                g.fillRect (UiConfig::Scale::fig (13.0f), r.getEnd() - 1,
+                            getWidth() - UiConfig::Scale::fig (27.0f), 1);
+            }
         }
 
         // A selected plane is marked the same way a selected cabinet is, so
@@ -1155,14 +1209,25 @@ public:
             // draws it. No red edge.
             g.setColour (rowSelect());
             g.fillRect (0, r.getStart(), getWidth(), r.getLength());
+            if (Brand::isDarkUi())
+            {
+                g.setColour (Brand::actionRed());
+                g.fillRect (0, r.getEnd() - UiConfig::Scale::fig (2.0f), getWidth(),
+                            juce::jmax (1, UiConfig::Scale::fig (2.0f)));
+            }
         }
 
-        g.setColour (listRule());
+        // Dark Figma: white @10% rules inset x 13..392; light keeps full width.
+        const float ruleL = Brand::isDarkUi() ? (float) UiConfig::Scale::fig (13.0f) : 0.0f;
+        const float ruleR = Brand::isDarkUi() ? (float) (getWidth() - UiConfig::Scale::fig (14.0f))
+                                              : (float) getWidth();
+        const auto darkRule = juce::Colours::white.withAlpha (0.10f);
+        g.setColour (Brand::isDarkUi() ? darkRule : listRule());
         for (int y : listRules_)
-            g.drawHorizontalLine (y, 0.0f, (float) getWidth());
-        g.setColour (rowRule());
+            g.drawHorizontalLine (y, ruleL, ruleR);
+        g.setColour (Brand::isDarkUi() ? darkRule : rowRule());
         for (int y : rowRules_)
-            g.drawHorizontalLine (y, 0.0f, (float) getWidth());
+            g.drawHorizontalLine (y, ruleL, ruleR);
         for (const auto& v : vRules_)
             g.drawVerticalLine (v.getX(), (float) v.getY(), (float) v.getBottom());
 
@@ -1172,8 +1237,9 @@ public:
             if (renamingSrc_ >= 0 && (size_t) renamingSrc_ < srcNameArea_.size()
                 && t.area == srcNameArea_[(size_t) renamingSrc_])
                 continue;   // its editor is on top
-            g.setFont (t.bold ? Brand::figSemi (t.size) : Brand::figMed (t.size));
-            g.setColour (t.dim ? Brand::text().withAlpha (0.62f) : Brand::text());
+            g.setFont (t.bold ? (Brand::isDarkUi() ? Brand::figBold (t.size) : Brand::figSemi (t.size))
+                              : Brand::figMed (t.size));
+            g.setColour (t.dim ? Brand::text().withAlpha (Brand::isDarkUi() ? 0.80f : 0.62f) : Brand::text());
             // 0.9, not 1.0: a label that overruns its cell by a hair now
             // narrows by a few per cent instead of losing its last letter.
             // At 1.0 "No. of Cabinets" came out as "Cabinet".
@@ -1183,7 +1249,7 @@ public:
         // The splitter grip: three short rules centred on the divider above
         // the Rigging Angles header, the way the divider between ArrayCalc's
         // stacked boxes is drawn.
-        if (! angGripY_.isEmpty())
+        if (! angGripY_.isEmpty() && ! Brand::isDarkUi())
         {
             const float cy = (float) angGripY_.getStart() + angGripY_.getLength() * 0.5f;
             const float cx = (float) getWidth() * 0.5f;
@@ -1270,19 +1336,23 @@ public:
         if (srcOpen)
         {
             const int listTop = y;
-            rowAt (43.0f, 7.0f);
+            rowAt (44.0f, 8.0f);
             for (size_t i = 0; i < sources_.size(); ++i)
             {
                 if (! isHead ((int) i)) { sourceRowY_.push_back ({ y, y }); continue; }
                 auto& s = sources_[i];
                 const int n = (int) arrayMembers (scene_, (int) i).size();
                 // A source carries its cabinet count, as ArrayCalc's list does.
-                label (s->name + (n > 1 ? "  (Arrays_" + juce::String (n) + ")" : juce::String()),
-                       { fig (14.0f), y, fig (160.0f), rowH });
-                srcNameArea_[i] = { fig (14.0f), y, fig (160.0f), rowH };
-                label ("System", { fig (179.0f), y, fig (64.0f), rowH });
-                ctl (*s->system, 244.0f, 110.0f);
-                ctl (*s->mute,   363.6f, 28.3f);
+                // Figma: the chosen source's name in white SemiBold, the
+                // others a dim Medium; no "System" caption - the model combo
+                // speaks for itself.
+                const bool isSel = (int) i == selected_;
+                juce::ignoreUnused (n);   // Figma: the name alone; the count is in Source Positioning
+                label (s->name,
+                       { fig (13.0f), y, fig (230.0f), rowH }, PanelType::field, isSel, ! isSel);
+                srcNameArea_[i] = { fig (13.0f), y, fig (230.0f), rowH };
+                ctl (*s->system, 252.0f, 102.0f);
+                ctl (*s->mute,   365.0f, 28.0f);
                 sourceRowY_.push_back ({ y, y + rowH });
                 y += rowH;
                 listRules_.push_back (y - 1);
@@ -1303,8 +1373,13 @@ public:
             // Source Positioning's head at frame y 246 (Source) or 266
             // (Mapping) - the list keeps that room however few rows it has,
             // and grows past it with 29 / 49 px under its last row.
-            gap (mapping_ ? 49.0f : 29.0f);
-            y = juce::jmax (y, listTop + fig (mapping_ ? 178.0f : 158.0f));
+            if (Brand::isDarkUi())
+                y = juce::jmax (y, listTop + fig (132.0f));   // Figma: three 44 px rows, then the band
+            else
+            {
+                gap (mapping_ ? 49.0f : 29.0f);
+                y = juce::jmax (y, listTop + fig (mapping_ ? 178.0f : 158.0f));
+            }
         }
 
         // --------------------------------------------- Source Positioning
@@ -1320,26 +1395,26 @@ public:
         if (posOpen)
         {
             // Labels at 14 and 203; controls 81..183 and 282..384.
-            rowAt (mapping_ ? 43.0f : 44.0f, 7.0f);
-            label ("Name",     { fig (14.0f),  y, fig (66.0f), rowH });
-            if (posName_ != nullptr) ctl (*posName_, 81.0f, 102.0f);
-            label ("Mounting", { fig (203.0f), y, fig (78.0f), rowH });
-            ctl (*posMounting_, 282.0f, 102.0f);
-            row (false);
-
-            rowAt (mapping_ ? 43.0f : 42.0f, mapping_ ? 7.0f : 6.0f);
-            label ("No. of\nCabinets", { fig (14.0f), y, fig (66.0f), rowH });
-            ctl (*posCabinets_, 81.0f, 102.0f);
-            // The right half of this row was empty, and the gap between
-            // cabinets is the other half of "how many" - so it goes here,
-            // beside the count rather than in a menu three clicks away.
-            label ("Interdistance", { fig (203.0f), y, fig (78.0f), rowH });
-            ctl (*posInterdist_, 282.0f, 102.0f);
+            rowAt (44.0f, 7.0f);
+            label ("Naming",   { fig (13.0f),  y, fig (68.0f), rowH });
+            if (posName_ != nullptr) ctl (*posName_, 83.0f, 102.0f);
+            label ("Mounting", { fig (210.0f), y, fig (78.0f), rowH });
+            ctl (*posMounting_, 291.0f, 102.0f);
             row (false);
 
             rowAt (44.0f, 7.0f);
-            label ("Hor. Aim", { fig (14.0f),  y, fig (66.0f), rowH });
-            ctl (*posHorAim_, 81.0f, 102.0f);
+            label ("no. of cab.", { fig (13.0f), y, fig (68.0f), rowH });
+            ctl (*posCabinets_, 83.0f, 102.0f);
+            // The right half of this row was empty, and the gap between
+            // cabinets is the other half of "how many" - so it goes here,
+            // beside the count rather than in a menu three clicks away.
+            label ("Inter Dist.", { fig (210.0f), y, fig (78.0f), rowH });
+            ctl (*posInterdist_, 291.0f, 102.0f);
+            row (false);
+
+            rowAt (44.0f, 7.0f);
+            label ("Hor. Aim", { fig (13.0f),  y, fig (68.0f), rowH });
+            ctl (*posHorAim_, 83.0f, 102.0f);
             // A sub has no vertical aim to set, so it is not offered.
             if (selectedIsSub())
             {
@@ -1347,28 +1422,26 @@ public:
             }
             else
             {
-                const float verX = mapping_ ? 203.0f : 226.0f;
-                label ("Ver. Aim", { fig (verX), y, fig (282.0f - verX), rowH });
-                ctl (*posVerAim_, 282.0f, 102.0f);
+                label ("Vert. Aim", { fig (210.0f), y, fig (78.0f), rowH });
+                ctl (*posVerAim_, 291.0f, 102.0f);
             }
             row (false);
 
             // Three cells split at 133 and 266: caption 5 px down, a 110-wide
             // field 19 down (Mapping: 7 and 25 in a taller cell).
-            const int posH = fig (mapping_ ? 65.0f : 52.0f);
-            const float capY = mapping_ ? 7.0f : 5.0f, boxY = mapping_ ? 25.0f : 19.0f;
+            const int posH = fig (66.0f);
+            const float capY = 7.0f, boxY = 26.0f;
             const char* caps[] = { "Pos. X", "Pos. Y", "Pos. Z" };
-            const float boxX[] = { 12.0f, 145.0f, 278.0f };
+            // Figma: three 102-wide boxes at 14, 152 and 290, no column rules.
+            const float boxX[] = { 13.0f, 153.0f, 291.0f };
             for (int i = 0; i < 3; ++i)
             {
-                label (caps[i], { fig (boxX[i] + 2.0f), y + fig (capY), fig (106.0f), fig (15.0f) });
-                posXYZ_[i]->setBounds (fig (boxX[i]), y + fig (boxY), fig (110.0f), ctlH);
+                label (caps[i], { fig (boxX[i]), y + fig (capY), fig (102.0f), fig (15.0f) });
+                posXYZ_[i]->setBounds (fig (boxX[i]), y + fig (boxY), fig (102.0f), ctlH);
             }
-            vRules_.push_back ({ fig (mapping_ ? 130.0f : 133.0f), y, 1, posH });
-            vRules_.push_back ({ fig (266.0f), y, 1, posH });
             y += posH;
             rowRules_.push_back (y - 1);
-            if (! mapping_) gap (28.0f);
+            if (! mapping_ && ! Brand::isDarkUi()) gap (28.0f);
         }
 
         // ---------------------------------------------- Filters (Mapping)
@@ -1382,14 +1455,14 @@ public:
         {
             auto pass = [&] (const juce::String& name, juce::ComboBox& freq, juce::ComboBox& slope)
             {
-                label (name, { fig (12.0f), y + fig (14.0f), fig (200.0f), fig (15.0f) },
-                       PanelType::field, true);
-                label ("Crossover\nFrequency", { fig (12.0f), y + fig (41.0f), fig (66.0f), ctlH },
-                       PanelType::twoLine);
-                freq.setBounds (fig (81.0f), y + fig (41.0f), fig (102.0f), ctlH);
-                label ("Slope", { fig (240.0f), y + fig (40.0f), fig (40.0f), ctlH });
-                slope.setBounds (fig (282.0f), y + fig (40.0f), fig (102.0f), ctlH);
-                y += fig (76.0f);
+                // Figma: the pass named at the left, mid-row; "Freq." and
+                // "Slope" captions over 102-wide boxes at 152 and 290.
+                label (name, { fig (13.0f), y + fig (25.0f), fig (130.0f), ctlH });
+                label ("Freq.", { fig (152.0f), y + fig (6.0f), fig (102.0f), fig (15.0f) });
+                freq.setBounds (fig (152.0f), y + fig (25.0f), fig (102.0f), ctlH);
+                label ("Slope", { fig (290.0f), y + fig (6.0f), fig (102.0f), fig (15.0f) });
+                slope.setBounds (fig (290.0f), y + fig (25.0f), fig (102.0f), ctlH);
+                y += fig (66.0f);
                 rowRules_.push_back (y - 1);
             };
             pass ("High Pass", *fltLpFreq_, *fltLpSlope_);
@@ -1404,11 +1477,11 @@ public:
         {
             loadBar_->setBounds (0, y, W, fig (44.0f)); y += fig (44.0f);
 
-            rowAt (42.0f, 6.0f);
-            label ("Front Pick", { fig (14.0f),  y, fig (82.0f), rowH });
-            ctl (*frontPick_,  97.0f, 102.0f);
-            label ("Rear Pick",  { fig (211.0f), y, fig (74.0f), rowH });
-            rearPick_->setBounds (fig (286.0f), y + fig (7.0f), fig (102.0f), ctlH);
+            rowAt (44.0f, 7.0f);
+            label ("Front", { fig (13.0f),  y, fig (68.0f), rowH });
+            ctl (*frontPick_,  83.0f, 102.0f);
+            label ("Rear",  { fig (210.0f), y, fig (78.0f), rowH });
+            rearPick_->setBounds (fig (291.0f), y + fig (7.0f), fig (102.0f), ctlH);
             row (false);
 
             // The lever hole is a vertical angle, which a sub does not have.
@@ -1419,10 +1492,10 @@ public:
             else
             {
                 rowAt (44.0f, 7.0f);
-                label ("Single Pick", { fig (14.0f), y, fig (82.0f), rowH });
+                label ("Single", { fig (13.0f), y, fig (68.0f), rowH });
                 // Wider than Figma's 102, because it carries more: a hole and the
                 // tilt it gives ("-15 Deg.  (B5)"), not a bare number.
-                ctl (*singlePick_, 97.0f, 170.0f);
+                ctl (*singlePick_, 83.0f, Brand::isDarkUi() ? 102.0f : 170.0f);
                 row (false);
             }
         }
@@ -1439,7 +1512,7 @@ public:
         const bool selSub = selected_ >= 0 && selected_ < (int) scene_.size()
                          && isSubwooferModel (scene_[(size_t) selected_].model);
         const bool subGrid = selSub && ! mapping_;
-        if (subGrid) gap (28.0f);
+        if (subGrid && ! Brand::isDarkUi()) gap (28.0f);
         angNaturalTop_ = y;
         angOffsetY_ = juce::jmin (angOffsetY_, angOffsetLimit());
         y += angOffsetY_;
@@ -1457,12 +1530,10 @@ public:
             // Figma 1.3: each caption centred over its own column. The last
             // column is a sub's own Hor. Rot., or a top's Angles - its angle
             // from the box above.
-            const float labX = subGrid ? 13.0f : 14.0f;
-            const float gainX = subGrid ? 142.0f : 141.0f, delayX = subGrid ? 203.0f : 202.0f,
-                        polX  = subGrid ? 264.0f : 265.0f, muteX  = subGrid ? 297.0f : 298.0f,
-                        angX  = subGrid ? 330.0f : 331.0f;
-            rowAt (43.0f, 7.0f);
-            label ("Cab No.", { fig (labX), y, fig (80.0f), rowH }, PanelType::column);
+            const float labX = 13.0f;
+            const float gainX = 149.0f, delayX = 210.0f, polX = 271.0f, muteX = 304.0f, angX = 337.0f;
+            rowAt (Brand::isDarkUi() ? 37.0f : 43.0f, 7.0f);
+            label ("Cab no.", { fig (labX), y, fig (80.0f), rowH }, PanelType::column);
             const struct { const char* text; float x, w; } cells[] = {
                 { "Gain",  gainX, 56.0f }, { "Delay", delayX, 56.0f },
                 { "Pol.",  polX,  28.0f }, { "Mute",  muteX,  28.0f },
@@ -1471,6 +1542,7 @@ public:
                 caption (c.text, { fig (c.x + c.w * 0.5f - 30.0f), y, fig (60.0f), rowH });
             row (false);
 
+            rowAt (44.0f, 7.0f);
             int cabNo = 0;
             for (size_t i = 0; i < angles_.size(); ++i)
             {
@@ -1499,7 +1571,7 @@ public:
             // controls. Straddling the header's top edge put half of it on
             // the SectionHead child, which takes its own clicks.
             angGripY_ = { angHeadTop - fig (7.0f), angHeadTop };
-            gap (28.0f);
+            if (! Brand::isDarkUi()) gap (28.0f);
         }
         else
         {
@@ -1687,11 +1759,11 @@ public:
             renameEd_ = std::make_unique<juce::TextEditor>();
             renameEd_->setMultiLine (false);
             renameEd_->setReturnKeyStartsNewLine (false);
-            renameEd_->setColour (juce::TextEditor::backgroundColourId, juce::Colours::white);
+            renameEd_->setColour (juce::TextEditor::backgroundColourId, Brand::isDarkUi() ? Brand::valueBox() : juce::Colours::white);
             renameEd_->setColour (juce::TextEditor::textColourId, Brand::text());
             renameEd_->setColour (juce::TextEditor::outlineColourId, Brand::accent());
             renameEd_->setColour (juce::TextEditor::focusedOutlineColourId, Brand::accent());
-            renameEd_->setColour (juce::TextEditor::highlightColourId, rowSelect());
+            renameEd_->setColour (juce::TextEditor::highlightColourId, Brand::isDarkUi() ? Brand::accent().withAlpha (0.35f) : rowSelect());
             renameEd_->setColour (juce::CaretComponent::caretColourId, Brand::text());
             renameEd_->onReturnKey = [this] { endSourceRename (true); };
             renameEd_->onEscapeKey = [this] { endSourceRename (false); };
@@ -1769,7 +1841,7 @@ private:
         // one. Adding is the Sources header's job, one strip above.
         headPos_ = std::make_unique<SectionHead> ("Source Positioning", false);
         headRig_ = std::make_unique<SectionHead> ("Rigging Points", false);
-        headAng_ = std::make_unique<SectionHead> ("Rigging Angles", false);
+        headAng_ = std::make_unique<SectionHead> ("Rigging", false);
         headFlt_ = std::make_unique<SectionHead> ("Filters", false);
         headSrc_->onPlus = [this] { if (onAddSource) onAddSource(); };
         headPos_->onPlus = [this] { if (onAddSource) onAddSource(); };
@@ -2168,9 +2240,9 @@ private:
             // type. At 12 px the value needs that room back, so each inset
             // comes down by about half - the text still clears the cell's
             // left edge and "0.56 ms" still fits before the spinner.
-            a->gain->setStyle  (PanelType::dense, 7.0f);
-            a->delay->setStyle (PanelType::dense, 5.0f);
-            a->angle->setStyle (PanelType::dense, isSubwooferModel (sp[i].model) ? 6.0f : 4.0f);
+            a->gain->setStyle  ((Brand::isDarkUi() ? 9.0f : PanelType::dense), 7.0f);
+            a->delay->setStyle ((Brand::isDarkUi() ? 9.0f : PanelType::dense), 5.0f);
+            a->angle->setStyle ((Brand::isDarkUi() ? 9.0f : PanelType::dense), isSubwooferModel (sp[i].model) ? 6.0f : 4.0f);
             // One notch each: a dB, a tenth of a millisecond, a degree.
             a->gain->setWheelStep  (1.0);
             a->delay->setWheelStep (0.1);
@@ -2372,13 +2444,15 @@ private:
                                            juce::dontSendNotification);
                 fltHpSlope_->setSelectedId (slopeId (f.family, f.order), juce::dontSendNotification);
             }
-            headPos_->setTitle ("Source Positioning (" + sources_[(size_t) selected_]->name + ")");
-            headAng_->setTitle ("Rigging Angles (" + sources_[(size_t) selected_]->name + ")");
+            // Figma: plain titles - the selected row in the list already
+            // says which source these sections are editing.
+            headPos_->setTitle ("Source Positioning");
+            headAng_->setTitle ("Rigging");
         }
         else
         {
             headPos_->setTitle ("Source Positioning");
-            headAng_->setTitle ("Rigging Angles");
+            headAng_->setTitle ("Rigging");
         }
 
         for (juce::Component* c : { (juce::Component*) posSystem_.get(),

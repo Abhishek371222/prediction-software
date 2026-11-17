@@ -11,13 +11,17 @@
 // from here; the value boxes and dropdowns share SourcePanel's #D9D9D9.
 namespace VenueSkin
 {
-    inline juce::Colour panelBg()   { return juce::Colour (0xffffffff); }
-    inline juce::Colour rowBg()     { return juce::Colour (0xfff0f0f0); }
-    inline juce::Colour rowSel()    { return Brand::selection(); }
-    inline juce::Colour rowRule()   { return juce::Colour (0x33000000); }
-    inline juce::Colour pointRule() { return juce::Colour (0xff999999); }
-    inline juce::Colour edge()      { return juce::Colour (0xff000000); }
-    inline juce::Colour ink()       { return juce::Colour (0xff000000); }
+    // Light: Figma "Venue screen - 1.2". Dark: the dark Mapping frame -
+    // #222225 ground, #39393C rules, #FEFDFB ink, no banding.
+    inline bool dk() { return Brand::isDarkUi(); }
+    inline juce::Colour panelBg()   { return dk() ? Brand::sheet() : juce::Colour (0xffffffff); }
+    inline juce::Colour rowBg()     { return dk() ? Brand::stripe() : juce::Colour (0xfff0f0f0); }
+    inline juce::Colour rowSel()    { return dk() ? juce::Colour (0xff2e3034) : Brand::selection(); }
+    inline juce::Colour rowRule()   { return dk() ? Brand::rule() : juce::Colour (0x33000000); }
+    inline juce::Colour pointRule() { return dk() ? juce::Colour (0xff5a5a5c) : juce::Colour (0xff999999); }
+    inline juce::Colour edge()      { return dk() ? Brand::rule() : juce::Colour (0xff000000); }
+    inline juce::Colour ink()       { return dk() ? Brand::text() : juce::Colour (0xff000000); }
+    inline juce::Colour listFill()  { return dk() ? Brand::valueBox() : juce::Colour (0xffe9eff4); }
 }
 
 // The look of this panel's dropdowns while they are OPEN.
@@ -29,9 +33,11 @@ namespace VenueSkin
 class VenueComboLnF : public juce::LookAndFeel_V4
 {
 public:
-    VenueComboLnF()
+    VenueComboLnF() { applyColours(); }
+
+    void applyColours()
     {
-        setColour (juce::PopupMenu::backgroundColourId,            kList);
+        setColour (juce::PopupMenu::backgroundColourId,            VenueSkin::listFill());
         setColour (juce::PopupMenu::textColourId,                  VenueSkin::ink());
         setColour (juce::PopupMenu::highlightedBackgroundColourId, VenueSkin::rowSel());
         setColour (juce::PopupMenu::highlightedTextColourId,       VenueSkin::ink());
@@ -40,14 +46,14 @@ public:
         // default - which is how Aud. Height ended up a dark box on a white
         // panel. A per-component colour still wins over these, so setting a
         // default here is safe.
-        setColour (juce::ComboBox::backgroundColourId,             kList);
+        setColour (juce::ComboBox::backgroundColourId,             VenueSkin::listFill());
         setColour (juce::ComboBox::outlineColourId,                juce::Colours::transparentBlack);
         setColour (juce::ComboBox::textColourId,                   VenueSkin::ink());
         setColour (juce::ComboBox::arrowColourId,                  VenueSkin::ink());
     }
 
     /** The panel's type scales with its width, so the list has to be told. */
-    void setItemFont (juce::Font f) { itemFont_ = f; }
+    void setItemFont (juce::Font f) { itemFont_ = f; applyColours(); }
     juce::Font getPopupMenuFont() override { return itemFont_; }
 
     void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
@@ -96,7 +102,6 @@ public:
 
 private:
     // The same light-blue tint the value boxes use.
-    const juce::Colour kList { 0xffe9eff4 };
     juce::Font itemFont_ { Brand::tech (13.0f) };
 };
 
@@ -163,11 +168,11 @@ public:
         // saves, Escape cancels, clicking away saves.
         renameEd_.setMultiLine (false);
         renameEd_.setReturnKeyStartsNewLine (false);
-        renameEd_.setColour (juce::TextEditor::backgroundColourId, juce::Colours::white);
+        renameEd_.setColour (juce::TextEditor::backgroundColourId, VenueSkin::dk() ? Brand::valueBox() : juce::Colours::white);
         renameEd_.setColour (juce::TextEditor::textColourId, VenueSkin::ink());
         renameEd_.setColour (juce::TextEditor::outlineColourId, Brand::accent());
         renameEd_.setColour (juce::TextEditor::focusedOutlineColourId, Brand::accent());
-        renameEd_.setColour (juce::TextEditor::highlightColourId, VenueSkin::rowSel());
+        renameEd_.setColour (juce::TextEditor::highlightColourId, VenueSkin::dk() ? Brand::accent().withAlpha (0.35f) : VenueSkin::rowSel());
         renameEd_.setColour (juce::CaretComponent::caretColourId, VenueSkin::ink());
         renameEd_.onReturnKey = [this] { endRename (true); };
         renameEd_.onEscapeKey = [this] { endRename (false); };

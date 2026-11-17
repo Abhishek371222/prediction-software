@@ -972,6 +972,8 @@ int RadiationPatternComponent::micHitTestScreen (juce::Point<float> screenPt) co
                                                    28.0f * ms, 32.0f * ms);
         if (glyph.contains (screenPt))
             return i;
+        if (const auto tag = micLevelTag (i); tag.text.isNotEmpty() && tag.box.contains (screenPt))
+            return i;
 
         // Same flip the painter applies, or the label you can see beside a
         // mic at the right-hand edge would not be the label you can click.
@@ -1009,6 +1011,25 @@ void RadiationPatternComponent::setMicsShown (bool on)
     repaint();
 }
 
+RadiationPatternComponent::MicTag RadiationPatternComponent::micLevelTag (int i) const
+{
+    MicTag t;
+    if (! (hasData_ && showField_) || ! juce::isPositiveAndBelow (i, (int) mics_.size()))
+        return t;
+    const auto& m = mics_[(size_t) i];
+    float absDb = 0.0f, relDb = 0.0f;
+    if (! sampleSplAtWorld (m.x, m.y, absDb, relDb))
+        return t;
+    t.text = result_.hasAbsoluteSpl ? juce::String (juce::roundToInt (absDb)) + " DB"
+                                    : juce::String (relDb, 1) + " DB";
+    using UiConfig::Scale::figf;
+    const auto s = worldToScreen (m.x, m.y);
+    const float w = juce::jmax (figf (52.0f),
+                                (float) Brand::figSemi (10.0f).getStringWidth (t.text) + figf (12.0f));
+    t.box = { s.x - w * 0.5f, s.y + 10.0f + figf (6.0f), w, figf (24.0f) };
+    return t;
+}
+
 void RadiationPatternComponent::drawMics (juce::Graphics& g)
 {
     if (mics_.empty() || ! micsShown_) return;
@@ -1033,6 +1054,27 @@ void RadiationPatternComponent::drawMics (juce::Graphics& g)
 
         const bool showFull = (i == hoveredMic_)
                            || (drag_ == Drag::Mic && i == selectedMic_);
+
+        // Figma MAPPING_V2_MAPPING ON: once the map is painted each mic
+        // carries its level in a white 52 x 24 tag centred under the pin -
+        // SemiBold 10, #373A3E ink ("100 DB"). Hovering still shows the full
+        // reading in the dark pill below.
+        if (! showFull)
+            if (const auto tag = micLevelTag (i); tag.text.isNotEmpty())
+            {
+                g.setColour (Brand::white());
+                g.fillRect (tag.box);
+                if (sel)
+                {
+                    g.setColour (Brand::accent());
+                    g.drawRect (tag.box, 1.0f);
+                }
+                g.setColour (juce::Colour (0xff373a3e));
+                g.setFont (Brand::figSemi (10.0f));
+                g.drawText (tag.text, tag.box.toNearestInt(), juce::Justification::centred, false);
+                continue;
+            }
+
         const juce::String label = micLabelText (m, showFull);
         const float fh = juce::jmax (13.0f, Brand::UI::scaledFont (15.0f));
         g.setFont (Brand::tech (fh, true));
@@ -4121,7 +4163,8 @@ juce::Colour RadiationPatternComponent::plotInk() const
 {
     // The framed sheet is light grey in both themes, and its map is only a
     // wash over it, so its ink is fixed too.
-    if (figmaFrame_) return Brand::charcoal();
+    // Dark Figma sheet: light ink on #222225.
+    if (figmaFrame_) return FigPlot::dk() ? FigPlot::tick() : Brand::charcoal();
     return fieldIsPainted() ? Brand::white() : Brand::axisLabel();
 }
 
@@ -4702,6 +4745,10 @@ juce::Rectangle<int> RadiationPatternComponent::plotArea() const
         // is a rule; with no map there is no bar and the grid fills the frame.
         const auto fb = framedFieldBox();
         if (! (hasData_ && showField_)) return fb;
+        // Dark Figma: the bar takes exactly the strip it needs - no rounding
+        // up to whole grid cells, which left a blank band right of the labels.
+        if (FigPlot::dk())
+            return fb.withTrimmedRight (juce::roundToInt (framedBarNeedPx()));
         const double cell = FigPlot::baseStepM() * FigPlot::snappedPxPerM (fb.getWidth());
         const int cells = (int) std::ceil (framedBarNeedPx() / juce::jmax (1.0, cell));
         return fb.withTrimmedRight (juce::roundToInt (cells * cell));
@@ -4714,6 +4761,10 @@ juce::Rectangle<int> RadiationPatternComponent::framedFieldBox() const
     // Whole cells down as well as across, so the top and bottom edges are
     // rules; what is left over drops below the frame.
     auto box = FigPlot::inset (getLocalBounds(), FigPlot::kPlan);
+    // Dark Figma: the frame runs to its inset; snapping the height down to
+    // whole cells left up to a full cell of blank under the grid.
+    if (FigPlot::dk())
+        return FigPlot::inset (getLocalBounds(), { 61.0f, 40.0f, FigPlot::kPlan.r, 17.0f });
     const double cell = FigPlot::baseStepM() * FigPlot::snappedPxPerM (box.getWidth());
     if (cell >= 1.0)
         box.setHeight (juce::roundToInt (juce::jmax (1.0, std::floor (box.getHeight() / cell)) * cell));
@@ -5101,6 +5152,53 @@ void RadiationPatternComponent::buildImage()
 
     // On the framed sheet the map is a wash over the grey, as in Figma.
     const bool wash = figmaFrame_;
+
+    // Contour bands: colour each block from the level read BETWEEN grid
+    // points (bilinear), on an image several times the grid's size - so a
+    // band's edge follows the contour, as in the Figma, instead of stepping
+    // cell by cell.
+    if (params_.bandedSPL && W >= 2 && H >= 2)
+    {
+        const bool rel = result_.splRelDB.size() == (size_t) W * (size_t) H;
+        const auto& grid = rel ? result_.splRelDB : result_.splDB;
+        if (grid.size() == (size_t) W * (size_t) H)
+        {
+            const int k  = juce::jlimit (1, 8, (int) std::ceil (1200.0 / (double) juce::jmax (W, H)));
+            const int IW = W * k, IH = H * k;
+            fieldImage_ = juce::Image (wash ? juce::Image::ARGB : juce::Image::RGB, IW, IH, true);
+            juce::Image::BitmapData bmk (fieldImage_, juce::Image::BitmapData::writeOnly);
+            const float step  = ColourMaps::kContourStepDB;
+            const float floor = (float) params_.dBfloor;
+            for (int iy = 0; iy < IH; ++iy)
+            {
+                // Image row 0 = top (max Y); engine row 0 = world Y = 0.
+                const float fy = juce::jlimit (0.0f, (float) (H - 1),
+                                               (float) (IH - 1 - iy) / (float) k + 0.5f / (float) k - 0.5f);
+                const int r0 = juce::jlimit (0, H - 2, (int) fy);
+                const float ty = fy - (float) r0;
+                for (int ix = 0; ix < IW; ++ix)
+                {
+                    const float fx = juce::jlimit (0.0f, (float) (W - 1),
+                                                   ((float) ix + 0.5f) / (float) k - 0.5f);
+                    const int c0 = juce::jlimit (0, W - 2, (int) fx);
+                    const float tx = fx - (float) c0;
+                    const size_t i00 = (size_t) r0 * (size_t) W + (size_t) c0;
+                    const float a = grid[i00]     + (grid[i00 + 1]     - grid[i00])     * tx;
+                    const float b = grid[i00 + W] + (grid[i00 + W + 1] - grid[i00 + W]) * tx;
+                    const float dB = a + (b - a) * ty;
+                    auto c = ColourMaps::splBandForFloor (dB, floor, step);
+                    if (wash)
+                    {
+                        const float lvl = -std::floor ((-dB) / step + 1.0e-4f) * step;
+                        c = c.withAlpha (ColourMaps::sheetWashAlpha (ColourMaps::relDbToColourT (lvl, floor)));
+                    }
+                    bmk.setPixelColour (ix, iy, c);
+                }
+            }
+            return;
+        }
+    }
+
     fieldImage_ = juce::Image (wash ? juce::Image::ARGB : juce::Image::RGB, W, H, true);
     juce::Image::BitmapData bm (fieldImage_, juce::Image::BitmapData::writeOnly);
 
@@ -5323,6 +5421,10 @@ void RadiationPatternComponent::drawVenueShapes (juce::Graphics& g)
                               isAnnotationSelected ((int) i));
 }
 
+// Set while the dark Top View re-draws its grid over a venue slab, so the
+// rules read lighter on the grey (Figma) instead of vanishing under it.
+static const juce::Colour* sGridInkOverride = nullptr;
+
 void RadiationPatternComponent::drawVenueOutline (juce::Graphics& g,
                                                   const std::vector<juce::Point<float>>& worldPts,
                                                   juce::Colour colour, bool selected)
@@ -5340,14 +5442,53 @@ void RadiationPatternComponent::drawVenueOutline (juce::Graphics& g,
     }
     p.closeSubPath();
 
-    g.setColour (colour.withAlpha (fieldIsPainted() ? 0.18f : 0.75f));
+    // Dark Figma: a solid #656566 slab, no visible edge, white square handles.
+    const bool dark = FigPlot::dk();
+    // Dark Figma MAPPING frame: the venue is an outline only - a light-grey
+    // line with grey square handles on every corner and edge midpoint - so
+    // the map, once calculated, shows through untouched.
+    if (dark && micsShown_)
+    {
+        if (fieldIsPainted())
+        {
+            g.setColour (colour.withAlpha (0.18f));
+            g.fillPath (p);
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.54f));
+        g.strokePath (p, juce::PathStrokeType (1.0f));
+        const float hr = (float) UiConfig::Scale::fig (9.0f);
+        g.setColour (juce::Colours::white.withAlpha (selected ? 1.0f : 0.60f));
+        for (size_t i = 0; i < worldPts.size(); ++i)
+        {
+            const auto& n = worldPts[(i + 1) % worldPts.size()];
+            const auto a = worldToScreen (worldPts[i].x, worldPts[i].y);
+            const auto b = worldToScreen (n.x, n.y);
+            const auto m = (a + b) * 0.5f;
+            g.fillRect (a.x - hr * 0.5f, a.y - hr * 0.5f, hr, hr);
+            g.fillRect (m.x - hr * 0.5f, m.y - hr * 0.5f, hr, hr);
+        }
+        return;
+    }
+    if (dark && ! fieldIsPainted())
+        g.setColour (FigPlot::solidGrey());
+    else
+        g.setColour (colour.withAlpha (fieldIsPainted() ? 0.18f : 0.75f));
     g.fillPath (p);
-    g.setColour (selected ? FigPlot::mark() : FigPlot::venueEdge());
+    if (dark && ! fieldIsPainted() && framedPlan())
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (p);
+        const juce::Colour ink = juce::Colours::white.withAlpha (0.14f);
+        sGridInkOverride = &ink;
+        drawFramedGrid (g, plotArea());
+        sGridInkOverride = nullptr;
+    }
+    g.setColour (selected && ! dark ? FigPlot::mark() : FigPlot::venueEdge());
     g.strokePath (p, juce::PathStrokeType (1.2f));
 
     if (! selected) return;
-    const float r = (float) UiConfig::Scale::px (5);
-    g.setColour (FigPlot::mark());
+    const float r = (float) UiConfig::Scale::px (dark ? 6 : 5);
+    g.setColour (dark ? juce::Colours::white : FigPlot::mark());
     for (size_t i = 0; i < worldPts.size(); ++i)
     {
         const auto& n = worldPts[(i + 1) % worldPts.size()];
@@ -5389,8 +5530,21 @@ void RadiationPatternComponent::drawFramedGrid (juce::Graphics& g, juce::Rectang
     // map beneath it (Figma's box: #6288A4 rules on #8BB2CE) instead of
     // cutting light lines through it, and fades back to the plain rule where
     // the map does.
-    g.setColour (FigPlot::grid());
-    g.fillRectList (rules);
+    g.setColour (sGridInkOverride != nullptr ? *sGridInkOverride : FigPlot::grid());
+    if (FigPlot::dk() && ! fieldIsPainted())
+    {
+        // Dark Figma: fine dotted rules, a shade lighter than the field.
+        const float dash[] = { 2.0f, 2.0f };
+        for (const auto& rr : rules)
+        {
+            if (rr.getWidth() == 1)
+                g.drawDashedLine ({ (float) rr.getX() + 0.5f, (float) rr.getY(), (float) rr.getX() + 0.5f, (float) rr.getBottom() }, dash, 2, 1.0f);
+            else
+                g.drawDashedLine ({ (float) rr.getX(), (float) rr.getY() + 0.5f, (float) rr.getRight(), (float) rr.getY() + 0.5f }, dash, 2, 1.0f);
+        }
+    }
+    else
+        g.fillRectList (rules);
     if (fieldIsPainted())
     {
         juce::Graphics::ScopedSaveState ss (g);
@@ -7077,10 +7231,15 @@ void RadiationPatternComponent::drawFramedRays (juce::Graphics& g)
         {
             const float half = juce::degreesToRadians (0.5f * coverageFor (spk.model));
             g.setColour (FigPlot::tick().withAlpha (0.85f));
+            const float edgeDash[] = { 6.0f, 4.0f };
             for (const float a : { th - half, th + half })
             {
                 const juce::Point<float> d { std::cos (a), -std::sin (a) };
-                g.drawLine ({ front, front + d * reach }, 1.0f);
+                // Dark Figma: the coverage edges are dashed white.
+                if (FigPlot::dk())
+                    g.drawDashedLine ({ front, front + d * reach }, edgeDash, 2, 1.0f);
+                else
+                    g.drawLine ({ front, front + d * reach }, 1.0f);
             }
         };
 
@@ -7389,7 +7548,8 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
                 if (std::abs (spk.rotationDeg) > 0.01f)
                     g.addTransform (juce::AffineTransform::rotation (
                         -juce::degreesToRadians (spk.rotationDeg), c.x, c.y));
-                const auto fill = isSubwooferModel (spk.model) ? juce::Colour (0xffdbe1ea)
+                const auto fill = FigPlot::dk() ? juce::Colour (0xffc2d7ff)
+                                : isSubwooferModel (spk.model) ? juce::Colour (0xffdbe1ea)
                                                                : juce::Colour (0xffd3def1);
                 g.setColour (fill.withMultipliedAlpha (alpha));
                 g.fillRoundedRectangle (box, 2.0f);
@@ -7415,9 +7575,11 @@ void RadiationPatternComponent::drawSpeakers (juce::Graphics& g, juce::Rectangle
             const auto tag  = framedTag (i);
             const auto font = Brand::figSemi (8.0f);
             g.setFont (font);
-            g.setColour (FigPlot::tick().withAlpha (alpha));
             const float tw = (float) font.getStringWidth (tag) + 2.0f, th = font.getHeight();
             const bool inside = box.getWidth() >= tw + 2.0f && box.getHeight() >= th;
+            // On the light tile the name is dark ink (Figma "R1"); beside it, plot ink.
+            g.setColour ((inside && FigPlot::dk() ? juce::Colour (0xff000000) : FigPlot::tick())
+                             .withAlpha (alpha));
             const juce::Rectangle<float> tr = inside
                 ? juce::Rectangle<float> (tw, th).withCentre (c)
                 : juce::Rectangle<float> (box.getRight() + 2.0f, c.y - th * 0.5f, tw, th);
@@ -7651,10 +7813,6 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
 
     // On the framed sheet the bar sits on light grey whatever the theme.
     const auto tickCol = placed ? FigPlot::tick() : Brand::text();   // white (dark) / charcoal (light)
-    const auto outline = placed ? juce::Colour (0xffc2c2c2)
-                       : AppSettings::get().isDark()
-                             ? juce::Colour (0xffc8c8c8)
-                             : Brand::border();
     g.setFont (placed ? Brand::figSemi (12.0f)
                       : Brand::techBold (Brand::UI::scaledFont (Brand::Type::legendTickOnScreen)));
 
@@ -7670,37 +7828,49 @@ void RadiationPatternComponent::drawColourbar (juce::Graphics& g, juce::Rectangl
                     juce::Justification::centredLeft);
     };
 
+    // Figma draws the key as a pill: fully rounded ends, no outline.
+    juce::Path pill;
+    pill.addRoundedRectangle ((float) barX, (float) barY, (float) barW, (float) barH,
+                              (float) barW * 0.5f);
+
     if (params_.viewMode == ViewMode::SPL && params_.bandedSPL)
     {
-        // Fixed contour steps from 0 down to db Floor (never stretch labels).
+        // One block per contour step from 0 down to db Floor, labelled at the
+        // block edges (0 db at the top, the floor at the bottom).
         const float step = ColourMaps::kContourStepDB;
         const float floor = (float) params_.dBfloor;
-        const int bands = juce::jmax (1, (int) std::lround (-floor / step) + 1);
+        const int bands = juce::jmax (1, (int) std::lround (-floor / step));
         const float bh = (float) barH / (float) bands;
-        for (int i = 0; i < bands; ++i)
         {
-            const float db = -step * (float) i;
-            g.setColour (keyColour (ColourMaps::splBandForFloor (db, floor, step), db, floor));
-            g.fillRect ((float) barX, barY + i * bh, (float) barW, bh + 0.5f);
-            drawTick ((int) std::lround (db), (int) (barY + i * bh));
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (pill);
+            for (int i = 0; i < bands; ++i)
+            {
+                const float db = -step * ((float) i + 0.5f);
+                g.setColour (keyColour (ColourMaps::splBand (db, step), db, floor));
+                g.fillRect ((float) barX, barY + i * bh, (float) barW, bh + 0.5f);
+            }
         }
-        g.setColour (outline);
-        g.drawRect (barX, barY, barW, (int) (bh * (float) bands + 0.5f), 1);
+        for (int i = 0; i <= bands; ++i)
+            drawTick ((int) std::lround (-step * (float) i),
+                      barY + (int) std::lround ((float) i * bh));
     }
     else // continuous - fixed -6 dB legend ticks; floor is the bottom stop only
     {
         const float floor = (float) params_.dBfloor;
         const float span = juce::jmax (ColourMaps::kRelSplDesignSpanDB, -floor);
-        for (int yy = 0; yy < barH; ++yy)
         {
-            const float frac = (float) yy / (float) juce::jmax (1, barH - 1); // 0 at top
-            const float db = -frac * span;
-            const float t = ColourMaps::relDbToColourT (db, floor);
-            g.setColour (keyColour (ColourMaps::sevenColor (t), db, floor));
-            g.fillRect (barX, barY + yy, barW, 1);
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (pill);
+            for (int yy = 0; yy < barH; ++yy)
+            {
+                const float frac = (float) yy / (float) juce::jmax (1, barH - 1); // 0 at top
+                const float db = -frac * span;
+                const float t = ColourMaps::relDbToColourT (db, floor);
+                g.setColour (keyColour (ColourMaps::sevenColor (t), db, floor));
+                g.fillRect (barX, barY + yy, barW, 1);
+            }
         }
-        g.setColour (outline);
-        g.drawRect (barX, barY, barW, barH, 1);
 
         // Ticks every -6 dB from 0 down to floor (e.g. 0,-6,...,-36) - never -9.
         const float step = ColourMaps::kRelSplStepDB;

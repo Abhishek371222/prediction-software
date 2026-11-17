@@ -4,38 +4,39 @@
 
 // ---------------------------------------------------------------------------
 // ColourMaps - maps a normalised float t in [0,1] to a juce::Colour.
-// Primary SPL map: 7-color heatmap (black→blue→cyan→green→yellow→orange→red).
+// Primary SPL map: the Atomik Rel. SPL key (red -> blue -> charcoal).
 // cmapIndex: 0=seven  1=turbo  2=hot  3=parula  4=gray  5=jet
 // ---------------------------------------------------------------------------
 namespace ColourMaps
 {
 
-// Atomik Rel. SPL legend gradient, Figma "Rectangle 389" (node 140:1304).
-// Legend top->bottom = 0 db -> -36 db, stops at the designer's positions
-// (NOT evenly spaced -- the dark red holds for the top quarter):
-//   #B21619 (to 25%) -> #ED2227 -> #3281B9 -> #0A4D74 -> #231F20
+// Atomik Rel. SPL key, Figma "Prediction-software" Mapping frame (node 344:81):
+// six solid 6 dB blocks, top (0 db) to bottom (-36 db).
+inline constexpr int kRelSplBandCount = 6;
+
+inline juce::Colour relSplBandColour (int band) noexcept
+{
+    static const juce::uint32 argb[kRelSplBandCount] = {
+        0xffff0006,   //   0 ...  -6 db
+        0xffd21c21,   //  -6 ... -12 db
+        0xffb21619,   // -12 ... -18 db
+        0xff546f9d,   // -18 ... -24 db
+        0xff307eb4,   // -24 ... -30 db
+        0xff000000    // -30 ... -36 db  (Figma SOURCE_V2 / MAPPING ON: #000000)
+    };
+    return juce::Colour (argb[juce::jlimit (0, kRelSplBandCount - 1, band)]);
+}
+
+// Continuous version of the key: blends between the six block colours, each
+// one pinned at the centre of its block.
 // t = 1 -> peak / 0 db (top of bar); t = 0 -> floor / -36 db (bottom).
 inline juce::Colour sevenColor (float t)
 {
-    // Positions are distance from the TOP of the Rel. SPL bar (0 = 0 db).
-    static const float stops[][4] = {
-        { 0.00000f, 0.698f, 0.086f, 0.098f },  // #B21619  0 db
-        { 0.25000f, 0.698f, 0.086f, 0.098f },  // #B21619
-        { 0.43750f, 0.929f, 0.133f, 0.153f },  // #ED2227
-        { 0.65385f, 0.196f, 0.506f, 0.725f },  // #3281B9
-        { 0.82692f, 0.039f, 0.302f, 0.455f },  // #0A4D74
-        { 1.00000f, 0.137f, 0.122f, 0.125f }   // #231F20  -36 db
-    };
-    const float u = 1.0f - juce::jlimit (0.0f, 1.0f, t); // peak -> top of legend
-    constexpr int n = 5;   // segments = stops - 1
-    int i = 0;
-    while (i < n && u > stops[i + 1][0]) ++i;
-    const float span = stops[i + 1][0] - stops[i][0];
-    const float f = (span > 1.0e-6f) ? (u - stops[i][0]) / span : 0.0f;
-    const float r = stops[i][1] + f * (stops[i + 1][1] - stops[i][1]);
-    const float g = stops[i][2] + f * (stops[i + 1][2] - stops[i][2]);
-    const float b = stops[i][3] + f * (stops[i + 1][3] - stops[i][3]);
-    return juce::Colour::fromFloatRGBA (r, g, b, 1.0f);
+    const float u = (1.0f - juce::jlimit (0.0f, 1.0f, t)) * (float) kRelSplBandCount - 0.5f;
+    if (u <= 0.0f)                              return relSplBandColour (0);
+    if (u >= (float) (kRelSplBandCount - 1))    return relSplBandColour (kRelSplBandCount - 1);
+    const int i = (int) u;
+    return relSplBandColour (i).interpolatedWith (relSplBandColour (i + 1), u - (float) i);
 }
 
 inline juce::Colour jet (float t)
@@ -124,16 +125,13 @@ inline constexpr float kContourStepDB = 6.0f;
 
 // Hard-banded colour for a relative SPL value in dB (<= 0).
 // Fixed step size - kContourStepDB. Floor clips only.
-// Contour mode quantises the SAME gradient the legend draws, rather than
-// indexing the 7-entry palette. Indexing only lined up when the step was 6 dB
-// (7 entries x 6 dB = the 0..-36 span); at a 3 dB step it ran out of entries
-// by -18 dB and flattened everything quieter than that to black.
+// The colour is the key block that holds the band's top edge, so a band never
+// shows a colour the legend does not; anything below -36 db takes the last block.
 inline juce::Colour splBand (float dB, float stepDB = 6.0f)
 {
     if (stepDB < 0.5f) stepDB = 0.5f;
     const float bandTopDB = -std::floor ((-dB) / stepDB + 1.0e-4f) * stepDB;
-    // floorDB = 0 so nothing is clipped here; the caller applies the dB floor.
-    return sevenColor (relDbToColourT (bandTopDB, 0.0f));
+    return relSplBandColour ((int) std::floor (-bandTopDB / kRelSplStepDB + 1.0e-4f));
 }
 
 // Opacity of the map where it is laid as a wash over the Figma sheet: half

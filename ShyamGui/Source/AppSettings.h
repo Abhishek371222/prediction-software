@@ -31,9 +31,6 @@ public:
 
     void setTheme (ThemeMode t)
     {
-        // Dark theme hidden for this release - force light regardless of
-        // what's requested. Remove this line to re-enable dark theme.
-        t = ThemeMode::Light;
         if (t == theme_) return;
         theme_ = t;
         store();
@@ -181,10 +178,9 @@ private:
         o.folderName          = "Atomik";
         props_ = std::make_unique<juce::PropertiesFile> (o);
 
-        // Dark theme hidden for this release (light-only exe) - ignore any
-        // stored preference. Code path kept intact for a later re-enable.
-        theme_ = ThemeMode::Light;
-        juce::ignoreUnused (props_->getIntValue ("theme", (int) ThemeMode::Dark));
+        // Light by default; Dark is chosen in Preferences and remembered.
+        theme_ = props_->getIntValue ("theme", (int) ThemeMode::Light) == (int) ThemeMode::Dark
+                     ? ThemeMode::Dark : ThemeMode::Light;
         units_ = (UnitSystem) props_->getIntValue ("units", (int) UnitSystem::SI);
         showGrid_ = props_->getBoolValue ("showGrid", true);
         sidebarCollapsed_ = props_->getBoolValue ("sidebarCollapsed", false);

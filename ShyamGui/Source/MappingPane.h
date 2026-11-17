@@ -15,12 +15,14 @@
 namespace MappingSkin
 {
     inline juce::Colour blue()  { return juce::Colour (0xff3281b9); }
-    inline juce::Colour grid()  { return juce::Colour (0xffd9d9d9); }
+    inline juce::Colour grid()  { return Brand::isDarkUi() ? juce::Colour (0xff757575).withAlpha (0.40f)
+                                                           : juce::Colour (0xffd9d9d9); }
 
     /** Microphone n's colour, the same in the legend and on the curve. */
     inline juce::Colour micColour (int i)
     {
-        static const juce::uint32 cols[] = { 0xffff0404, 0xff3281b9, 0xff00b54c, 0xffff9500,
+        static const juce::uint32 cols[] = { 0xffc80101, 0xff3281b9, 0xff00b54c,   // Figma MAPPING_V2: Mic 1 #C80101
+                                             0xffff9500,
                                              0xffaf52de, 0xff5ac8fa, 0xffffcc00, 0xff8e8e93 };
         return juce::Colour (cols[(size_t) juce::jmax (0, i) % 8]);
     }
@@ -50,11 +52,27 @@ public:
     {
         using UiConfig::Scale::fig;
         using UiConfig::Scale::figf;
-        g.fillAll (Brand::white());
+        const bool dark = Brand::isDarkUi();
+        g.fillAll (dark ? Brand::plotBg() : Brand::white());
 
         const auto plot = plotArea();
-        g.setColour (Brand::white());
+        g.setColour (dark ? Brand::plotBg() : Brand::white());
         g.fillRect (plot);
+        // Figma MAPPING_V2: frequency rules are #757575 @ 40 %, dashed 2/2
+        // between the decades and solid on 10 / 100 / 1k / 10k; the dB
+        // rules are solid.
+        const float dash[] = { 2.0f, 2.0f };
+        bool dashedV = false;
+        auto vLine = [&] (int x)
+        {
+            if (dashedV) g.drawDashedLine ({ (float) x + 0.5f, plot.getY(), (float) x + 0.5f, plot.getBottom() }, dash, 2, 1.0f);
+            else         g.drawVerticalLine (x, plot.getY(), plot.getBottom());
+        };
+        auto hLine = [&] (int y)
+        {
+            if (false) g.drawDashedLine ({ plot.getX(), (float) y, plot.getRight(), (float) y }, dash, 2, 1.0f);
+            else      g.drawHorizontalLine (y, plot.getX(), plot.getRight());
+        };
 
         // ABSOLUTE dB SPL: the top line is the loudest level on any curve,
         // rounded up to a 6 dB step, so every line is a real level and two
@@ -72,29 +90,31 @@ public:
             {
                 const double f = dec * k;
                 if (f < kLoHz - 0.5 || f > kHiHz + 0.5) continue;
-                g.setColour (k == 1 ? MappingSkin::grid().darker (0.15f) : MappingSkin::grid());
-                g.drawVerticalLine (juce::roundToInt (xFor (f, plot)), plot.getY(), plot.getBottom());
+                g.setColour (k == 1 && ! dark ? MappingSkin::grid().darker (0.15f) : MappingSkin::grid());
+                dashedV = dark && k != 1;
+                vLine (juce::roundToInt (xFor (f, plot)));
             }
-        for (int db = 0; db >= -(int) kSpanDb; db -= 6)
+        for (int db = 0; db >= -(int) spanDb(); db -= 6)
         {
             g.setColour (MappingSkin::grid());
-            g.drawHorizontalLine (juce::roundToInt (yFor ((float) db, plot)), plot.getX(), plot.getRight());
+            hLine (juce::roundToInt (yFor ((float) db, plot)));
         }
-        g.setColour (juce::Colour (0xff000000));
+        g.setColour (dark ? juce::Colour (0xff757575) : juce::Colour (0xff000000));
         g.drawRect (plot.toNearestInt(), 1);
 
         // dB down the left, right-aligned 13 px short of the plot.
         g.setColour (Brand::text());
         g.setFont (Brand::figMed (12.0f));
-        for (int db = 0; db >= -(int) kSpanDb; db -= 6)
+        for (int db = 0; db >= -(int) spanDb(); db -= 6)
         {
             const float y = yFor ((float) db, plot);
-            g.drawText (juce::String ((int) axisTop_ + db) + " dB",
+            g.drawText (dark ? juce::String (db) + " db"
+                             : juce::String ((int) axisTop_ + db) + " dB",
                         juce::Rectangle<float> (0.0f, y - figf (8.0f), plot.getX() - figf (13.0f), figf (16.0f)),
                         juce::Justification::centredRight, false);
         }
         g.setFont (Brand::figSemi (10.0f));
-        g.drawText ("dB SPL", juce::Rectangle<float> (figf (12.0f), plot.getBottom() - figf (24.0f),
+        g.drawText (dark ? "Rel. SPL" : "dB SPL", juce::Rectangle<float> (figf (12.0f), plot.getBottom() - figf (24.0f),
                                                         plot.getX() - figf (14.0f), figf (14.0f)),
                     juce::Justification::centredLeft, false);
         // The curves are absolute dB SPL at each mic's own position (subs
@@ -103,7 +123,9 @@ public:
         // frequency ticks.
         g.setColour (Brand::text().withAlpha (0.55f));
         g.setFont (Brand::figMed (10.0f));
-        g.drawFittedText ("Absolute, subs only\n-6 dB per 2x distance",
+        // Dark shows relative levels ("Rel. SPL"), so only the scope is noted.
+        g.drawFittedText (Brand::isDarkUi() ? juce::String ("Subs only")
+                                            : juce::String ("Absolute, subs only\n-6 dB per 2x distance"),
                           juce::Rectangle<float> (plot.getRight() + figf (12.0f),
                                                   (float) getHeight() - figf (34.0f),
                                                   figf (120.0f), figf (28.0f)).toNearestInt(),
@@ -137,6 +159,12 @@ private:
         using UiConfig::Scale::figf;
         // Figma: the plot runs x 69..1386 of the pane and fills its height
         // bar 15 px above and the tick row below; the legend takes the rest.
+        if (Brand::isDarkUi())
+        {
+            const float r = (float) getWidth() - figf (127.0f);
+            return { figf (70.0f), figf (40.0f), juce::jmax (40.0f, r - figf (70.0f)),
+                     juce::jmax (40.0f, (float) getHeight() - figf (40.0f) - figf (39.0f)) };
+        }
         const float right = (float) getWidth() - figf (135.0f);
         return { figf (69.0f), figf (15.0f),
                  juce::jmax (40.0f, right - figf (69.0f)),
@@ -150,13 +178,16 @@ private:
         return plot.getX() + plot.getWidth() * (0.02f + 0.96f * (float) t);
     }
 
-    /** @p db is relative to the axis top: 0 sits 13% down, -kSpanDb 84%. */
-    static constexpr float kSpanDb = 48.0f;
+    /** @p db is relative to the axis top: 0 sits 13% down, -span 84%.
+        Dark Figma: relative levels, 0 db .. -36 db ("Rel. SPL"), like the
+        plan's colour bar; light keeps the absolute 48 dB window. */
+    static float spanDb() { return Brand::isDarkUi() ? 36.0f : 48.0f; }
     float axisTop_ = 0.0f;
 
     static float yFor (float db, juce::Rectangle<float> plot)
     {
-        const float t = juce::jlimit (-kSpanDb, 0.0f, db) / -kSpanDb;
+        const float span = spanDb();
+        const float t = juce::jlimit (-span, 0.0f, db) / -span;
         return plot.getY() + plot.getHeight() * (0.133f + 0.708f * t);
     }
 
@@ -206,13 +237,14 @@ private:
     void drawLegend (juce::Graphics& g, juce::Rectangle<float> plot)
     {
         using UiConfig::Scale::figf;
-        const float x0 = plot.getRight() + figf (12.0f);
-        float y = figf (1.0f);
+        const bool dk = Brand::isDarkUi();
+        const float x0 = plot.getRight() + figf (dk ? 32.0f : 12.0f);
+        float y = dk ? plot.getY() + figf (3.0f) : figf (1.0f);
         g.setFont (Brand::figMed (12.0f));
         for (int i = 0; i < (int) mics_.size(); ++i)
         {
             const float icon = figf (21.3f);
-            if (micIcon_.isValid())
+            if (micIcon_.isValid() && ! Brand::isDarkUi())   // dark Figma: bar + name only
             {
                 g.setOpacity (0.5f);
                 g.drawImage (micIcon_, juce::Rectangle<float> (x0, y, icon, icon),
@@ -220,10 +252,12 @@ private:
                 g.setOpacity (1.0f);
             }
             g.setColour (MappingSkin::micColour (i));
-            g.fillRect (x0 + figf (21.3f), y + figf (1.8f), figf (5.3f), figf (18.7f));
+            if (dk) g.fillRect (x0, y, figf (5.0f), figf (19.0f));
+            else    g.fillRect (x0 + figf (21.3f), y + figf (1.8f), figf (5.3f), figf (18.7f));
             g.setColour (Brand::text());
-            g.drawText ("Microphone " + juce::String (mics_[(size_t) i].id),
-                        juce::Rectangle<float> (x0 + figf (32.0f), y, (float) getWidth() - x0 - figf (32.0f), icon),
+            g.drawText ((Brand::isDarkUi() ? "Mic " : "Microphone ") + juce::String (mics_[(size_t) i].id),
+                        juce::Rectangle<float> (x0 + figf (dk ? 11.0f : 32.0f), y,
+                                                (float) getWidth() - x0 - figf (dk ? 11.0f : 32.0f), dk ? figf (19.0f) : icon),
                         juce::Justification::centredLeft, true);
             y += figf (39.0f);
             if (y + icon > (float) getHeight()) break;
@@ -253,11 +287,22 @@ public:
         auto_.setClickingTogglesState (true);
         auto_.setToggleState (true, juce::dontSendNotification);
         auto_.onClick = [this] { if (onAutoCalculate) onAutoCalculate (auto_.getToggleState()); };
+        auto_.setTooltip ("Auto - Calculate: re-calculate whenever something changes");
         addAndMakeVisible (calc_);
         addAndMakeVisible (auto_);
     }
 
     ~MappingFooter() override { freq_.setLookAndFeel (nullptr); }
+
+    // The dark and light footers are laid out differently, so a theme
+    // switch has to re-place the buttons, not just repaint them.
+    void lookAndFeelChanged() override
+    {
+        freq_.setColour (juce::ComboBox::backgroundColourId,
+                         Brand::isDarkUi() ? juce::Colour (0xff393f47) : Brand::valueBox());
+        resized();
+        repaint();
+    }
 
     std::function<void (int index)> onFrequency;
     std::function<void()>           onCalculate;
@@ -289,17 +334,22 @@ public:
     {
         using UiConfig::Scale::fig;
         const int sh = shadowHeight();
-        juce::ColourGradient shade (juce::Colours::black.withAlpha (0.0f), 0.0f, 0.0f,
+        // Light: a soft dark shadow. Dark Figma: a lighter glow rising from
+        // the sheet to #2F2F32 just above the footer.
+        juce::ColourGradient shade = Brand::isDarkUi()
+            ? juce::ColourGradient (Brand::sheet(), 0.0f, 0.0f,
+                                    juce::Colour (0xff2f2f32), 0.0f, (float) sh, false)
+            : juce::ColourGradient (juce::Colours::black.withAlpha (0.0f), 0.0f, 0.0f,
                                     juce::Colours::black.withAlpha (0.18f), 0.0f, (float) sh, false);
         g.setGradientFill (shade);
         g.fillRect (0, 0, getWidth(), sh);
 
         auto body = getLocalBounds().withTrimmedTop (sh);
-        g.setColour (Brand::white());
+        g.setColour (Brand::sheet());
         g.fillRect (body);
 
         const auto strip = body.withHeight (fig (44.0f));
-        g.setColour (Brand::white());
+        g.setColour (Brand::sheet());
         g.fillRect (strip);
         g.setColour (Brand::sidebarBorder());
         g.drawRect (strip, 1);
@@ -313,9 +363,22 @@ public:
     {
         using UiConfig::Scale::fig;
         const int top = shadowHeight();
-        freq_.setBounds (fig (282.0f), top + fig (7.0f), fig (102.0f), fig (28.0f));
-        calc_.setBounds (fig (24.0f),    top + fig (58.0f), fig (161.0f), fig (44.0f));
-        auto_.setBounds (fig (217.6f),   top + fig (58.0f), fig (161.0f), fig (44.0f));
+        freq_.setBounds (fig (Brand::isDarkUi() ? 288.0f : 282.0f), top + fig (8.0f), fig (102.0f), fig (28.0f));
+        if (Brand::isDarkUi())
+        {
+            // Dark Figma: a 320 x 44 red Calculate 14 px in, and a 44 x 44
+            // red square (auto re-calculate) 14 px from the right edge.
+            const int sq = fig (44.0f);
+            const int ax = getWidth() - fig (14.0f) - sq;
+            auto_.setBounds (ax, top + fig (58.0f), sq, sq);
+            calc_.setBounds (fig (14.0f), top + fig (58.0f),
+                             juce::jmax (fig (80.0f), ax - fig (15.0f) - fig (14.0f)), sq);
+        }
+        else
+        {
+            calc_.setBounds (fig (24.0f),    top + fig (58.0f), fig (161.0f), fig (44.0f));
+            auto_.setBounds (fig (217.6f),   top + fig (58.0f), fig (161.0f), fig (44.0f));
+        }
     }
 
 private:
@@ -355,7 +418,8 @@ private:
             const auto r = getLocalBounds().toFloat().reduced (0.5f);
             const float rad = UiConfig::Scale::figf (2.0f);
             const bool solid = ! getClickingTogglesState() || getToggleState();
-            auto fill = Brand::sectionBar();
+            const bool dark  = Brand::isDarkUi();
+            auto fill = dark ? Brand::actionRed() : Brand::sectionBar();
             if (down) fill = fill.darker (0.2f);
             else if (over) fill = fill.brighter (0.1f);
             if (solid)
@@ -365,12 +429,38 @@ private:
             }
             else
             {
-                g.setColour (Brand::white());
+                g.setColour (dark ? Brand::sheet() : Brand::white());
                 g.fillRoundedRectangle (r, rad);
                 g.setColour (fill);
                 g.drawRoundedRectangle (r, rad, juce::jmax (1.0f, UiConfig::Scale::figf (1.5f)));
             }
             g.setColour (solid ? Brand::white() : fill);
+            if (dark && getClickingTogglesState())
+            {
+                // The square's glyph: a clockwise refresh arrow.
+                const auto c  = r.getCentre();
+                const float rr = juce::jmin (r.getWidth(), r.getHeight()) * 0.27f;
+                const float a0 = juce::MathConstants<float>::pi * 0.30f;
+                const float a1 = juce::MathConstants<float>::twoPi + juce::MathConstants<float>::pi * 0.05f;
+                juce::Path arc;
+                arc.addCentredArc (c.x, c.y, rr, rr, 0.0f, a0, a1, true);
+                g.strokePath (arc, juce::PathStrokeType (juce::jmax (1.5f, UiConfig::Scale::figf (2.5f)),
+                                                         juce::PathStrokeType::curved,
+                                                         juce::PathStrokeType::rounded));
+                // Arrow head at the arc's clockwise end, along the tangent.
+                // JUCE angles run clockwise from 12 o'clock.
+                const float ca = std::cos (a1), sa = std::sin (a1);
+                const juce::Point<float> P (c.x + rr * sa, c.y - rr * ca);
+                const juce::Point<float> t (ca, sa), n (sa, -ca);
+                const float hs = rr * 0.62f;
+                juce::Path head;
+                const auto tip = P + t * (hs * 0.75f);
+                const auto bl  = P - t * (hs * 0.25f) + n * (hs * 0.6f);
+                const auto br  = P - t * (hs * 0.25f) - n * (hs * 0.6f);
+                head.addTriangle (tip, bl, br);
+                g.fillPath (head);
+                return;
+            }
             g.setFont (Brand::figMed (16.0f));
             g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
         }

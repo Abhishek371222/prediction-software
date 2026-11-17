@@ -9,9 +9,9 @@
 // the reference draws these as a soft division, not a frame.
 namespace StripSkin
 {
-    inline juce::Colour rule()  { return juce::Colour (0xffdcdcdc); }
+    inline juce::Colour rule()  { return Brand::isDarkUi() ? Brand::rule() : juce::Colour (0xffdcdcdc); }
     // The strip's own edges, as opposed to the rules inside a panel.
-    inline juce::Colour bound() { return juce::Colour (0xff000000); }
+    inline juce::Colour bound() { return Brand::isDarkUi() ? juce::Colour (0xff1d1d20) : juce::Colour (0xff000000); }
 }
 
 // =============================================================================
@@ -152,12 +152,26 @@ public:
         // the values under them, and larger. Weight carries the hierarchy
         // here, so making them heavier AND bigger shouted twice.
         // Figma V1.1: Medium 16, 24 px in; the band is outlined in black.
-        g.setFont (Brand::figMed (16.0f));
+        g.setFont (Brand::figMed (15.0f));
         g.drawText (title_, getLocalBounds().withTrimmedLeft (UiConfig::Scale::fig (24.0f)),
                     juce::Justification::centredLeft, true);
-        g.setColour (StripSkin::bound());
-        g.drawHorizontalLine (0, 0.0f, (float) getWidth());
-        g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+        if (Brand::isDarkUi())
+        {
+            // Figma dark: a dark top edge, then a 1 px lighter lip at the top
+            // and bottom of the band (#3A3E42) - a raised bar, not a frame.
+            const float w = (float) getWidth();
+            g.setColour (juce::Colour (0xff1e1e20));
+            g.drawHorizontalLine (0, 0.0f, w);
+            g.setColour (juce::Colour (0xff3a3e42));
+            g.drawHorizontalLine (1, 0.0f, w);
+            g.drawHorizontalLine (getHeight() - 1, 0.0f, w);
+        }
+        else
+        {
+            g.setColour (StripSkin::bound());
+            g.drawHorizontalLine (0, 0.0f, (float) getWidth());
+            g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+        }
     }
 
     void resized() override
@@ -253,7 +267,7 @@ public:
         btnSnap_.setTooltip ("Snap on / off (Ctrl+F)");
         addAndMakeVisible (btnSnap_);
 
-        lblSources_.setText ("Sources", juce::dontSendNotification);
+        lblSources_.setText ("Source", juce::dontSendNotification);
         lblView_.setText ("Top View", juce::dontSendNotification);
         for (auto* l : { &lblSources_, &lblView_ })
         {
@@ -305,7 +319,8 @@ public:
     }
 
     // Figma V1.1: 30 px.
-    int preferredHeight() const { return juce::jmax (18, UiConfig::Scale::fig (30.0f)); }
+    // Figma V1.1 30 px; the dark V2 frames draw it 32 (y 58..90).
+    int preferredHeight() const { return juce::jmax (18, UiConfig::Scale::fig (Brand::isDarkUi() ? 32.0f : 30.0f)); }
 
     /** The left edge of the fold chevron at the far right. Anything else put
         in this strip measures its own right edge from here, so the gap to the
@@ -340,6 +355,36 @@ public:
         // No top line here: the menu bar above closes with its own rule, and
         // two adjacent hairlines stack into one 2 px band - which is exactly
         // why this edge read darker than the one below it.
+        if (Brand::isDarkUi())
+        {
+            using UiConfig::Scale::figf;
+            const float w = (float) r.getWidth(), h = (float) r.getHeight();
+            // Figma dark: the menu bar casts a shadow onto the strip - a thin
+            // dark-red edge (#5A3237) fading into the band over ~4 px.
+            {
+                const float sh = juce::jmax (3.0f, figf (4.0f));
+                juce::ColourGradient cg (juce::Colour (0xff5a3237), 0.0f, 0.0f,
+                                         Brand::sectionBar(), 0.0f, sh, false);
+                g.setGradientFill (cg);
+                g.fillRect (0.0f, 0.0f, w, sh);
+            }
+            // The divider between the two cells: a lighter ridge (#48494D) at
+            // the sidebar's edge, fading right over ~8 px.
+            if (sideW_ > 0)
+            {
+                const float x0 = (float) sideW_ - 1.0f, sw = juce::jmax (4.0f, figf (8.0f));
+                g.setColour (juce::Colour (0xff2c2e31));
+                g.fillRect (x0 - 1.0f, 0.0f, 1.0f, h);
+                juce::ColourGradient cg (juce::Colour (0xff48494d), x0, 0.0f,
+                                         Brand::sectionBar(), x0 + sw, 0.0f, false);
+                g.setGradientFill (cg);
+                g.fillRect (x0, 0.0f, sw, h);
+            }
+            // Bottom: a faint lighter lip (#3A3E42) instead of a black rule.
+            g.setColour (juce::Colour (0xff3a3e42));
+            g.drawHorizontalLine (r.getBottom() - 1, 0.0f, w);
+            return;
+        }
         g.setColour (StripSkin::bound());
         g.drawHorizontalLine (r.getBottom() - 1, 0.0f, (float) r.getRight());
         if (sideW_ > 0)
@@ -351,7 +396,7 @@ public:
         using UiConfig::Scale::fig;
         const int h = getHeight();
 
-        const juce::Font f = Brand::figMed (16.0f);
+        const juce::Font f = Brand::figMed (15.0f);
         lblSources_.setFont (f);
         lblView_.setFont (f);
         lblSources_.setBorderSize ({});

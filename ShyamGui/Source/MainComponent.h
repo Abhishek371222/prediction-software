@@ -158,7 +158,7 @@ private:
     // The reference tool stacks a plan over an elevation. The elevation is
     // the same renderer in ElevationSide mode, fed the same solve - a
     // display only, so none of its editing is switched on.
-    PaneHeaderBar  elevHeader_ { "Elevation view" };
+    PaneHeaderBar  elevHeader_ { "Elevation View" };
     HeaderPillButton elevSnapBtn_ { "Snap", true };
     HeaderPillButton elevZoomOutBtn_ { "V-", false };
     HeaderPillButton elevZoomInBtn_ { "V+", false };
@@ -236,7 +236,7 @@ private:
     // under it, Filters in the side panel and the Calculate footer.
     bool                mappingMode_ = false;
     int                 mappingPrevMenu_ = 0;   // menuMapping_ to restore on leaving
-    PaneHeaderBar       frHeader_ { "Frequency Response" };
+    PaneHeaderBar       frHeader_ { "Frequency response" };
     MappingResponsePlot frPlot_;
     MappingFooter       mapFooter_;
     // Auto - Calculate off holds edits back until Calculate is pressed.

@@ -64,6 +64,7 @@ struct ProjectData
     juce::var venue;
     juce::var rangeRings;      // metres, the reference rings the user added
     juce::var rangesVisible;   // whether those rings are drawn
+    juce::var mics;            // microphones on the plan: [{id, x, y, ...}]
     // Reverse mapping: false (or absent) maps on the planes only, true maps
     // across the whole area. Absent in projects saved before it existed,
     // which lands on the old behaviour.
@@ -170,6 +171,8 @@ struct ProjectData
             root->setProperty ("drawings", drawings);
         if (venue.isArray() && venue.size() > 0)
             root->setProperty ("venue", venue);
+        if (mics.isArray() && mics.size() > 0)
+            root->setProperty ("mics", mics);
         if (rangeRings.isArray() && rangeRings.size() > 0)
         {
             root->setProperty ("rangeRings", rangeRings);
@@ -193,6 +196,8 @@ struct ProjectData
             p.venue    = root->getProperty ("venue");
             p.rangeRings = root->getProperty ("rangeRings");
             p.rangesVisible = root->getProperty ("rangesVisible");
+            // Absent before microphones were saved: the plan opens without any.
+            p.mics = root->getProperty ("mics");
             p.mapWholeArea  = root->getProperty ("mapWholeArea");
 
             if (auto mv = root->getProperty ("meta"); auto* m = mv.getDynamicObject())

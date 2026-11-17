@@ -1312,7 +1312,7 @@ private:
     VenueCamera        cam_;
     std::vector<VenueRigMark> rig_;
     VenueTopPlot       top_;
-    PaneHeaderBar      elevHead_ { "Elevation view" };
+    PaneHeaderBar      elevHead_ { "Elevation View" };
     VenueElevationPlot elev_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VenueView)

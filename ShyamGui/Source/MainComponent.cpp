@@ -71,6 +71,47 @@ static void styleActionBtn (juce::TextButton& b, const juce::String& txt,
 
 // Range rings travel with the project: a reference distance you set up for a
 // venue is part of that venue, not of this run of the app.
+// Microphones travel with the project too - placing three mics and losing
+// them on every reopen made the Mapping tab's response pane start empty.
+static juce::var micsToVar (const std::vector<MicReceiver>& mics)
+{
+    juce::Array<juce::var> a;
+    for (const auto& m : mics)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("id", m.id);
+        o->setProperty ("x", m.x);
+        o->setProperty ("y", m.y);
+        if (m.ringLocked)
+        {
+            o->setProperty ("ringLocked", true);
+            o->setProperty ("ringRadiusM", m.ringRadiusM);
+            o->setProperty ("ringSpeaker", m.ringSpeaker);
+        }
+        a.add (juce::var (o));
+    }
+    return a;
+}
+
+static std::vector<MicReceiver> micsFromVar (const juce::var& v)
+{
+    std::vector<MicReceiver> out;
+    if (auto* a = v.getArray())
+        for (const auto& e : *a)
+            if (auto* o = e.getDynamicObject())
+            {
+                MicReceiver m;
+                m.id = o->hasProperty ("id") ? (int) o->getProperty ("id") : nextMicId (out);
+                m.x  = (float) (double) o->getProperty ("x");
+                m.y  = (float) (double) o->getProperty ("y");
+                m.ringLocked  = o->hasProperty ("ringLocked") && (bool) o->getProperty ("ringLocked");
+                m.ringRadiusM = (float) (double) o->getProperty ("ringRadiusM");
+                m.ringSpeaker = o->hasProperty ("ringSpeaker") ? (int) o->getProperty ("ringSpeaker") : -1;
+                out.push_back (m);
+            }
+    return out;
+}
+
 static juce::var rangeRingsToVar (const std::vector<float>& m)
 {
     juce::Array<juce::var> a;
@@ -514,6 +555,12 @@ MainComponent::MainComponent (ProjectData project)
     mapFooter_.onFrequency = [this] (int idx) { controlPanel_.setFrequencyIndex (idx); };
     mapFooter_.onCalculate = [this]
     {
+        // Calculate is what turns the map on in the Mapping tab.
+        if (mappingMode_ && menuMapping_ != 1)
+        {
+            menuMapping_ = 1;
+            if (plotHeader_.onMappingType) plotHeader_.onMappingType (menuMapping_);
+        }
         forceRun_ = true;
         runSimulation();
     };
@@ -1254,6 +1301,7 @@ MainComponent::MainComponent (ProjectData project)
     refreshVenuePanel();
     syncVenueToPlanes();
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
+    patternComp_.setMics (micsFromVar (project_.mics));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);
     patternComp_.setMapWholeArea (project_.mapWholeArea.isBool()
@@ -1298,6 +1346,19 @@ MainComponent::MainComponent (ProjectData project)
     // to act on. setFillAlphaEnabled is the only thing that flips it.
     plotHeader_.setFillAlphaEnabled (patternComp_.hasFillTarget());
     syncTextControls();
+
+    // Developer aid: "--tab=mapping" / "--tab=venue" on the command line opens
+    // that tab straight away, so a build can be checked without clicking.
+    {
+        const auto args = juce::JUCEApplication::getCommandLineParameterArray();
+        juce::Component::SafePointer<MainComponent> safe (this);
+        if (args.contains ("--tab=mapping"))
+            juce::MessageManager::callAsync ([safe] { if (safe) safe->setMappingMode (true); });
+        else if (args.contains ("--tab=venue"))
+            juce::MessageManager::callAsync ([safe] { if (safe) safe->setVenueMode (true); });
+        if (args.contains ("--calc"))
+            juce::MessageManager::callAsync ([safe] { if (safe && safe->mapFooter_.onCalculate) safe->mapFooter_.onCalculate(); });
+    }
 }
 
 MainComponent::~MainComponent()
@@ -1394,6 +1455,7 @@ ProjectData MainComponent::currentProject() const
     p.drawings = RadiationPatternComponent::annotationsToVar (patternComp_.getAnnotations());
     p.venue    = VenueElement::listToVar (venue_);
     p.rangeRings = rangeRingsToVar (patternComp_.rangeRings());
+    p.mics       = micsToVar (patternComp_.getMics());
     p.rangesVisible = patternComp_.rangesVisible();
     p.mapWholeArea  = patternComp_.mapWholeArea();
     return p;
@@ -2452,7 +2514,7 @@ int MainComponent::effectiveSidebarWidth() const
     if (AppSettings::get().sidebarCollapsed())
         return Brand::UI::sidebarCollapsedW;
     // Figma V1.1: the panel is 400 wide and the canvas starts at x = 400.
-    return kUseFigmaSidebar ? UiConfig::Scale::fig (400.0f) : Brand::UI::sidebarW;
+    return kUseFigmaSidebar ? UiConfig::Scale::fig (406.0f) : Brand::UI::sidebarW;   // Figma: 406
 }
 
 void MainComponent::syncSidebarToggleChrome()
@@ -2597,6 +2659,18 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     const int bodyTop2 = headerH + (kUseTopMenuBar ? viewBar_.preferredHeight()
                                                   : Brand::UI::plotHeaderH);
     const int bottomTop = H - bottomH;
+
+    // Dark Figma: the sidebar casts a DROP_SHADOW #FFF @10%, offset 4, blur 6
+    // onto the canvas along its whole right edge, under the menu bar.
+    if (Brand::isDarkUi() && kUseFigmaSidebar && ! AppSettings::get().sidebarCollapsed() && sideW > 0)
+    {
+        const float gw = (float) juce::jmax (4, UiConfig::Scale::fig (8.0f));
+        juce::ColourGradient cg (juce::Colours::white.withAlpha (0.10f), (float) sideW, 0.0f,
+                                 juce::Colours::white.withAlpha (0.0f), (float) sideW + gw, 0.0f, false);
+        g.setGradientFill (cg);
+        g.fillRect ((float) sideW, (float) headerH, gw, (float) (H - headerH));
+        return;   // dark draws no hairline rules: the glow is the edge
+    }
 
     // Figma separates regions with hairline rules, not card outlines:
     //   • under the title row     • sidebar's right edge (full height)
@@ -2872,7 +2946,9 @@ void MainComponent::resized()
         // with the hamburger, which overlays the top-right corner - the old
         // reserved strip just left a band of empty grey above "1. FREQUENCY".
         // The Mapping tab pins its Calculate footer under the panel.
-        const bool footer = mappingMode_ && ! venueMode_ && kUseFigmaSidebar;
+        // Frequency-to-mapping + Calculate belong to the Mapping tab only;
+        // the Sources tab gives that room back to its own sections.
+        const bool footer = ! venueMode_ && mappingMode_ && kUseFigmaSidebar;
         const int footH = footer ? UiConfig::Scale::fig (MappingFooter::kFigHeight) : 0;
         mapFooter_.setVisible (footer);
         if (footer)
@@ -2880,6 +2956,7 @@ void MainComponent::resized()
             const int sh = MappingFooter::shadowHeight();
             mapFooter_.setBounds (sideX, bodyTop2 + sidebarH - footH - sh, sideW, footH + sh);
             mapFooter_.toFront (false);
+            syncMappingFooter();   // the Sources tab shows it too, so fill its list here
         }
         const int panelH = juce::jmax (40, sidebarH - footH);
         controlViewport_.setBounds (sideX, bodyTop2, sideW, panelH);
@@ -2938,7 +3015,7 @@ void MainComponent::resized()
     // The plan's caption and its export footer belong to the Sources tab.
     // They are MainComponent's children drawn over the canvas, so they do not
     // go away with patternComp_ and have to be told.
-    plotHeader_.getTitleLabel().setVisible (! venueMode_);
+    plotHeader_.getTitleLabel().setVisible (! venueMode_ && ! Brand::isDarkUi());
     setVenueFurnitureHidden (venueMode_);
     if (venueMode_)
     {
@@ -2958,11 +3035,14 @@ void MainComponent::resized()
     {
         // MAPPING V1.1: the plan (602) over a 27 px Frequency Response
         // header and its pane (363). Folding the pane gives it to the plan.
-        const int hdrH  = juce::jmax (16, UiConfig::Scale::fig (27.0f));
+        // Dark Figma MAPPING_V2: plan 570, a 32 px header, response 388.
+        const bool dkSplit = Brand::isDarkUi();
+        const int hdrH  = juce::jmax (16, UiConfig::Scale::fig (dkSplit ? 32.0f : 27.0f));
         const int avail = juce::jmax (0, bodyH - hdrH);
+        const float frShare = dkSplit ? 388.0f / 958.0f : 363.0f / 965.0f;
         const int frH   = frHeader_.isFolded() ? 0
                         : planFolded_ ? avail
-                        : juce::jmax (120, (int) (avail * (363.0f / 965.0f)));
+                        : juce::jmax (120, (int) (avail * frShare));
         const int planH = planFolded_ ? 0 : juce::jmax (120, avail - frH);
 
         int yy = bodyTop2;
@@ -2980,15 +3060,18 @@ void MainComponent::resized()
         // the plan (560), the elevation (360) and the dB pane (360) share
         // what is left in that ratio. A folded pane hands its share back.
         // The dB pane is hidden for now: plan and elevation take it all.
-        const int hdrH   = juce::jmax (18, UiConfig::Scale::fig (30.0f));
+        // Dark Figma SOURCE_V2: plan 597, a 32 px header, elevation 361.
+        const bool dkSplit = Brand::isDarkUi();
+        const int hdrH   = juce::jmax (18, UiConfig::Scale::fig (dkSplit ? 32.0f : 30.0f));
         const int avail  = juce::jmax (0, bodyH - hdrH * (kShowSplPane ? 2 : 1));
         const bool elevOpen = ! elevHeader_.isFolded();
         const bool splOpen  = kShowSplPane && ! splHeader_.isFolded();
-        const float total = 560.0f + (elevOpen ? 360.0f : 0.0f) + (splOpen ? 360.0f : 0.0f);
+        const float planShare = dkSplit ? 597.0f : 560.0f, elevShare = dkSplit ? 361.0f : 360.0f;
+        const float total = planShare + (elevOpen ? elevShare : 0.0f) + (splOpen ? 360.0f : 0.0f);
         const int splH   = splOpen  ? juce::jmax (80, (int) (avail * (360.0f / total))) : 0;
         const int elevH  = ! elevOpen ? 0
                          : planFolded_ ? juce::jmax (0, avail - splH)
-                         : juce::jmax (80, (int) (avail * (360.0f / total)));
+                         : juce::jmax (80, (int) (avail * (elevShare / total)));
         const int planH  = planFolded_ ? 0 : juce::jmax (120, avail - elevH - splH);
 
         int yy = bodyTop2;
@@ -3304,6 +3387,10 @@ void MainComponent::syncTextControls()
 
 void MainComponent::refreshCaptionColour()
 {
+    // Dark Figma has no status caption on the strip; the line is still drawn
+    // into exported images (see the PNG export, which no longer requires it
+    // to be visible on screen).
+    plotHeader_.getTitleLabel().setVisible (! Brand::isDarkUi());
     // Over a painted field -- near-black at the dB floor -- the brand red is
     // as good as invisible, so the caption switches to white. Over the bare
     // canvas it stays red, because that canvas is the theme's page and is a
@@ -3930,7 +4017,7 @@ void MainComponent::setVenueMode (bool on)
     venueMode_ = on;
     topMenu_.setActiveTab (on ? TopMenuBar::Venue : TopMenuBar::Sources);
     viewBar_.setToolsVisible (! on);
-    viewBar_.setSourcesName (on ? "Elements" : "Sources");
+    viewBar_.setSourcesName (on ? "Elements" : "Source");
     viewBar_.setViewName ("Top View");
     viewBar_.btnSourcesFold_.setFolded (on ? venuePanel_.isListFolded()
                                            : sourcePanel_.isListFolded());
@@ -3953,9 +4040,10 @@ void MainComponent::setMappingMode (bool on)
     viewBar_.setMicVisible (on);
     patternComp_.setMicsShown (on);
 
-    // The tab is a map: SPL mapping goes on with it, and whatever was set
-    // before comes back on the way out.
-    const int want = on ? 1 : mappingPrevMenu_;
+    // Figma "MAPPING OFF": the tab opens on the bare plan; the SPL map is
+    // painted only once Calculate is pressed (see mapFooter_.onCalculate).
+    // Whatever was set before comes back on the way out.
+    const int want = on ? 0 : mappingPrevMenu_;
     if (on) mappingPrevMenu_ = menuMapping_;
     if (menuMapping_ != want)
     {
@@ -5173,6 +5261,7 @@ void MainComponent::loadProjectFile (const juce::File& f)
     refreshVenuePanel();
     syncVenueToPlanes();
     patternComp_.setRangeRings (rangeRingsFromVar (project_.rangeRings));
+    patternComp_.setMics (micsFromVar (project_.mics));
     patternComp_.setRangesVisible (! project_.rangesVisible.isBool()
                                    || (bool) project_.rangesVisible);
     patternComp_.setMapWholeArea (project_.mapWholeArea.isBool()
@@ -5375,7 +5464,7 @@ void MainComponent::copyPlotToClipboard()
         // has nothing else to say what it is of, which is exactly when that
         // line is worth most - so it is drawn in at the place it appears.
         auto& caption = plotHeader_.getTitleLabel();
-        if (caption.isVisible() && ! caption.getBounds().isEmpty())
+        if (caption.getText().isNotEmpty() && ! caption.getBounds().isEmpty())
         {
             const auto where = patternComp_.getLocalArea (&caption, caption.getLocalBounds());
             juce::Graphics::ScopedSaveState ss (g);

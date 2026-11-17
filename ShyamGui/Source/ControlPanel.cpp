@@ -337,7 +337,7 @@ ControlPanel::ControlPanel()
     resSlider_.onDragStart     = [this] { willEdit(); };
     floorSlider_.onDragStart   = [this] { willEdit(); };
     styleToggle (bandsToggle_, "Contour bands (6 dB)");
-    bandsToggle_.setToggleState (false, juce::dontSendNotification); // continuous 7-color by default
+    bandsToggle_.setToggleState (true, juce::dontSendNotification); // Figma: 6 dB blocks matching the key
     bandsToggle_.onClick = [this] { willEdit(); notifyChanged(); };
 
     // The old "Measurement set" row is gone: each unit now carries its own
@@ -1669,7 +1669,7 @@ void ControlPanel::resetToDefaults()
     setAvailableDistances ({ 0.5f, 1.0f, 2.0f }, 0.5f);
     resSlider_.setValue (400.0, juce::dontSendNotification);
     floorSlider_.setValue (-36.0, juce::dontSendNotification);
-    bandsToggle_.setToggleState (false, juce::dontSendNotification);
+    bandsToggle_.setToggleState (true, juce::dontSendNotification);
     updatingUI_ = false;
     rebuildSpeakerBox();
     refreshEditors();
@@ -1710,9 +1710,9 @@ void ControlPanel::applyProject (const ProjectData& p)
     freqBox_.setSelectedId (freqId, juce::dontSendNotification);
     resSlider_.setValue   ((double) p.resolution, juce::dontSendNotification);
     floorSlider_.setValue (p.dBfloor,             juce::dontSendNotification);
-    // Not p.bandedSPL: the Figma UI has no switch for contour bands, so a
-    // project saved with them on would stay banded with no way back.
-    bandsToggle_.setToggleState       (false,                 juce::dontSendNotification);
+    // Not p.bandedSPL: the Figma UI has no switch for contour bands, and it
+    // draws the map in the key's 6 dB blocks - so every project shows them.
+    bandsToggle_.setToggleState       (true,                  juce::dontSendNotification);
     updatingUI_ = false;
 
     rebuildSpeakerBox();

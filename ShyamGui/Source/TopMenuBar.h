@@ -86,7 +86,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto r = getLocalBounds();
-        g.fillAll (kWhite);
+        g.fillAll (kWhite());
 
         if (logo_ != nullptr)
         {
@@ -98,7 +98,7 @@ public:
 
         // Figma: a 1 px black edge round the strip, and a 1 px black rule
         // closing off the project name's cell.
-        g.setColour (kInk);
+        g.setColour (kRule());
         g.drawHorizontalLine (0, 0.0f, (float) r.getRight());
         g.drawHorizontalLine (r.getBottom() - 1, 0.0f, (float) r.getRight());
         g.drawVerticalLine (projectBox_.getX(), 0.0f, (float) r.getBottom());
@@ -119,10 +119,10 @@ public:
         btnSettings_.setBounds (gearCx - hitW / 2, 1, hitW, h - 2);
         btnHome_.setBounds (btnSettings_.getX() - hitW, 1, hitW, h - 2);
 
-        // Figma: five 120 px cells from the sidebar's edge (x 399), each word
+        // Figma: five 120 px cells from x 397 (9 px inside the 406 sidebar), each word
         // centred in its cell, full strip height - narrowed only when a small
         // window would otherwise run the last word into the buttons.
-        int x = sideW_ - 1;
+        int x = sideW_ - fig (9.0f);
         const int cellW = juce::jmax (1, juce::jmin (fig (120.0f), (btnHome_.getX() - x) / 5));
         for (auto* t : tabs())
         {
@@ -132,7 +132,7 @@ public:
 
         projectLabel_.setFont (Brand::figMed (16.0f));
         projectLabel_.setBorderSize ({});
-        projectLabel_.setColour (juce::Label::textColourId, kInk);
+        projectLabel_.setColour (juce::Label::textColourId, kInk());
         projectLabel_.setBounds (projectBox_.withTrimmedLeft (1).reduced (fig (8.0f), 1));
     }
 
@@ -153,10 +153,16 @@ private:
             using UiConfig::Scale::figf;
             const auto b = getLocalBounds().toFloat();
             g.setFont (semiBold_ ? Brand::figSemi (16.0f) : Brand::figMed (16.0f));
-            g.setColour (down ? kInk.withAlpha (0.6f) : kInk);
+            g.setColour (down ? kInk().withAlpha (0.6f) : kInk());
             g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
 
-            if (active_ || over)
+            if (Brand::isDarkUi() && active_)
+            {
+                const float th = juce::jmax (1.5f, figf (2.0f));
+                g.setColour (juce::Colour (0xffe62429));
+                g.fillRect (b.getX(), b.getBottom() + 1.0f - th, b.getWidth(), th);
+            }
+            else if (active_ || over)
             {
                 const float th = juce::jmax (1.5f, figf (2.0f));
                 // The strip's bottom edge is 1 px below this button.
@@ -164,7 +170,7 @@ private:
                 juce::Path p;
                 p.startNewSubPath (b.getX() + figf (1.0f), y);
                 p.lineTo (b.getRight() - figf (1.0f), y);
-                g.setColour (active_ ? kAccent : kHover);
+                g.setColour (active_ ? kAccent() : kHover());
                 g.strokePath (p, juce::PathStrokeType (th, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
             }
@@ -187,13 +193,20 @@ private:
             const auto box = juce::Rectangle<float> (s, s).withCentre (getLocalBounds().toFloat().getCentre());
             if (over || down)
             {
-                g.setColour (kHover.withAlpha (down ? 0.9f : 0.6f));
+                g.setColour (kHover().withAlpha (down ? 0.9f : 0.6f));
                 g.fillEllipse (box.expanded (UiConfig::Scale::figf (5.0f)));
             }
             if (img_.isValid())
             {
                 g.setOpacity (1.0f);
-                g.drawImage (img_, box, juce::RectanglePlacement::centred);
+                if (Brand::isDarkUi())
+                {
+                    // The asset is dark ink; on the dark strip paint it in #FEFDFB.
+                    g.setColour (kInk());
+                    g.drawImage (img_, box, juce::RectanglePlacement::centred, true);
+                }
+                else
+                    g.drawImage (img_, box, juce::RectanglePlacement::centred);
             }
         }
 
@@ -216,7 +229,7 @@ public:
         Locate() : juce::Button ("Back to the action") {}
 
         /** Force the glyph ink, e.g. white on the navy view strip. */
-        void setInkColour (juce::Colour c) { ink_ = c; repaint(); }
+        void setInkColour (juce::Colour c) { ink_ = c; inkSet_ = true; repaint(); }
 
         void paintButton (juce::Graphics& g, bool over, bool down) override
         {
@@ -225,14 +238,14 @@ public:
             const auto box = juce::Rectangle<float> (s, s).withCentre (getLocalBounds().toFloat().getCentre());
             if (over || down)
             {
-                g.setColour (kHover.withAlpha (down ? 0.9f : 0.6f));
+                g.setColour (kHover().withAlpha (down ? 0.9f : 0.6f));
                 g.fillEllipse (box.expanded (figf (5.0f)));
             }
 
             const auto c  = box.getCentre();
             const float r = s * 0.30f;
             const float th = juce::jmax (1.2f, figf (2.0f));
-            g.setColour (ink_);
+            g.setColour (inkSet_ ? ink_ : kInk());
             g.drawEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c), th);
             const float in = r - s * 0.08f, out = s * 0.5f;
             juce::Path ticks;
@@ -248,13 +261,16 @@ public:
 
     private:
         juce::Colour ink_ { juce::Colour (0xff000000) };
+        bool inkSet_ = false;
     };
 
 private:
-    inline static const juce::Colour kWhite  { 0xffffffff };
-    inline static const juce::Colour kInk    { 0xff000000 };
-    inline static const juce::Colour kAccent { 0xffed2227 };
-    inline static const juce::Colour kHover  { 0xffd5d3d3 };
+    // Light: white strip, black ink. Dark Figma: #222225 strip, #FEFDFB ink.
+    static juce::Colour kWhite()  { return Brand::isDarkUi() ? Brand::base() : juce::Colour (0xffffffff); }
+    static juce::Colour kInk()    { return Brand::isDarkUi() ? Brand::text() : juce::Colour (0xff000000); }
+    static juce::Colour kRule()   { return Brand::isDarkUi() ? juce::Colour (0xff1d1d20) : juce::Colour (0xff000000); }
+    static juce::Colour kAccent() { return Brand::isDarkUi() ? Brand::actionRed() : juce::Colour (0xffed2227); }
+    static juce::Colour kHover()  { return Brand::isDarkUi() ? juce::Colour (0xff5a5a5c) : juce::Colour (0xffd5d3d3); }
 
 public:
     Tab  btnFile_     { "File", true }, btnVenue_ { "Venue", false }, btnSources_ { "Sources", false },
